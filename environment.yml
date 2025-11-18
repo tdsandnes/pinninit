@@ -1,0 +1,30 @@
+name: pinninit
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  # Core Python
+  - python=3.11
+  - pip
+
+  # Scientific Python Packages
+  - matplotlib
+  - numpy
+  - pandas
+  - scipy
+  - tqdm
+
+  # PyTorch and CUDA
+  - pytorch
+  - pytorch-cuda=12.4
+
+  # Jupyter
+  - ipykernel
+  - jupyterlab
+
+  # Development tools
+  - mypy
+  - pre-commit
+  - pytest
+  - ruff
