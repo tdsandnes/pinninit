@@ -1,0 +1,44 @@
+name: CI
+
+# When to run the workflow
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Check out the code
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 3. Install dependencies
+      - name: Install conda
+        uses: goanpeca/setup-miniconda@v2
+        with:
+          auto-update-conda: true
+          python-version: 3.11
+
+      - name: Create environment
+        run: conda env create -f environment.yml
+
+      - name: Activate environment
+        run: conda activate pinninit
+
+      # 4. Pre-commit hooks
+      - name: Run pre-commit
+        run: pre-commit run --all-files
+
+      # 5. Run tests
+      - name: Run tests
+        run: pytest --maxfail=1 --disable-warnings -q
