@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from utils import validate_coords_array
+from validate_data import validate_coords_array
 
 
 def test_validate_coords_array_correct() -> None:
