@@ -1,5 +1,5 @@
 import numpy as np
-from utils import validate_coords_array
+from validate_data import validate_numpy_array
 
 
 class CoordinateSystem:
@@ -65,7 +65,7 @@ class CylindricalCoords(CoordinateSystem):
 
         """
         # Validate coords array type and shape
-        validate_coords_array(coords, self.dim)
+        validate_numpy_array(coords, (self.dim,))
 
         g = np.eye(self.dim)
         g[1, 1] = coords[0] ** 2  # theta component
@@ -98,7 +98,7 @@ class SphericalCoords(CoordinateSystem):
 
         """
         # Validate coords array type and shape
-        validate_coords_array(coords, self.dim)
+        validate_numpy_array(coords, (self.dim,))
 
         g = np.eye(self.dim)
         g[1, 1] = coords[0] ** 2  # theta component
