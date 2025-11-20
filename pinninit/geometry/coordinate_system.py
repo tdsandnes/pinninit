@@ -2,8 +2,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 import numpy as np
+import torch
 from utils import check_number_within_bounds, interval_str
-from validate_data import validate_numpy_array
+from validate_data import validate_pytorch_tensor
 
 
 class CoordSystemLabels(str, Enum):
@@ -77,14 +78,14 @@ class CoordSystem:
                 f"{alt_coord_system_name} instead of {name} when using dim={dim}"
             )
 
-    def validate_coordinates(self, coords: np.ndarray) -> None:
+    def validate_coordinates(self, coords: torch.Tensor) -> None:
         """
         Validate that a set of provided coordinates are compatible with the coordinate
         system.
 
         Parameters
         ----------
-        coords : ndarray
+        coords : torch.Tensor
             Coordinates to validate.
 
         Raises
@@ -101,12 +102,12 @@ class CoordSystem:
         dim = self.dim
 
         # Validate coords array type and shape
-        validate_numpy_array(coords, (dim,))
+        validate_pytorch_tensor(coords, (dim,))
 
         # Check each coordinate against its bounds
         errors = []
         for i in range(dim):
-            value = coords[i]
+            value = coords[i].item()
             axes_label = axes_labels[i]
             bounds = axes_bounds[i]
             bounds_inclusive = axes_bounds_inclusive[i]
@@ -143,22 +144,22 @@ class CartesianCoords(CoordSystem):
         super().__init__(dim)
         self.validate_dimensions()
 
-    def metric_tensor(self, _coords: np.ndarray | None = None) -> np.ndarray:
+    def metric_tensor(self, _coords: torch.Tensor | None = None) -> torch.Tensor:
         """
         Return the metric tensor for Cartesian coordinates.
 
         Parameters
         ----------
-        _coords : ndarray , optional
+        _coords : torch.Tensor , optional
             Coordinates (not used in Cartesian coordinate system).
 
         Returns
         -------
-        g : ndarray
+        g : torch.Tensor
             Metric tensor.
 
         """
-        g = np.eye(self.dim)
+        g = torch.eye(self.dim)
         return g
 
 
@@ -179,25 +180,25 @@ class CylindricalCoords(CoordSystem):
         super().__init__(dim)
         self.validate_dimensions()
 
-    def metric_tensor(self, coords: np.ndarray) -> np.ndarray:
+    def metric_tensor(self, coords: torch.Tensor) -> torch.Tensor:
         """
         Return the metric tensor for cylindrical polar coordinates.
 
         Parameters
         ----------
-        coords : ndarray
+        coords : torch.Tensor
             Coordinates (r, theta [rad], z).
 
         Returns
         -------
-        g : ndarray
+        g : torch.Tensor
             Metric tensor.
 
         """
         # Validate coords array
         self.validate_coordinates(coords)
 
-        g = np.eye(self.dim)
+        g = torch.eye(self.dim)
         g[1, 1] = coords[0] ** 2  # theta component
         return g
 
@@ -222,27 +223,27 @@ class SphericalCoords(CoordSystem):
         super().__init__(dim)
         self.validate_dimensions()
 
-    def metric_tensor(self, coords: np.ndarray) -> np.ndarray:
+    def metric_tensor(self, coords: torch.Tensor) -> torch.Tensor:
         """
         Return the metric tensor for spherical polar coordinates.
 
         Parameters
         ----------
-        coords : ndarray
+        coords : torch.Tensor
             Coordinates (r, theta [rad], phi [rad]).
 
         Returns
         -------
-        g : ndarray
+        g : torch.Tensor
             Metric tensor.
 
         """
         # Validate coords array
         self.validate_coordinates(coords)
 
-        g = np.eye(self.dim)
+        g = torch.eye(self.dim)
         g[1, 1] = coords[0] ** 2  # theta component
-        g[2, 2] = coords[0] ** 2 * np.sin(coords[1]) ** 2  # phi component
+        g[2, 2] = coords[0] ** 2 * torch.sin(coords[1]) ** 2  # phi component
         return g
 
 
