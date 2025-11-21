@@ -1,9 +1,10 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 
 import numpy as np
 import torch
-from utils import check_number_within_bounds, interval_str
+from utils import interval_str
 from validate_data import validate_pytorch_tensor
 
 
@@ -27,7 +28,7 @@ class CoordSystemMetadata:
     dim_redirections: dict[int, CoordSystemLabels] | None
 
 
-class CoordSystem:
+class CoordSystem(ABC):
     """Base class for coordinate systems."""
 
     # Placeholder for subclass class attributes
@@ -36,7 +37,103 @@ class CoordSystem:
     def __init__(self, dim: int):
         self.dim = dim
 
-    def validate_dimensions(self) -> None:
+        # Ensure coordinate system metadata exists and is of correct type
+        metadata = getattr(self, "metadata", None)
+        if metadata is None:
+            raise NotImplementedError(
+                f"{type(self).__name__} lacks a 'metadata' class attribute"
+            )
+
+        if not isinstance(metadata, CoordSystemMetadata):
+            raise TypeError(
+                "'metadata' must be of type CoordSystemMetadata, "
+                f"got {type(metadata)}"
+            )
+
+        # Ensure coordinate system is valid
+        self._validate_dimensions()
+        self._validate_bounds()
+
+    @abstractmethod
+    def metric_tensor(self, n_points: int, coords: torch.Tensor) -> torch.Tensor:
+        """
+        Calculates the metric tensor(s) at a set of coords.
+
+        Subclasses must implement this method.
+
+        Parameters
+        ----------
+        n_points : int
+            Number of points for which to generate metric tensors.
+        coords : torch.Tensor
+            Coordinates of the points. Shape: (n_points, dim).
+
+        Returns
+        -------
+        torch.Tensor
+            Metric tensors of shape (n_points, dim, dim).
+        """
+        raise NotImplementedError(
+            "Subclasses of CoordSystem must implement " "metric_tensor method."
+        )
+
+    def grad(self, f: torch.Tensor, coords: torch.Tensor) -> torch.Tensor:
+        """
+        Compute the gradient of a function in a given coordinate system.
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            Function to be taken gradient of. Shape: (n_points,)
+        coords : torch.Tensor
+            A set of points and their spatial coordinates. Shape: (n_points, dim)
+
+        Returns
+        -------
+        torch.Tensor
+            Gradient of the function: (n_points, dim)
+        """
+        # Coordinate system dimensions
+        dim = self.dim
+
+        # Validate input tensors
+        n_points = f.shape[0]
+        validate_pytorch_tensor(f, (n_points,))
+        validate_pytorch_tensor(coords, (n_points, dim))
+
+        # Reshape for derivative calculation
+        f = f.unsqueeze(1)  # (n_points, 1)
+
+        # Calculate derivatives using autograd
+        derivative_f = torch.autograd.grad(
+            f,
+            coords,
+            grad_outputs=torch.ones_like(f),
+            create_graph=True,
+            allow_unused=True,  # If not a function of a coord, gives 0 rather than None
+        )[0]
+
+        # Set derivatives to zero in None (Case where f is indep of all coords)
+        if derivative_f is None:
+            derivative_f = torch.zeros_like(coords)
+
+        # Tensor of metric tensors for each point
+        G = self.metric_tensor(n_points, coords)  # Shape: (n_points, dim, dim)
+        validate_pytorch_tensor(G, (n_points, dim, dim))
+
+        # Inverse metric tensor
+        G_inv = torch.linalg.inv(G)  # Shape: (n_points, dim, dim)
+        validate_pytorch_tensor(G_inv, (n_points, dim, dim))
+
+        # Batch matrix multiplication:
+        # (n_points, dim, dim) @ (n_points, dim, 1) -> (n_points, dim, 1)
+        # Squeeze the result to get the final (n_points, dim) vector
+        grad_f = torch.bmm(G_inv, derivative_f.unsqueeze(2)).squeeze(2)
+        validate_pytorch_tensor(grad_f, (n_points, dim))
+
+        return grad_f
+
+    def _validate_dimensions(self) -> None:
         """
         Validate that the coordinate system supports the given number of dimensions.
 
@@ -52,7 +149,7 @@ class CoordSystem:
         max_dim = self.metadata.max_dim
         dim_redirections = self.metadata.dim_redirections
 
-        # Coordinate system parameters
+        # Coordinate system dimensions
         dim = self.dim
 
         # Check type of dim
@@ -78,7 +175,80 @@ class CoordSystem:
                 f"{alt_coord_system_name} instead of {name} when using dim={dim}"
             )
 
-    def validate_coordinates(self, coords: torch.Tensor) -> None:
+    def _validate_bounds(self) -> None:
+        """
+        Validate the bounds of axes in the coordinate system.
+
+        Raises
+        ------
+        ValueError
+            If axes bounds and their inclusivity are inconsistent.
+        """
+        # Coordinate system dimensions
+        self._validate_dimensions()
+        dim = self.dim
+
+        # Extract metadata
+        axes_bounds = np.array(self.metadata.axes_bounds)
+        axes_bounds_inclusive = np.array(self.metadata.axes_bounds_inclusive)
+
+        # Check that axes_bounds and axes_bounds_inclusive have correct shape
+        if (np.shape(axes_bounds) != (dim, 2)) or (
+            np.shape(axes_bounds_inclusive) != (dim, 2)
+        ):
+            raise ValueError(
+                "axes_bounds and axes_bounds_inclusive must be of " "shape (dim, 2)."
+            )
+
+        # Separate lower and upper bounds and their inclusivity
+        lower_bounds = axes_bounds[:, 0]
+        upper_bounds = axes_bounds[:, 1]
+        lower_bounds_inclusive = axes_bounds_inclusive[:, 0]
+        upper_bounds_inclusive = axes_bounds_inclusive[:, 1]
+
+        # Find which elements are None
+        lower_bound_is_none = np.array([x is None for x in lower_bounds])
+        upper_bound_is_none = np.array([x is None for x in upper_bounds])
+        lower_bound_inclusive_is_none = np.array(
+            [x is None for x in lower_bounds_inclusive]
+        )
+        upper_bound_inclusive_is_none = np.array(
+            [x is None for x in upper_bounds_inclusive]
+        )
+
+        # Validate the lower bounds inclusivity are either True, False, or None
+        if not np.all(
+            np.logical_or(
+                lower_bound_is_none, np.isin(lower_bounds_inclusive, [True, False])
+            )
+        ):
+            raise ValueError("Lower bound inclusivity must be True, False, or None")
+
+        # Validate that upper bounds inclusivity are either True, False, or None
+        if not np.all(
+            np.logical_or(
+                upper_bound_is_none, np.isin(upper_bounds_inclusive, [True, False])
+            )
+        ):
+            raise ValueError("Upper bound inclusivity must be True, False, or None")
+
+        # Condition A: None only if both bounds and inclusives are None
+        lower_a = np.logical_and(lower_bound_is_none, lower_bound_inclusive_is_none)
+        upper_a = np.logical_and(upper_bound_is_none, upper_bound_inclusive_is_none)
+
+        # Condition B: Both are NOT None (Bound is Value AND Inclusive is True/False)
+        lower_b = np.logical_and(~lower_bound_is_none, ~lower_bound_inclusive_is_none)
+        upper_b = np.logical_and(~upper_bound_is_none, ~upper_bound_inclusive_is_none)
+
+        # Check if all elements satisfy (Condition A OR Condition B)
+        lower_ab = np.logical_or(lower_a, lower_b)
+        upper_ab = np.logical_or(upper_a, upper_b)
+
+        # Both lower and upper bounds must be consistent, otherwise raise error
+        if not np.all(np.logical_and(lower_ab, upper_ab)):
+            raise ValueError("Inconsistent axes bounds.")
+
+    def _validate_coordinates(self, coords: torch.Tensor) -> None:
         """
         Validate that a set of provided coordinates are compatible with the coordinate
         system.
@@ -86,45 +256,87 @@ class CoordSystem:
         Parameters
         ----------
         coords : torch.Tensor
-            Coordinates to validate.
+            Coordinates to validate. Shape: (n_points, dim)
 
         Raises
         ------
         ValueError
             If coordinates are incompatible with the coordinate system.
         """
+        # Coordinate system dimensions
+        self._validate_dimensions()
+        dim = self.dim
+
         # Extract metadata
         axes_labels = self.metadata.axes_labels
+        self._validate_bounds()
         axes_bounds = self.metadata.axes_bounds
         axes_bounds_inclusive = self.metadata.axes_bounds_inclusive
 
-        # Coordinate system parameters
-        dim = self.dim
+        # Validate coords tensor type and shape
+        n_points = coords.shape[0]
+        validate_pytorch_tensor(coords, (n_points, dim))
 
-        # Validate coords array type and shape
-        validate_pytorch_tensor(coords, (dim,))
+        # Separate lower and upper bounds and inclusivity
+        lower_bounds = np.array(axes_bounds)[:, 0]
+        upper_bounds = np.array(axes_bounds)[:, 1]
+        lower_inclusive = np.array(axes_bounds_inclusive)[:, 0]
+        upper_inclusive = np.array(axes_bounds_inclusive)[:, 1]
 
-        # Check each coordinate against its bounds
+        # Convert bounds to tensors, replacing None with -inf / +inf. Reshape to
+        # (1, dim) so that PyTorch will broadcast to (n_points, dim) in comparisons with
+        # coords which has shape (n_points, dim).
+        lower_bounds = torch.tensor(
+            [lb if lb is not None else -torch.inf for lb in lower_bounds],
+            dtype=coords.dtype,
+        ).unsqueeze(0)
+        upper_bounds = torch.tensor(
+            [ub if ub is not None else torch.inf for ub in upper_bounds],
+            dtype=coords.dtype,
+        ).unsqueeze(0)
+        lower_inclusive = torch.tensor(
+            [li if li is not None else True for li in lower_inclusive], dtype=torch.bool
+        ).unsqueeze(0)
+        upper_inclusive = torch.tensor(
+            [ui if ui is not None else True for ui in upper_inclusive], dtype=torch.bool
+        ).unsqueeze(0)
+
+        # Vectorized mask checks
+        mask_in_bounds_lower = torch.where(
+            lower_inclusive, coords >= lower_bounds, coords > lower_bounds
+        )
+        mask_in_bounds_upper = torch.where(
+            upper_inclusive, coords <= upper_bounds, coords < upper_bounds
+        )
+
+        # Out-of-bounds mask
+        mask_out_of_bounds = ~(mask_in_bounds_lower & mask_in_bounds_upper)
+
+        # Initialise list to collect error messages
         errors = []
-        for i in range(dim):
-            value = coords[i].item()
-            axes_label = axes_labels[i]
-            bounds = axes_bounds[i]
-            bounds_inclusive = axes_bounds_inclusive[i]
 
-            # Check if value is within bounds
-            in_bounds = check_number_within_bounds(value, bounds, bounds_inclusive)
-            if not in_bounds:
-                bounds_str = interval_str(bounds, bounds_inclusive)
+        # Iterate over dimensions to find and report out-of-bounds elements
+        for idx_dim, label in enumerate(axes_labels):
+            # Get n_points indices where this coordinate is out of bounds
+            idx_points_errors = torch.nonzero(mask_out_of_bounds[:, idx_dim]).squeeze(1)
+            if idx_points_errors.numel() == 0:
+                continue  # no errors for this coordinate
+
+            # String representation of bounds
+            bounds_str = interval_str(
+                np.array(axes_bounds)[idx_dim, :], np.array(axes_bounds)[idx_dim, :]
+            )
+
+            # Generate messages for this dimension
+            for idx_points_error in idx_points_errors:
+                value = coords[idx_points_error, idx_dim].item()
                 errors.append(
-                    f"Coordinate '{axes_label}'={value} is out of coordinate "
-                    f"system bounds {bounds_str}"
+                    f"Coordinate '{label}'={value} is out of bounds {bounds_str}"
                 )
 
+        # Raise error if any violations
         if errors:
-            # Join error messages with line breaks and raise an error
-            errors_joined = "\n".join(errors)
-            raise ValueError(f"{errors_joined}")
+            raise ValueError("\n".join(errors))
 
 
 class CartesianCoords(CoordSystem):
@@ -142,25 +354,28 @@ class CartesianCoords(CoordSystem):
 
     def __init__(self, dim: int):
         super().__init__(dim)
-        self.validate_dimensions()
 
-    def metric_tensor(self, _coords: torch.Tensor | None = None) -> torch.Tensor:
+    def metric_tensor(
+        self, n_points: int, _coords: torch.Tensor | None = None
+    ) -> torch.Tensor:
         """
-        Return the metric tensor for Cartesian coordinates.
+         Return the metric tensor(s) for Cartesian coordinates.
 
         Parameters
-        ----------
-        _coords : torch.Tensor , optional
-            Coordinates (not used in Cartesian coordinate system).
+         ----------
+         n_points : int
+             Number of points for which to generate metric tensors.
+         _coords : torch.Tensor
+             Coordinates of the points. Unused for Cartesian coordinates.
 
-        Returns
-        -------
-        g : torch.Tensor
-            Metric tensor.
-
+         Returns
+         -------
+         torch.Tensor
+             Metric tensors of shape (n_points, dim, dim).
         """
         g = torch.eye(self.dim)
-        return g
+        G = g.unsqueeze(0).repeat(n_points, 1, 1)  # Shape: (n_points, dim, dim)
+        return G
 
 
 class CylindricalCoords(CoordSystem):
@@ -178,29 +393,30 @@ class CylindricalCoords(CoordSystem):
 
     def __init__(self, dim: int):
         super().__init__(dim)
-        self.validate_dimensions()
 
-    def metric_tensor(self, coords: torch.Tensor) -> torch.Tensor:
+    def metric_tensor(self, n_points: int, coords: torch.Tensor) -> torch.Tensor:
         """
-        Return the metric tensor for cylindrical polar coordinates.
+         Return the metric tensor(s) for cylindrical polar coordinates.
 
         Parameters
-        ----------
-        coords : torch.Tensor
-            Coordinates (r, theta [rad], z).
+         ----------
+         n_points : int
+             Number of points for which to generate metric tensors.
+         coords : torch.Tensor
+             Coordinates of the points. Shape: (n_points, dim).
 
-        Returns
-        -------
-        g : torch.Tensor
-            Metric tensor.
-
+         Returns
+         -------
+         torch.Tensor
+             Metric tensors of shape (n_points, dim, dim).
         """
-        # Validate coords array
-        self.validate_coordinates(coords)
+        # Validate coords tensor
+        self._validate_coordinates(coords)
 
         g = torch.eye(self.dim)
-        g[1, 1] = coords[0] ** 2  # theta component
-        return g
+        G = g.unsqueeze(0).repeat(n_points, 1, 1)  # Shape: (n_points, dim, dim)
+        G[:, 1, 1] = coords[:, 0] ** 2  # theta theta components
+        return G
 
 
 class SphericalCoords(CoordSystem):
@@ -221,30 +437,33 @@ class SphericalCoords(CoordSystem):
 
     def __init__(self, dim: int):
         super().__init__(dim)
-        self.validate_dimensions()
 
-    def metric_tensor(self, coords: torch.Tensor) -> torch.Tensor:
+    def metric_tensor(self, n_points: int, coords: torch.Tensor) -> torch.Tensor:
         """
-        Return the metric tensor for spherical polar coordinates.
+         Return the metric tensor(s) for spherical polar coordinates.
 
         Parameters
-        ----------
-        coords : torch.Tensor
-            Coordinates (r, theta [rad], phi [rad]).
+         ----------
+         n_points : int
+             Number of points for which to generate metric tensors.
+         coords : torch.Tensor
+             Coordinates of the points. Shape: (n_points, dim).
 
-        Returns
-        -------
-        g : torch.Tensor
-            Metric tensor.
-
+         Returns
+         -------
+         torch.Tensor
+             Metric tensors of shape (n_points, dim, dim).
         """
-        # Validate coords array
-        self.validate_coordinates(coords)
+        # Validate coords tensor
+        self._validate_coordinates(coords)
 
         g = torch.eye(self.dim)
-        g[1, 1] = coords[0] ** 2  # theta component
-        g[2, 2] = coords[0] ** 2 * torch.sin(coords[1]) ** 2  # phi component
-        return g
+        G = g.unsqueeze(0).repeat(n_points, 1, 1)  # Shape: (n_points, dim, dim)
+        G[:, 1, 1] = coords[:, 0] ** 2  # theta theta components
+        G[:, 2, 2] = (
+            coords[:, 0] ** 2 * torch.sin(coords[:, 1]) ** 2
+        )  # phi phi components
+        return G
 
 
 # Mapping from coordinate system labels to classes
