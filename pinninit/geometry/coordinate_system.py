@@ -55,26 +55,8 @@ class CoordSystem(ABC):
 
     @abstractmethod
     def metric_tensor(self, n_points: int, coords: torch.Tensor) -> torch.Tensor:
-        """
-        Calculates the metric tensor(s) at a set of coords.
-
-        Subclasses must implement this method.
-
-        Parameters
-        ----------
-        n_points : int
-            Number of points for which to generate metric tensors.
-        coords : torch.Tensor
-            Coordinates of the points. Shape: (n_points, dim).
-
-        Returns
-        -------
-        torch.Tensor
-            Metric tensors of shape (n_points, dim, dim).
-        """
-        raise NotImplementedError(
-            "Subclasses of CoordSystem must implement metric_tensor method."
-        )
+        """Subclasses must implement this method to return the metric tensor(s)."""
+        pass
 
     def grad(self, f: torch.Tensor, coords: torch.Tensor) -> torch.Tensor:
         """
