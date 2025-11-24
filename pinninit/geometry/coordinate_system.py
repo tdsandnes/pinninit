@@ -46,8 +46,7 @@ class CoordSystem(ABC):
 
         if not isinstance(metadata, CoordSystemMetadata):
             raise TypeError(
-                "'metadata' must be of type CoordSystemMetadata, "
-                f"got {type(metadata)}"
+                f"'metadata' must be of type CoordSystemMetadata, got {type(metadata)}"
             )
 
         # Ensure coordinate system is valid
@@ -74,7 +73,7 @@ class CoordSystem(ABC):
             Metric tensors of shape (n_points, dim, dim).
         """
         raise NotImplementedError(
-            "Subclasses of CoordSystem must implement " "metric_tensor method."
+            "Subclasses of CoordSystem must implement metric_tensor method."
         )
 
     def grad(self, f: torch.Tensor, coords: torch.Tensor) -> torch.Tensor:
@@ -197,7 +196,7 @@ class CoordSystem(ABC):
             np.shape(axes_bounds_inclusive) != (dim, 2)
         ):
             raise ValueError(
-                "axes_bounds and axes_bounds_inclusive must be of " "shape (dim, 2)."
+                "axes_bounds and axes_bounds_inclusive must be of shape (dim, 2)."
             )
 
         # Separate lower and upper bounds and their inclusivity
@@ -286,27 +285,31 @@ class CoordSystem(ABC):
         # Convert bounds to tensors, replacing None with -inf / +inf. Reshape to
         # (1, dim) so that PyTorch will broadcast to (n_points, dim) in comparisons with
         # coords which has shape (n_points, dim).
-        lower_bounds = torch.tensor(
+        lower_bounds_tensor = torch.tensor(
             [lb if lb is not None else -torch.inf for lb in lower_bounds],
             dtype=coords.dtype,
         ).unsqueeze(0)
-        upper_bounds = torch.tensor(
+        upper_bounds_tensor = torch.tensor(
             [ub if ub is not None else torch.inf for ub in upper_bounds],
             dtype=coords.dtype,
         ).unsqueeze(0)
-        lower_inclusive = torch.tensor(
+        lower_inclusive_tensor = torch.tensor(
             [li if li is not None else True for li in lower_inclusive], dtype=torch.bool
         ).unsqueeze(0)
-        upper_inclusive = torch.tensor(
+        upper_inclusive_tensor = torch.tensor(
             [ui if ui is not None else True for ui in upper_inclusive], dtype=torch.bool
         ).unsqueeze(0)
 
         # Vectorized mask checks
         mask_in_bounds_lower = torch.where(
-            lower_inclusive, coords >= lower_bounds, coords > lower_bounds
+            lower_inclusive_tensor,
+            coords >= lower_bounds_tensor,
+            coords > lower_bounds_tensor,
         )
         mask_in_bounds_upper = torch.where(
-            upper_inclusive, coords <= upper_bounds, coords < upper_bounds
+            upper_inclusive_tensor,
+            coords <= upper_bounds_tensor,
+            coords < upper_bounds_tensor,
         )
 
         # Out-of-bounds mask
