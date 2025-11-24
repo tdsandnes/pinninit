@@ -3,7 +3,8 @@ import torch
 
 
 def validate_numpy_array(arr: np.ndarray, shape: tuple[int, ...]) -> None:
-    """Validate that the input is a NumPy array with the expected shape.
+    """
+    Validate that the input is a NumPy array with the expected shape.
 
     Parameters
     ----------
@@ -36,7 +37,8 @@ def validate_numpy_array(arr: np.ndarray, shape: tuple[int, ...]) -> None:
 
 
 def validate_pytorch_tensor(tensor: torch.Tensor, shape: tuple[int, ...]) -> None:
-    """Validate that the input is a PyTorch tensor with the expected shape.
+    """
+    Validate that the input is a PyTorch tensor with the expected shape.
 
     Parameters
     ----------
