@@ -1,9 +1,9 @@
-from collections.abc import Callable
 from enum import Enum
 
 import loss_function as lf
 import torch
 from loss_utils import is_residual_loss_inputs
+from utils import lookup_func_in_registry
 
 
 class LossTermLabels(str, Enum):
@@ -17,14 +17,11 @@ class LossTerm:
     """Base class for loss terms"""
 
     def __init__(self, loss_function_label: lf.LossFunctionLabels):
-        # Look up the loss function in the registry
         self.loss_function_label = loss_function_label
-        if loss_function_label in lf.LOSS_FUNCTION_REGISTRY:
-            self.loss_fn: Callable[..., torch.Tensor] = lf.LOSS_FUNCTION_REGISTRY[
-                loss_function_label
-            ]
-        else:
-            raise ValueError(f"Unknown loss function label: {loss_function_label}")
+        # Look up the loss function in registry
+        self.loss_func = lookup_func_in_registry(
+            loss_function_label, lf.LOSS_FUNCTION_REGISTRY
+        )
 
     def compute_loss(
         self,
@@ -55,10 +52,11 @@ class LossTerm:
         """
         # Use residual value if provided. Otherwise, use f_pred and f_target.
         if is_residual_loss_inputs(f_pred, f_target, f_residual):
-            loss = self.loss_fn(f_residual)
+            loss = self.loss_func(f_residual)
         else:
-            loss = self.loss_fn(f_pred, f_target)
+            loss = self.loss_func(f_pred, f_target)
 
+        assert isinstance(loss, torch.Tensor), f"Loss returned {type(loss)}"
         return loss
 
     def compute_weight(self) -> torch.Tensor:

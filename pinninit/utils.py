@@ -1,3 +1,47 @@
+from collections.abc import Callable
+from enum import Enum
+from typing import Any, TypeVar
+
+# Generic type for Enum
+EnumType = TypeVar("EnumType", bound=Enum)
+# Generic type for the callable function
+FuncType = TypeVar("FuncType", bound=Callable[..., Any])
+
+
+def lookup_func_in_registry(
+    label: EnumType, registry: dict[EnumType, FuncType]
+) -> FuncType:
+    """
+    Lookup a function in a registry by its Enum label.
+
+    Parameters
+    ----------
+    label : EnumType
+        The Enum member.
+    registry : Dict[EnumType, FuncType]
+        The dictionary mapping Enum members to functions.
+
+    Returns
+    -------
+    FuncType
+        The function corresponding to the label.
+
+    Raises
+    ------
+    ValueError
+        If the label is not found in the registry.
+    """
+    if label in registry:
+        # Return function
+        return registry[label]
+    else:
+        enum_class_name = type(label).__name__
+        raise ValueError(
+            f"Unknown label: '{label.value}' in registry of type '{enum_class_name}'. "
+            f"Available options are: {[e.value for e in registry]}"
+        )
+
+
 def interval_str(
     interval: tuple[float | None, float | None],
     inclusive: tuple[bool | None, bool | None],
