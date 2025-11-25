@@ -3,7 +3,7 @@ from enum import Enum
 import loss_function as lf
 import torch
 from loss_utils import is_residual_loss_inputs
-from utils import lookup_func_in_registry
+from utils import lookup_from_registry
 
 
 class LossTermLabels(str, Enum):
@@ -19,7 +19,7 @@ class LossTerm:
     def __init__(self, loss_function_label: lf.LossFunctionLabels):
         self.loss_function_label = loss_function_label
         # Look up the loss function in registry
-        self.loss_func = lookup_func_in_registry(
+        self.loss_func = lookup_from_registry(
             loss_function_label, lf.LOSS_FUNCTION_REGISTRY
         )
 

@@ -4,27 +4,25 @@ from typing import Any, TypeVar
 
 # Generic type for Enum
 EnumType = TypeVar("EnumType", bound=Enum)
-# Generic type for the callable function
-FuncType = TypeVar("FuncType", bound=Callable[..., Any])
 
 
-def lookup_func_in_registry(
-    label: EnumType, registry: dict[EnumType, FuncType]
-) -> FuncType:
+def lookup_from_registry(
+    label: EnumType, registry: dict[EnumType, Callable[..., Any]]
+) -> Any:
     """
-    Lookup a function in a registry by its Enum label.
+    Generic function to look up a class or function from a registry.
 
     Parameters
     ----------
-    label : EnumType
-        The Enum member.
-    registry : Dict[EnumType, FuncType]
-        The dictionary mapping Enum members to functions.
+    label : Enum
+        The key to look up in the registry.
+    registry : dict
+        Mapping from labels to callables or classes.
 
     Returns
     -------
-    FuncType
-        The function corresponding to the label.
+    Any
+        The class or function associated with the given label and registry.
 
     Raises
     ------
@@ -32,8 +30,47 @@ def lookup_func_in_registry(
         If the label is not found in the registry.
     """
     if label in registry:
-        # Return function
+        # Create an object or call a function
         return registry[label]
+    else:
+        enum_class_name = type(label).__name__
+        raise ValueError(
+            f"Unknown label: '{label.value}' in registry of type '{enum_class_name}'. "
+            f"Available options are: {[e.value for e in registry]}"
+        )
+
+
+def execute_from_registry(
+    label: EnumType,
+    registry: dict[EnumType, Callable[..., Any]],
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """
+    Generic function to create an object or call a function from a registry.
+
+    Parameters
+    ----------
+    label : Enum
+        The key to look up in the registry.
+    registry : dict
+        Mapping from labels to callables or classes.
+    *args, **kwargs
+        Arguments to pass to the callable/class.
+
+    Returns
+    -------
+    Any
+        The result of calling the registry entry with provided args/kwargs.
+
+    Raises
+    ------
+    ValueError
+        If the label is not found in the registry.
+    """
+    if label in registry:
+        # Create an object or call a function
+        return registry[label](*args, **kwargs)
     else:
         enum_class_name = type(label).__name__
         raise ValueError(

@@ -6,7 +6,7 @@ import bias_init as bi
 import torch
 import torch.nn as nn
 import weight_init as wi
-from utils import lookup_func_in_registry
+from utils import execute_from_registry, lookup_from_registry
 from validate_data import validate_pytorch_tensor
 
 
@@ -33,20 +33,18 @@ class Layer(nn.Module, ABC):  # type: ignore[misc]
         self.in_features = in_features
         self.out_features = out_features
 
-        # Look up functions in registry
-        self.activation_func = lookup_func_in_registry(
+        # Look up activation function in registry
+        self.activation_func = lookup_from_registry(
             activation_func_label, af.ACTIVATION_FUNC_REGISTRY
-        )
-        self.weight_init_func = lookup_func_in_registry(
-            weight_init_label, wi.WEIGHT_INIT_REGISTRY
-        )
-        self.bias_init_func = lookup_func_in_registry(
-            bias_init_label, bi.BIAS_INIT_REGISTRY
         )
 
         # Define weights and biases as trainable parameters
-        weights = self.weight_init_func(in_features, out_features)
-        biases = self.bias_init_func(out_features)
+        weights = execute_from_registry(
+            weight_init_label, wi.WEIGHT_INIT_REGISTRY, in_features, out_features
+        )
+        biases = execute_from_registry(
+            bias_init_label, bi.BIAS_INIT_REGISTRY, out_features
+        )
         validate_pytorch_tensor(weights, (in_features, out_features))
         validate_pytorch_tensor(biases, (out_features,))
         self.weights = nn.Parameter(weights)
