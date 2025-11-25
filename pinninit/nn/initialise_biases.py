@@ -9,21 +9,21 @@ class BiasInitLabels(str, Enum):
     ZEROS = "zeros"
 
 
-def zeros_bias_init(dim_out: int) -> torch.Tensor:
+def zeros_bias_init(out_features: int) -> torch.Tensor:
     """
     Initialise the bias of a layer with zeros.
 
     Parameters:
     ----------
-    dim_out : int
-        Number of output neurons.
+    out_features : int
+        Number of output features.
 
     Returns:
     ----------
     torch.Tensor
         A tensor with the initialised biases.
     """
-    return torch.zeros(dim_out)
+    return torch.zeros(out_features)
 
 
 # Mapping from bias initialisation method labels to python functions

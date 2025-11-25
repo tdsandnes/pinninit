@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from enum import Enum
 
 import activation_function as af
@@ -6,6 +7,7 @@ import torch
 import torch.nn as nn
 import weight_init as wi
 from utils import lookup_func_in_registry
+from validate_data import validate_pytorch_tensor
 
 
 class LayerTypeLabels(str, Enum):
@@ -14,13 +16,13 @@ class LayerTypeLabels(str, Enum):
     LINEAR = "linear"
 
 
-class Layer(nn.Module):  # type: ignore[misc]
+class Layer(nn.Module, ABC):  # type: ignore[misc]
     """Base class for all layers."""
 
     def __init__(
         self,
-        dim_in: int,
-        dim_out: int,
+        in_features: int,
+        out_features: int,
         activation_func_label: af.ActivationFuncLabels,
         weight_init_label: wi.WeightInitLabels,
         bias_init_label: wi.BiasInitLabels,
@@ -28,8 +30,8 @@ class Layer(nn.Module):  # type: ignore[misc]
         super().__init__()
         self.activation_func_label = activation_func_label
         self.weight_init_label = weight_init_label
-        self.dim_in = dim_in
-        self.dim_out = dim_out
+        self.in_features = in_features
+        self.out_features = out_features
 
         # Look up functions in registry
         self.activation_func = lookup_func_in_registry(
@@ -43,11 +45,17 @@ class Layer(nn.Module):  # type: ignore[misc]
         )
 
         # Define weights and biases as trainable parameters
-        self.weights = nn.Parameter(self.weight_init_func(dim_in, dim_out))
-        self.biases = nn.Parameter(self.bias_init_func(dim_out))
+        weights = self.weight_init_func(in_features, out_features)
+        biases = self.bias_init_func(out_features)
+        validate_pytorch_tensor(weights, (in_features, out_features))
+        validate_pytorch_tensor(biases, (out_features,))
+        self.weights = nn.Parameter(weights)
+        self.biases = nn.Parameter(biases)
 
+    @abstractmethod
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
-        raise NotImplementedError
+        """Subclasses must implement this method to forward pass through the layer.."""
+        pass
 
 
 class LinearLayer(Layer):
@@ -57,19 +65,19 @@ class LinearLayer(Layer):
 
     def __init__(
         self,
-        dim_in: int,
-        dim_out: int,
-        lower_bound: torch.Tensor,
-        upper_bound: torch.Tensor,
+        in_features: int,
+        out_features: int,
         activation_func_label: af.ActivationFuncLabels,
         weight_init_label: wi.WeightInitLabels,
         bias_init_label: wi.BiasInitLabels,
     ):
         super().__init__(
-            dim_in, dim_out, activation_func_label, weight_init_label, bias_init_label
+            in_features,
+            out_features,
+            activation_func_label,
+            weight_init_label,
+            bias_init_label,
         )
-        self.lower_bound = lower_bound
-        self.upper_bound = upper_bound
 
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         """
@@ -78,25 +86,28 @@ class LinearLayer(Layer):
         Parameters:
         ----------
         tensor : torch.Tensor
-            The input tensor.
+            The input tensor. Size (n_points, in_features)
 
         Returns:
         torch.Tensor
         ----------
-            The output of the layer.
+            The output of the layer. Size (n_points, out_features)
         """
-        # Normalisation ### temp hardcoded for now, but might add a normalisation.py
-        x = (
-            2.0 * (tensor - self.lower_bound) / (self.upper_bound - self.lower_bound)
-            - 1.0
-        )
-        y = x @ self.weights.T + self.biases  # matrix multiply + bias
+        # Validate input tensors
+        n_points = tensor.shape[0]
+        validate_pytorch_tensor(tensor, (n_points, self.in_features))
+        validate_pytorch_tensor(self.weights, (self.in_features, self.out_features))
+        validate_pytorch_tensor(self.biases, (self.out_features,))
 
-        act_y = self.activation_func(y)
+        linear_combination = (
+            tensor @ self.weights.T + self.biases
+        )  # matrix multiply + bias
+
+        activated_output = self.activation_func(linear_combination)
         assert isinstance(
-            act_y, torch.Tensor
-        ), f"Activation function returned {type(act_y)}"
-        return act_y
+            activated_output, torch.Tensor
+        ), f"Activation function returned {type(activated_output)}"
+        return activated_output
 
 
 # Mapping from layer type labels to classes

@@ -9,24 +9,24 @@ class WeightInitLabels(str, Enum):
     XAVIER = "xavier"
 
 
-def xavier_weight_init(dim_in: int, dim_out: int) -> torch.Tensor:
+def xavier_weight_init(in_features: int, out_features: int) -> torch.Tensor:
     """
     Initialise the weights of a layer using Xavier initialisation.
 
     Parameters:
     ----------
-    dim_in : int
-        Number of input neurons.
-    dim_out : int
-        Number of output neurons.
+    in_features : int
+        Number of input features.
+    out_features : int
+        Number of output features.
 
     Returns:
     ----------
     torch.Tensor
         A tensor with the initialised weights.
     """
-    xavier_stddev = torch.sqrt(torch.tensor(2.0 / (dim_in + dim_out)))
-    return torch.randn(dim_in, dim_out) * xavier_stddev
+    xavier_stddev = torch.sqrt(torch.tensor(2.0 / (in_features + out_features)))
+    return torch.randn(in_features, out_features) * xavier_stddev
 
 
 # Mapping from weight initialisation method labels to python functions
