@@ -24,8 +24,8 @@ class CoordSystemMetadata:
     axes_labels: tuple[str, ...]
     axes_bounds: tuple[tuple[float | None, float | None], ...]
     axes_bounds_inclusive: tuple[tuple[bool | None, bool | None], ...]
-    max_dim: int
-    dim_redirections: dict[int, CoordSystemLabels] | None
+    max_coord_dim: int
+    coord_dim_redirections: dict[int, CoordSystemLabels] | None
 
 
 class CoordSystem(ABC):
@@ -34,8 +34,8 @@ class CoordSystem(ABC):
     # Placeholder for subclass class attributes
     metadata: CoordSystemMetadata
 
-    def __init__(self, dim: int):
-        self.dim = dim
+    def __init__(self, coord_dim: int):
+        self.coord_dim = coord_dim
 
         # Ensure coordinate system metadata exists and is of correct type
         metadata = getattr(self, "metadata", None)
@@ -67,20 +67,20 @@ class CoordSystem(ABC):
         f : torch.Tensor
             Function to be taken gradient of. Shape: (n_points,)
         coords : torch.Tensor
-            A set of points and their spatial coordinates. Shape: (n_points, dim)
+            A set of points and their spatial coordinates. Shape: (n_points, coord_dim)
 
         Returns
         -------
         torch.Tensor
-            Gradient of the function: (n_points, dim)
+            Gradient of the function: (n_points, coord_dim)
         """
         # Coordinate system dimensions
-        dim = self.dim
+        coord_dim = self.coord_dim
 
         # Validate input tensors
         n_points = f.shape[0]
         validate_pytorch_tensor(f, (n_points,))
-        validate_pytorch_tensor(coords, (n_points, dim))
+        validate_pytorch_tensor(coords, (n_points, coord_dim))
 
         # Reshape for derivative calculation
         f = f.unsqueeze(1)  # (n_points, 1)
@@ -99,18 +99,21 @@ class CoordSystem(ABC):
             derivative_f = torch.zeros_like(coords)
 
         # Tensor of metric tensors for each point
-        G = self.metric_tensor(n_points, coords)  # Shape: (n_points, dim, dim)
-        validate_pytorch_tensor(G, (n_points, dim, dim))
+        G = self.metric_tensor(
+            n_points, coords
+        )  # Shape: (n_points, coord_dim, coord_dim)
+        validate_pytorch_tensor(G, (n_points, coord_dim, coord_dim))
 
         # Inverse metric tensor
-        G_inv = torch.linalg.inv(G)  # Shape: (n_points, dim, dim)
-        validate_pytorch_tensor(G_inv, (n_points, dim, dim))
+        G_inv = torch.linalg.inv(G)  # Shape: (n_points, coord_dim, coord_dim)
+        validate_pytorch_tensor(G_inv, (n_points, coord_dim, coord_dim))
 
         # Batch matrix multiplication:
-        # (n_points, dim, dim) @ (n_points, dim, 1) -> (n_points, dim, 1)
-        # Squeeze the result to get the final (n_points, dim) vector
+        # (n_points, coord_dim, coord_dim) @ (n_points, coord_dim, 1) ->
+        # (n_points, coord_dim, 1)
+        # Squeeze the result to get the final (n_points, coord_dim) vector
         grad_f = torch.bmm(G_inv, derivative_f.unsqueeze(2)).squeeze(2)
-        validate_pytorch_tensor(grad_f, (n_points, dim))
+        validate_pytorch_tensor(grad_f, (n_points, coord_dim))
 
         return grad_f
 
@@ -121,39 +124,43 @@ class CoordSystem(ABC):
         Raises
         ------
         TypeError
-            If dim is not an integer.
+            If coord_dim is not an integer.
         ValueError
             If coordinate system is incompatible with the given number of dimensions.
         """
         # Extract metadata
         name = self.metadata.name
-        max_dim = self.metadata.max_dim
-        dim_redirections = self.metadata.dim_redirections
+        max_coord_dim = self.metadata.max_coord_dim
+        coord_dim_redirections = self.metadata.coord_dim_redirections
 
         # Coordinate system dimensions
-        dim = self.dim
+        coord_dim = self.coord_dim
 
-        # Check type of dim
-        if not isinstance(dim, int):
-            raise TypeError(f"Expected dim to be an integer, got {type(dim).__name__}")
+        # Check type of coord_dim
+        if not isinstance(coord_dim, int):
+            raise TypeError(
+                f"Expected coord_dim to be an integer, got {type(coord_dim).__name__}"
+            )
 
-        # Check value of dim
-        if dim < 1:
-            raise ValueError(f"dim must be >= 1, got {dim}")
-        if dim > max_dim:
+        # Check value of coord_dim
+        if coord_dim < 2:
+            raise ValueError(f"coord_dim must be >= 2, got {coord_dim}")
+        if coord_dim > max_coord_dim:
             raise ValueError(
-                f"{name} only implemented for dim<={max_dim}, got dim={dim}"
+                f"{name} only implemented for coord_dim<={max_coord_dim}, "
+                f"got coord_dim={coord_dim}"
             )
 
         # Error to redirect user to alternative coordinate system if necessary
-        if dim_redirections and dim in dim_redirections:
-            alt_coord_system_label = dim_redirections[dim]
+        if coord_dim_redirections and coord_dim in coord_dim_redirections:
+            alt_coord_system_label = coord_dim_redirections[coord_dim]
             alt_coord_system_name = COORD_SYSTEM_REGISTRY[
                 alt_coord_system_label
             ].metadata.name
             raise ValueError(
                 f"To enforce consistent coordinate system labelling, use "
-                f"{alt_coord_system_name} instead of {name} when using dim={dim}"
+                f"{alt_coord_system_name} instead of {name} when using "
+                f"coord_dim={coord_dim}"
             )
 
     def _validate_bounds(self) -> None:
@@ -167,18 +174,18 @@ class CoordSystem(ABC):
         """
         # Coordinate system dimensions
         self._validate_dimensions()
-        dim = self.dim
+        coord_dim = self.coord_dim
 
         # Extract metadata
         axes_bounds = np.array(self.metadata.axes_bounds)
         axes_bounds_inclusive = np.array(self.metadata.axes_bounds_inclusive)
 
         # Check that axes_bounds and axes_bounds_inclusive have correct shape
-        if (np.shape(axes_bounds) != (dim, 2)) or (
-            np.shape(axes_bounds_inclusive) != (dim, 2)
+        if (np.shape(axes_bounds) != (coord_dim, 2)) or (
+            np.shape(axes_bounds_inclusive) != (coord_dim, 2)
         ):
             raise ValueError(
-                "axes_bounds and axes_bounds_inclusive must be of shape (dim, 2)."
+                "axes_bounds and axes_bounds_inclusive must be of shape (coord_dim, 2)."
             )
 
         # Separate lower and upper bounds and their inclusivity
@@ -237,7 +244,7 @@ class CoordSystem(ABC):
         Parameters
         ----------
         coords : torch.Tensor
-            Coordinates to validate. Shape: (n_points, dim)
+            Coordinates to validate. Shape: (n_points, coord_dim)
 
         Raises
         ------
@@ -246,7 +253,7 @@ class CoordSystem(ABC):
         """
         # Coordinate system dimensions
         self._validate_dimensions()
-        dim = self.dim
+        coord_dim = self.coord_dim
 
         # Extract metadata
         axes_labels = self.metadata.axes_labels
@@ -256,7 +263,7 @@ class CoordSystem(ABC):
 
         # Validate coords tensor type and shape
         n_points = coords.shape[0]
-        validate_pytorch_tensor(coords, (n_points, dim))
+        validate_pytorch_tensor(coords, (n_points, coord_dim))
 
         # Separate lower and upper bounds and inclusivity
         lower_bounds = np.array(axes_bounds)[:, 0]
@@ -265,8 +272,8 @@ class CoordSystem(ABC):
         upper_inclusive = np.array(axes_bounds_inclusive)[:, 1]
 
         # Convert bounds to tensors, replacing None with -inf / +inf. Reshape to
-        # (1, dim) so that PyTorch will broadcast to (n_points, dim) in comparisons with
-        # coords which has shape (n_points, dim).
+        # (1, coord_dim) so that PyTorch will broadcast to (n_points, coord_dim) in
+        # comparisons with coords which has shape (n_points, coord_dim).
         lower_bounds_tensor = torch.tensor(
             [lb if lb is not None else -torch.inf for lb in lower_bounds],
             dtype=coords.dtype,
@@ -330,15 +337,15 @@ class CartesianCoords(CoordSystem):
     # Metadata as class attributes
     metadata = CoordSystemMetadata(
         name="Cartesian Coordinates",
-        axes_labels=("x", "y", "z"),
-        axes_bounds=((None, None), (None, None), (None, None)),
-        axes_bounds_inclusive=((None, None), (None, None), (None, None)),
-        max_dim=3,
-        dim_redirections=None,
+        axes_labels=("t", "x", "y", "z"),
+        axes_bounds=((None, None), (None, None), (None, None), (None, None)),
+        axes_bounds_inclusive=((None, None), (None, None), (None, None), (None, None)),
+        max_coord_dim=4,
+        coord_dim_redirections=None,
     )
 
-    def __init__(self, dim: int):
-        super().__init__(dim)
+    def __init__(self, coord_dim: int):
+        super().__init__(coord_dim)
 
     def metric_tensor(
         self, n_points: int, _coords: torch.Tensor | None = None
@@ -356,10 +363,12 @@ class CartesianCoords(CoordSystem):
          Returns
          -------
          torch.Tensor
-             Metric tensors of shape (n_points, dim, dim).
+             Metric tensors of shape (n_points, coord_dim, coord_dim).
         """
-        g = torch.eye(self.dim)
-        G = g.unsqueeze(0).repeat(n_points, 1, 1)  # Shape: (n_points, dim, dim)
+        g = torch.eye(self.coord_dim)
+        G = g.unsqueeze(0).repeat(
+            n_points, 1, 1
+        )  # Shape: (n_points, coord_dim, coord_dim)
         return G
 
 
@@ -369,15 +378,15 @@ class CylindricalCoords(CoordSystem):
     # Metadata as class attributes
     metadata = CoordSystemMetadata(
         name="Cylindrical Polar Coordinates",
-        axes_labels=("r", "theta", "z"),
-        axes_bounds=((0, None), (0, 2 * np.pi), (None, None)),
-        axes_bounds_inclusive=((True, None), (True, False), (None, None)),
-        max_dim=3,
-        dim_redirections={1: CoordSystemLabels.CARTESIAN},
+        axes_labels=("t", "r", "theta", "z"),
+        axes_bounds=((None, None), (0, None), (0, 2 * np.pi), (None, None)),
+        axes_bounds_inclusive=((None, None), (True, None), (True, False), (None, None)),
+        max_coord_dim=4,
+        coord_dim_redirections={2: CoordSystemLabels.CARTESIAN},
     )
 
-    def __init__(self, dim: int):
-        super().__init__(dim)
+    def __init__(self, coord_dim: int):
+        super().__init__(coord_dim)
 
     def metric_tensor(self, n_points: int, coords: torch.Tensor) -> torch.Tensor:
         """
@@ -388,19 +397,21 @@ class CylindricalCoords(CoordSystem):
          n_points : int
              Number of points for which to generate metric tensors.
          coords : torch.Tensor
-             Coordinates of the points. Shape: (n_points, dim).
+             Coordinates of the points. Shape: (n_points, coord_dim).
 
          Returns
          -------
          torch.Tensor
-             Metric tensors of shape (n_points, dim, dim).
+             Metric tensors of shape (n_points, coord_dim, coord_dim).
         """
         # Validate coords tensor
         self._validate_coordinates(coords)
 
-        g = torch.eye(self.dim)
-        G = g.unsqueeze(0).repeat(n_points, 1, 1)  # Shape: (n_points, dim, dim)
-        G[:, 1, 1] = coords[:, 0] ** 2  # theta theta components
+        g = torch.eye(self.coord_dim)
+        G = g.unsqueeze(0).repeat(
+            n_points, 1, 1
+        )  # Shape: (n_points, coord_dim, coord_dim)
+        G[:, 2, 2] = coords[:, 1] ** 2  # theta theta components
         return G
 
 
@@ -410,18 +421,18 @@ class SphericalCoords(CoordSystem):
     # Metadata as class attributes
     metadata = CoordSystemMetadata(
         name="Spherical Polar Coordinates",
-        axes_labels=("r", "theta", "phi"),
-        axes_bounds=((0, None), (0, np.pi), (0, 2 * np.pi)),
-        axes_bounds_inclusive=((True, None), (True, True), (True, False)),
-        max_dim=3,
-        dim_redirections={
-            1: CoordSystemLabels.CARTESIAN,
-            2: CoordSystemLabels.CYLINDRICAL,
+        axes_labels=("t", "r", "theta", "phi"),
+        axes_bounds=((None, None), (0, None), (0, np.pi), (0, 2 * np.pi)),
+        axes_bounds_inclusive=((None, None), (True, None), (True, True), (True, False)),
+        max_coord_dim=4,
+        coord_dim_redirections={
+            2: CoordSystemLabels.CARTESIAN,
+            3: CoordSystemLabels.CYLINDRICAL,
         },
     )
 
-    def __init__(self, dim: int):
-        super().__init__(dim)
+    def __init__(self, coord_dim: int):
+        super().__init__(coord_dim)
 
     def metric_tensor(self, n_points: int, coords: torch.Tensor) -> torch.Tensor:
         """
@@ -432,21 +443,23 @@ class SphericalCoords(CoordSystem):
          n_points : int
              Number of points for which to generate metric tensors.
          coords : torch.Tensor
-             Coordinates of the points. Shape: (n_points, dim).
+             Coordinates of the points. Shape: (n_points, coord_dim).
 
          Returns
          -------
          torch.Tensor
-             Metric tensors of shape (n_points, dim, dim).
+             Metric tensors of shape (n_points, coord_dim, coord_dim).
         """
         # Validate coords tensor
         self._validate_coordinates(coords)
 
-        g = torch.eye(self.dim)
-        G = g.unsqueeze(0).repeat(n_points, 1, 1)  # Shape: (n_points, dim, dim)
-        G[:, 1, 1] = coords[:, 0] ** 2  # theta theta components
-        G[:, 2, 2] = (
-            coords[:, 0] ** 2 * torch.sin(coords[:, 1]) ** 2
+        g = torch.eye(self.coord_dim)
+        G = g.unsqueeze(0).repeat(
+            n_points, 1, 1
+        )  # Shape: (n_points, coord_dim, coord_dim)
+        G[:, 2, 2] = coords[:, 1] ** 2  # theta theta components
+        G[:, 3, 3] = (
+            coords[:, 1] ** 2 * torch.sin(coords[:, 2]) ** 2
         )  # phi phi components
         return G
 
