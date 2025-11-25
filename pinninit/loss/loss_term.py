@@ -2,7 +2,7 @@ from enum import Enum
 
 import loss_function as lf
 import torch
-from loss_utils import is_residual_loss_inputs
+from loss_utils import is_loss_input_residual
 from utils import lookup_from_registry
 
 
@@ -51,7 +51,7 @@ class LossTerm:
             Loss corresponding to the specific loss term.
         """
         # Use residual value if provided. Otherwise, use f_pred and f_target.
-        if is_residual_loss_inputs(f_pred, f_target, f_residual):
+        if is_loss_input_residual(f_pred, f_target, f_residual):
             loss = self.loss_func(f_residual)
         else:
             loss = self.loss_func(f_pred, f_target)

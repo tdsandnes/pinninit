@@ -1,7 +1,7 @@
 from enum import Enum
 
 import torch
-from loss_utils import is_residual_loss_inputs
+from loss_utils import is_loss_input_residual
 
 
 class LossFunctionLabels(str, Enum):
@@ -38,7 +38,7 @@ def mse_loss(
     """
     # Use residual value if provided. Otherwise, use f_pred and f_target.
     loss: torch.Tensor
-    if is_residual_loss_inputs(f_pred, f_target, f_residual):
+    if is_loss_input_residual(f_pred, f_target, f_residual):
         assert f_residual is not None
         loss = (f_residual**2).mean()
     else:

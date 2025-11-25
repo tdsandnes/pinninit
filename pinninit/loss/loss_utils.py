@@ -1,7 +1,7 @@
 import torch
 
 
-def is_residual_loss_inputs(
+def is_loss_input_residual(
     f_pred: torch.Tensor | None = None,
     f_target: torch.Tensor | None = None,
     f_residual: torch.Tensor | None = None,
