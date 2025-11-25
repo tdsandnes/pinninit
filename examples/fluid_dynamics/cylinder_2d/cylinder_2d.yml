@@ -1,0 +1,91 @@
+Data:
+  file_path:                ./data/raissi2019_cylinder_nektar_wake.mat
+  num_train_samples:        5000
+  train_sampling_strategy:  random
+  num_val_samples:          5000
+  val_sampling_strategy:    random
+
+Collocation:
+  from_file:              0
+  # file_path:            ./collocation/### Functionality to load from file so more reproducable
+  num_collocation_points: 5000
+  collocation_strategy:   random
+
+Geometry:
+  coordinate_system:  cartesian
+  spatial_dimensions: 2
+
+Domain:
+  # boundary_conditions: periodic ###
+  bounds: # Not same as coord system bounds. Make sure to have checks in code to validate that labels match expected ones for coord system.
+    - label: t
+      min:
+      max:
+    - label: x
+      min:
+      max:
+    - label: y
+      min:
+      max:
+
+Fields:
+  input_fields:
+    - label: u
+    - label: v
+  output_fields:
+    - label: psi
+    - label: p
+  derived_fields:
+    - label: u
+      equation: grad(psi, y)
+    - label: v
+      equation: -grad(psi, x)
+
+Constants:
+  #input_consts: ### Needed for physical consts or system consts
+  #  - label:
+  learnt_consts:
+    - label: l1
+    - label: l2
+
+DataLoss:
+  terms:
+    - input_field:    u
+      loss_function:  mse
+      weight_method:  constant
+      weight_value:   1.0
+    - input_field:    v
+      loss_function:  mse
+      weight_method:  constant
+      weight_value:   1.0
+    #- label: boundary_u ### e.g. if we want to enforce boundary more strongly
+    #  input_field: u
+    #  weight_method: constant
+    #  weight_value: 2.0
+
+PhysicsLoss:
+  terms:
+    - label:          NS_u
+      equation:       grad(u, t) + l1 * (u * grad(u, x) + v * grad(u, y)) = -grad(p, x) + l2 * (grad2(u, x, x) + grad2(u, y, y))
+      loss_function:  mse
+      weight_method:  constant
+      weight_value:   1.0
+    - label:          NS_v
+      equation:       grad(v, t) + l1 * (u * grad(v, x) + v * grad(v, y)) = -grad(p, y) + l2 * (grad2(v, x, x) + grad2(v, y, y))
+      loss_function:  mse
+      weight_method:  constant
+      weight_value:   1.0
+
+Optimizer:
+  optimizer:      adam
+  learning_rate:  0.001
+
+Layers:
+  neurons:              [3, 20, 20, 20, 20, 20, 20, 20, 20, 2]
+  layer_types:          all_linear ### Here (and similar below) we want to be able to have [linear, linear, other, ...] and all_* is alias
+  activation_functions: all_tanh
+  init_weights:         all_xavier
+  init_biases:          all_zeros
+
+Training:
+  epochs: 500
