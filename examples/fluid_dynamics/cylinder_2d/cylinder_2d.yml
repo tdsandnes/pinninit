@@ -2,8 +2,6 @@ Data:
   file_path:                ./data/raissi2019_cylinder_nektar_wake.mat
   num_train_samples:        5000
   train_sampling_strategy:  random
-  num_val_samples:          5000
-  val_sampling_strategy:    random
 
 Collocation:
   from_file:              0

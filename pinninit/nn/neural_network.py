@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 from validate_data import validate_pytorch_tensor
 
+### Maybe eventually add multiple NN subclasses if we want multiple options
+
 
 class NeuralNetwork(nn.Module):  # type: ignore[misc]
     """
