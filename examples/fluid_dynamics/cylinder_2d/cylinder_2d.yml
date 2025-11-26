@@ -2,12 +2,14 @@ Data:
   file_path:                ./data/raissi2019_cylinder_nektar_wake.mat
   num_train_samples:        5000
   train_sampling_strategy:  random
+  train_sampling_seed:      12345
 
 Collocation:
-  from_file:              0
-  # file_path:            ./collocation/### Functionality to load from file so more reproducable
-  num_collocation_points: 5000
-  collocation_strategy:   random
+  from_file:                  0
+  # file_path:                ./collocation/### Functionality to load from file so more reproducable
+  num_collocation_points:     5000
+  collocation_strategy:       random
+  collocation_sampling_seed:  12345
 
 Geometry:
   coordinate_system:  cartesian

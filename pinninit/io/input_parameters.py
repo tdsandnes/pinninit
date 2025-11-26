@@ -27,11 +27,17 @@ class DataParams:
             "num_train_samples", "Data", input_params, data_type=int
         )
         # train_sampling_strategy
-        train_sampling_strategy_raw = load_compulsory(
-            "train_sampling_strategy", "Data", input_params, data_type=str
-        )
-        self.train_sampling_strategy = train_sampling_strategy_raw  ###This should be:
+        ###train_sampling_strategy_raw = load_compulsory(
+        ###    "train_sampling_strategy", "Data", input_params, data_type=str
+        ###)
+        self.train_sampling_strategy = "RANDOM"  ###This should be:
         ###get_enum_label_from_value(train_sampling_strategy_raw, ...)### Add registry
+
+        if self.train_sampling_strategy == "RANDOM":
+            # train_sampling_seed
+            self.train_sampling_seed = load_compulsory(
+                "train_sampling_seed", "Data", input_params, data_type=int
+            )
 
 
 class CollocationParams:
@@ -53,11 +59,20 @@ class CollocationParams:
                 "num_collocation_points", "Collocation", input_params, data_type=int
             )
             # collocation_strategy
-            collocation_strategy_raw = load_compulsory(
-                "collocation_strategy", "Collocation", input_params, data_type=str
-            )
-            self.collocation_strategy = collocation_strategy_raw  ###This should be:
+            ###collocation_strategy_raw = load_compulsory(
+            ###    "collocation_strategy", "Collocation", input_params, data_type=str
+            ###)
+            self.collocation_strategy = "RANDOM"  ###This should be:
             ###get_enum_label_from_value(collocation_strategy_raw, ...)### Add registry
+
+            if self.collocation_strategy == "RANDOM":
+                # collocation_sampling_seed
+                self.collocation_sampling_seed = load_compulsory(
+                    "collocation_sampling_seed",
+                    "Collocation",
+                    input_params,
+                    data_type=int,
+                )
 
         else:
             raise ValueError(
@@ -80,11 +95,13 @@ class GeometryParams:
             "spatial_dimensions", "Geometry", input_params, data_type=int
         )
         # domain_boundary_conditions
-        domain_boundary_conditions_raw = load_optional(
-            "domain_boundary_conditions", "Geometry", input_params, data_type=str
-        )  ### Add registry. Make it so that None is an option.
-        self.domain_boundary_conditions = domain_boundary_conditions_raw  ###This should
-        ### be:get_enum_label_from_value(domain_boundary_conditions_raw, ...)
+        ###domain_boundary_conditions_raw = load_optional(
+        ###    "domain_boundary_conditions", "Geometry", input_params, data_type=str
+        ###)  ### Add registry. Make it so that None is an option.
+        self.domain_boundary_conditions = (
+            None  ###domain_boundary_conditions_raw  ###This
+        )
+        ### should be:get_enum_label_from_value(domain_boundary_conditions_raw, ...)
         # domain_bounds
         self.domain_bounds = load_compulsory(
             "domain_bounds", "Geometry", input_params, data_type=dict
