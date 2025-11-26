@@ -16,7 +16,7 @@ class LayerTypeLabels(str, Enum):
     LINEAR = "linear"
 
 
-class Layer(nn.Module, ABC):  # type: ignore[misc]
+class Layer(nn.Module, ABC):
     """Base class for all layers."""
 
     def __init__(

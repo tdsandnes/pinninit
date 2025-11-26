@@ -28,3 +28,9 @@ dependencies:
   - pre-commit
   - pytest
   - ruff
+
+  # YAML support
+  - pyyaml
+
+  - pip:
+      - types-PyYAML

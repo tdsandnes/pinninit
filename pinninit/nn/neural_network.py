@@ -6,7 +6,7 @@ from validate_data import validate_pytorch_tensor
 ### Maybe eventually add multiple NN subclasses if we want multiple options
 
 
-class NeuralNetwork(nn.Module):  # type: ignore[misc]
+class NeuralNetwork(nn.Module):
     """
     Use a list of Layer instances to produce a sequential model.
     """

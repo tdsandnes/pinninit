@@ -12,10 +12,8 @@ Collocation:
 Geometry:
   coordinate_system:  cartesian
   spatial_dimensions: 2
-
-Domain:
-  # boundary_conditions: periodic ###
-  bounds: # Not same as coord system bounds. Make sure to have checks in code to validate that labels match expected ones for coord system.
+  # domain_boundary_conditions: periodic ###
+  domain_bounds: # Not same as coord system bounds. Make sure to have checks in code to validate that labels match expected ones for coord system.
     - label: t
       min:
       max:
@@ -45,6 +43,9 @@ Constants:
   learnt_consts:
     - label: l1
     - label: l2
+  #derived_consts: ### Combinations of other consts
+  #  - label:
+  #    equation:
 
 DataLoss:
   terms:
