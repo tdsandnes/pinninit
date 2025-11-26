@@ -3,7 +3,9 @@ from typing import Any
 
 import yaml
 from activation_functions import ActivationFuncLabels
+from collocation_sampler import CollocationSamplerLabels
 from coordinate_system import CoordSystemLabels
+from dataset_sampler import DataSetSamplerLabels
 from initialise_biases import BiasInitLabels
 from initialise_weights import WeightInitLabels
 from io_utils import (
@@ -22,18 +24,18 @@ class DataParams:
         self.file_path = load_compulsory(
             "file_path", "Data", input_params, data_type=str
         )
-        # num_train_samples
-        self.num_train_samples = load_compulsory(
-            "num_train_samples", "Data", input_params, data_type=int
-        )
         # train_sampling_strategy
         ###train_sampling_strategy_raw = load_compulsory(
         ###    "train_sampling_strategy", "Data", input_params, data_type=str
         ###)
-        self.train_sampling_strategy = "RANDOM"  ###This should be:
+        self.train_sampling_strategy = DataSetSamplerLabels.RANDOM  ###This should be:
         ###get_enum_label_from_value(train_sampling_strategy_raw, ...)### Add registry
 
-        if self.train_sampling_strategy == "RANDOM":
+        if self.train_sampling_strategy == DataSetSamplerLabels.RANDOM:
+            # num_train_samples
+            self.num_train_samples = load_compulsory(
+                "num_train_samples", "Data", input_params, data_type=int
+            )
             # train_sampling_seed
             self.train_sampling_seed = load_compulsory(
                 "train_sampling_seed", "Data", input_params, data_type=int
@@ -54,18 +56,20 @@ class CollocationParams:
 
             return
         elif self.from_file == 0:
-            # num_collocation_points
-            self.num_collocation_points = load_compulsory(
-                "num_collocation_points", "Collocation", input_params, data_type=int
-            )
             # collocation_strategy
             ###collocation_strategy_raw = load_compulsory(
             ###    "collocation_strategy", "Collocation", input_params, data_type=str
             ###)
-            self.collocation_strategy = "RANDOM"  ###This should be:
+            self.collocation_strategy = (
+                CollocationSamplerLabels.RANDOM
+            )  ###This should be:
             ###get_enum_label_from_value(collocation_strategy_raw, ...)### Add registry
 
-            if self.collocation_strategy == "RANDOM":
+            if self.collocation_strategy == CollocationSamplerLabels.RANDOM:
+                # num_collocation_points
+                self.num_collocation_points = load_compulsory(
+                    "num_collocation_points", "Collocation", input_params, data_type=int
+                )
                 # collocation_sampling_seed
                 self.collocation_sampling_seed = load_compulsory(
                     "collocation_sampling_seed",
@@ -98,9 +102,9 @@ class GeometryParams:
         ###domain_boundary_conditions_raw = load_optional(
         ###    "domain_boundary_conditions", "Geometry", input_params, data_type=str
         ###)  ### Add registry. Make it so that None is an option.
-        self.domain_boundary_conditions = (
-            None  ###domain_boundary_conditions_raw  ###This
-        )
+        ###self.domain_boundary_conditions = (
+        ###   BoundaryConditionLabels.NONE  ###domain_boundary_conditions_raw  ###This
+        ###)
         ### should be:get_enum_label_from_value(domain_boundary_conditions_raw, ...)
         # domain_bounds
         self.domain_bounds = load_compulsory(
