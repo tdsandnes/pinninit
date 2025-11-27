@@ -15,14 +15,14 @@ Geometry:
   coordinate_system:  cartesian
   spatial_dimensions: 2
   # domain_boundary_conditions: periodic ###
-  domain_bounds: # Not same as coord system bounds. Make sure to have checks in code to validate that labels match expected ones for coord system.
-    - label: t
+  domain: # Not same as coord system bounds. Make sure to have checks in code to validate that labels match expected ones for coord system.
+    - coordinate: t
       min:
       max:
-    - label: x
+    - coordinate: x
       min:
       max:
-    - label: y
+    - coordinate: y
       min:
       max:
 

@@ -106,9 +106,9 @@ class GeometryParams:
         ###   BoundaryConditionLabels.NONE  ###domain_boundary_conditions_raw  ###This
         ###)
         ### should be:get_enum_label_from_value(domain_boundary_conditions_raw, ...)
-        # domain_bounds
-        self.domain_bounds = load_compulsory(
-            "domain_bounds", "Geometry", input_params, data_type=dict
+        # domain
+        self.domain = load_compulsory(
+            "domain", "Geometry", input_params, data_type=dict
         )
 
 
@@ -249,7 +249,7 @@ class TrainingParams:
         self.epochs = load_compulsory("epochs", "Training", input_params, data_type=int)
 
 
-class PINNInputParameters:
+class PINNParameters:
     def __init__(self, yaml_path: str):
         if not os.path.exists(yaml_path):
             raise FileNotFoundError(f"Parameter file not found: {yaml_path}")
