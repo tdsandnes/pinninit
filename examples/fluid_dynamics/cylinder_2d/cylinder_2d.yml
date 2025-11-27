@@ -1,5 +1,5 @@
 Data:
-  file_path:                ./data/raissi2019_cylinder_nektar_wake.mat
+  file_path:                ./testing_pinns/pinninit/examples/fluid_dynamics/cylinder_2d/data/raissi2019_cylinder_nektar_wake.mat
   train_sampling_strategy:  random
   num_train_samples:        5000
   train_sampling_seed:      12345
@@ -14,21 +14,22 @@ Collocation:
 Geometry:
   coordinate_system:  cartesian
   spatial_dimensions: 2
-  coordinates: (t, x, y)
+  coordinates:
+    - t
+    - x
+    - y
   #fixed_coordinates:
   #  - coordinate: r
   #    value: 20
   # domain_boundary_conditions: periodic ###
   domain: # Not same as coord system bounds. Make sure to have checks in code to validate that labels match expected ones for coord system.
     - coordinate: t
-      min:
-      max:
     - coordinate: x
-      min:
-      max:
+      min: 1
+      max: 2
     - coordinate: y
-      min:
-      max:
+      min: 1
+      max: 2
 
 Fields:
   input_fields:

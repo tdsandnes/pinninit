@@ -260,20 +260,22 @@ class CoordSystem(ABC):
         ValueError
             If axes bounds and their inclusivity are inconsistent.
         """
-        # Coordinate system dimensions
-        self._validate_dimensions()
-        coord_dim = self.coord_dim
-
         # Extract metadata
+        max_coord_dim = self.metadata.max_coord_dim
         axes_bounds = np.array(self.metadata.axes_bounds)
         axes_bounds_inclusive = np.array(self.metadata.axes_bounds_inclusive)
 
+        # Coordinate system dimensions
+        self._validate_dimensions()
+
         # Check that axes_bounds and axes_bounds_inclusive have correct shape
-        if (np.shape(axes_bounds) != (coord_dim, 2)) or (
-            np.shape(axes_bounds_inclusive) != (coord_dim, 2)
+        if (np.shape(axes_bounds) != (max_coord_dim, 2)) or (
+            np.shape(axes_bounds_inclusive) != (max_coord_dim, 2)
         ):
             raise ValueError(
-                "axes_bounds and axes_bounds_inclusive must be of shape (coord_dim, 2)."
+                f"axes_bounds and axes_bounds_inclusive must be of shape "
+                f"({max_coord_dim}, 2), got {np.shape(axes_bounds)} and "
+                f"{np.shape(axes_bounds_inclusive)}."
             )
 
         # Separate lower and upper bounds and their inclusivity

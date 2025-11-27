@@ -78,8 +78,8 @@ def extract_domain_bounds(
         )
 
     # Contain domain within coordinate system bounds
-    domain_lb = []
-    domain_ub = []
+    domain_lb_contained = []
+    domain_ub_contained = []
     for i in range(coord_dim):
         coord = axes_labels[i]
         idx_domain = domain_coords.index(coord)
@@ -92,11 +92,11 @@ def extract_domain_bounds(
         if (coord_system_lb is not None) and (lb is None or lb < coord_system_lb):
             lb = coord_system_lb
 
-        domain_lb.append(lb)
+        domain_lb_contained.append(lb)
 
         if (coord_system_ub is not None) and (ub is None or ub > coord_system_ub):
             ub = coord_system_ub
 
-        domain_ub.append(ub)
+        domain_ub_contained.append(ub)
 
-    return domain_lb, domain_ub
+    return domain_lb_contained, domain_ub_contained

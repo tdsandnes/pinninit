@@ -103,7 +103,7 @@ class GeometryParams:
         )
         # coordinates
         self.coordinates = load_compulsory(
-            "coordinates", "Geometry", input_params, data_type=tuple[str]
+            "coordinates", "Geometry", input_params, data_type=list
         )
         # fixed_coordinates
         self.fixed_coordinates = load_optional(
@@ -119,7 +119,7 @@ class GeometryParams:
         ### should be:get_enum_label_from_value(domain_boundary_conditions_raw, ...)
         # domain
         self.domain = load_compulsory(
-            "domain", "Geometry", input_params, data_type=dict
+            "domain", "Geometry", input_params, data_type=list
         )
 
 
@@ -127,15 +127,15 @@ class FieldsParams:
     def __init__(self, input_params: dict[str, Any]):
         # input_fields
         self.input_fields = load_compulsory(
-            "input_fields", "Fields", input_params, data_type=dict
+            "input_fields", "Fields", input_params, data_type=list
         )
         # output_fields
         self.output_fields = load_compulsory(
-            "output_fields", "Fields", input_params, data_type=dict
+            "output_fields", "Fields", input_params, data_type=list
         )
         # derived_fields
         self.derived_fields = load_optional(
-            "derived_fields", "Fields", input_params, data_type=dict
+            "derived_fields", "Fields", input_params, data_type=list
         )
 
 
@@ -143,28 +143,28 @@ class ConstantsParams:
     def __init__(self, input_params: dict[str, Any]):
         # input_consts
         self.input_consts = load_optional(
-            "input_consts", "Constants", input_params, data_type=dict
+            "input_consts", "Constants", input_params, data_type=list
         )
         # learnt_consts
         self.learnt_consts = load_optional(
-            "learnt_consts", "Constants", input_params, data_type=dict
+            "learnt_consts", "Constants", input_params, data_type=list
         )
         # derived_consts
         self.derived_consts = load_optional(
-            "derived_consts", "Constants", input_params, data_type=dict
+            "derived_consts", "Constants", input_params, data_type=list
         )
 
 
 class DataLossParams:
     def __init__(self, input_params: dict[str, Any]):
         # terms
-        self.terms = load_optional("terms", "DataLoss", input_params, data_type=dict)
+        self.terms = load_optional("terms", "DataLoss", input_params, data_type=list)
 
 
 class PhysicsLossParams:
     def __init__(self, input_params: dict[str, Any]):
         # terms
-        self.terms = load_optional("terms", "PhysicsLoss", input_params, data_type=dict)
+        self.terms = load_optional("terms", "PhysicsLoss", input_params, data_type=list)
 
 
 class OptimizerParams:
@@ -198,7 +198,7 @@ class LayersParams:
     def __init__(self, input_params: dict[str, Any]):
         # neurons
         self.neurons = load_compulsory(
-            "neurons", "Layers", input_params, data_type=list[int]
+            "neurons", "Layers", input_params, data_type=list
         )
         num_layers = len(self.neurons)
 
@@ -207,7 +207,7 @@ class LayersParams:
         layer_types_raw = expand_if_alias(
             layer_types_raw,
             self.alias_layer_types,
-            data_type=list[str],
+            data_type=list,
             num_layers=num_layers,
         )
         self.layer_types = [
@@ -221,7 +221,7 @@ class LayersParams:
         activation_functions_raw = expand_if_alias(
             activation_functions_raw,
             self.alias_activation_functions_raw,
-            data_type=list[str],
+            data_type=list,
             num_layers=num_layers,
         )
         self.activation_functions = [
@@ -234,7 +234,7 @@ class LayersParams:
         init_weights_raw = expand_if_alias(
             init_weights_raw,
             self.alias_init_weights,
-            data_type=list[str],
+            data_type=list,
             num_layers=num_layers,
         )
         self.init_weights = [
@@ -246,7 +246,7 @@ class LayersParams:
         init_biases_raw = expand_if_alias(
             init_biases_raw,
             self.alias_init_biases,
-            data_type=list[str],
+            data_type=list,
             num_layers=num_layers,
         )
         self.init_biases = [

@@ -57,7 +57,7 @@ def select_coord_system_axes(
 
     # Check for duplicates
     if len(input_labels) != len(set(input_labels)):
-        raise ValueError("input_labels contains duplicates.")
+        raise ValueError(f"input_labels {input_labels} contains duplicates.")
 
     # Validate presence of all input_labels in axes_labels
     label_set = set(axes_labels)

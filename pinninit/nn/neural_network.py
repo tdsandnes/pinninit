@@ -14,6 +14,9 @@ class NeuralNetwork(nn.Module):
     Use a list of Layer instances to produce a sequential model.
     """
 
+    lb: torch.Tensor
+    ub: torch.Tensor
+
     def __init__(self, layers: list[Layer], lb: torch.Tensor, ub: torch.Tensor):
         super().__init__()
         self.layers = nn.ModuleList(layers)  # registers layers as submodules
@@ -22,8 +25,6 @@ class NeuralNetwork(nn.Module):
         nn_in_features = layers[0].in_features
         validate_pytorch_tensor(lb, (nn_in_features,))
         validate_pytorch_tensor(ub, (nn_in_features,))
-        self.lb = lb
-        self.ub = ub
 
         # Register as buffers (not trainable parameters)
         self.register_buffer("lb", lb)
