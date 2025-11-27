@@ -1,7 +1,7 @@
 from enum import Enum
 
 import numpy as np
-from input_parameters import DataParams
+from input_parameters import PINNParameters
 
 
 class DataSetSamplerLabels(str, Enum):
@@ -10,7 +10,7 @@ class DataSetSamplerLabels(str, Enum):
     RANDOM = "random"
 
 
-def random_sampler(array: np.ndarray, data_params: DataParams) -> np.ndarray:
+def random_array_sampler(array: np.ndarray, pinn_params: PINNParameters) -> np.ndarray:
     """
     Randomly sample NumPy array.
 
@@ -18,10 +18,8 @@ def random_sampler(array: np.ndarray, data_params: DataParams) -> np.ndarray:
     ----------
     array : ndarray
         array to sample. Shape (n_points, :)
-    num_samples : int
-        The number of samples to take.
-    seed : int
-        Random seed.
+    pinn_params : PINNParameters
+        PINN parameters.
 
     Returns:
     ----------
@@ -29,8 +27,8 @@ def random_sampler(array: np.ndarray, data_params: DataParams) -> np.ndarray:
         Sampled data.
     """
     # Extract DataParams
-    num_samples = data_params.num_train_samples
-    seed = data_params.train_sampling_seed
+    num_samples = pinn_params.data_params.num_train_samples
+    seed = pinn_params.data_params.train_sampling_seed
 
     # Use seed to select num_train_samples points
     rng = np.random.default_rng(seed)
@@ -40,5 +38,5 @@ def random_sampler(array: np.ndarray, data_params: DataParams) -> np.ndarray:
 
 # Mapping from data set sampler method labels to python functions
 DATA_SET_SAMPLER_REGISTRY = {
-    DataSetSamplerLabels.RANDOM: random_sampler,
+    DataSetSamplerLabels.RANDOM: random_array_sampler,
 }

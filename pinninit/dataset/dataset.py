@@ -2,16 +2,16 @@ import numpy as np
 import scipy
 import torch
 from dataset_sampler import DATA_SET_SAMPLER_REGISTRY
-from input_parameters import DataParams
+from input_parameters import PINNParameters
 from utils import execute_from_registry
 
 
 def load_dataset(
-    data_params: DataParams,
+    pinn_params: PINNParameters,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     # Extract DataParams
-    file_path = data_params.file_path
-    train_sampling_strategy = data_params.train_sampling_strategy
+    file_path = pinn_params.data_params.file_path
+    train_sampling_strategy = pinn_params.data_params.train_sampling_strategy
 
     ### THIS IS ALL TEMP. SHOULD BE LOADING STANDARDISED HDF5 FILE
     ### Should compare HDF5 headings with param labels in param file
@@ -50,16 +50,16 @@ def load_dataset(
         train_sampling_strategy,
         DATA_SET_SAMPLER_REGISTRY,
         coords_and_fields_array,
-        data_params,
+        pinn_params,
     )
 
     ### Hardcoded 3 here must come from spatial coords + 1
     coords_sampled_array = sampled_array[:, :3]
     fields_sampled_array = sampled_array[:, 3:]
 
-    coords = torch.tensor(coords_sampled_array, requires_grad=True).float()
+    input_coords = torch.tensor(coords_sampled_array, requires_grad=True).float()
     input_fields = torch.tensor(fields_sampled_array, requires_grad=True).float()
     ### Adding this here as a placeholder for overhall of this func
     input_consts = torch.tensor([])
 
-    return coords, input_fields, input_consts
+    return input_coords, input_fields, input_consts

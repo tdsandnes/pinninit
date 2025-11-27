@@ -79,6 +79,44 @@ def execute_from_registry(
         )
 
 
+def check_against_data_type(data: Any, data_type: type | None = None) -> Any:
+    """
+    Validate that input is a specified data type. Try to convert to it otherwise.
+
+    Parameters
+    ----------
+    data : Any
+        The input value to validate or convert.
+    data_type : type | None
+        The target data type. If None, no conversion is performed.
+
+    Returns:
+    ----------
+    Any
+        The original or converted value.
+
+    Raises:
+    ----------
+        ValueError: If conversion to the specified data type fails.
+    """
+    # if a data type is given, convert to that type
+    if data is not None and data_type is not None:
+        if isinstance(data, data_type):
+            return data
+        else:
+            try:
+                # Return data if it can be converted to desired data type
+                ### Proabably need something to handle e.g. list[int]
+                return data_type(data)
+            except ValueError as e:
+                raise ValueError(
+                    f"Parameter '{data}' cannot be converted to {data_type.__name__}."
+                ) from e
+    else:
+        # If no data type is not specified, just return the loaded value
+        return data
+
+
 def interval_str(
     interval: tuple[float | None, float | None],
     inclusive: tuple[bool | None, bool | None],
