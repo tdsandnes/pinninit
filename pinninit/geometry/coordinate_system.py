@@ -4,6 +4,7 @@ from enum import Enum
 
 import numpy as np
 import torch
+from geometry_utils import get_required_or_fixed_coord, select_coord_system_axes
 from utils import interval_str
 from validate_data import validate_pytorch_tensor
 
@@ -22,10 +23,13 @@ class CoordSystemMetadata:
 
     name: str
     axes_labels: tuple[str, ...]
+    required_or_fixed_axes: tuple[str, ...]
+    required_fields: tuple[str, ...]
+    required_consts: tuple[str, ...]
     axes_bounds: tuple[tuple[float | None, float | None], ...]
     axes_bounds_inclusive: tuple[tuple[bool | None, bool | None], ...]
     max_coord_dim: int
-    coord_dim_redirections: dict[int, CoordSystemLabels] | None
+    coord_redirections: dict[tuple[int, tuple[str, ...]], CoordSystemLabels] | None
 
 
 class CoordSystem(ABC):
@@ -34,7 +38,13 @@ class CoordSystem(ABC):
     # Placeholder for subclass class attributes
     metadata: CoordSystemMetadata
 
-    def __init__(self, coord_dim: int):
+    def __init__(
+        self,
+        coord_dim: int,
+        coord_axes: tuple[str],
+        fixed_axes: tuple[str] | None = None,
+        fixed_axes_values: tuple[str] | None = None,
+    ):
         self.coord_dim = coord_dim
 
         # Ensure coordinate system metadata exists and is of correct type
@@ -49,8 +59,24 @@ class CoordSystem(ABC):
                 f"'metadata' must be of type CoordSystemMetadata, got {type(metadata)}"
             )
 
+        (
+            self.axes_labels_selected,
+            self.axes_bounds_selected,
+            self.axes_bounds_inclusive_selected,
+            self.indices_selected,
+        ) = select_coord_system_axes(
+            self.metadata.axes_labels,
+            self.metadata.axes_bounds,
+            self.metadata.axes_bounds_inclusive,
+            coord_axes,
+        )
+        self.fixed_axes = fixed_axes
+        self.fixed_axes_values = fixed_axes_values
+
         # Ensure coordinate system is valid
         self._validate_dimensions()
+        self._validate_selected_axes()
+        self._validate_required_or_fixed_axes()
         self._validate_bounds()
 
     @abstractmethod
@@ -131,7 +157,6 @@ class CoordSystem(ABC):
         # Extract metadata
         name = self.metadata.name
         max_coord_dim = self.metadata.max_coord_dim
-        coord_dim_redirections = self.metadata.coord_dim_redirections
 
         # Coordinate system dimensions
         coord_dim = self.coord_dim
@@ -151,17 +176,76 @@ class CoordSystem(ABC):
                 f"got coord_dim={coord_dim}"
             )
 
+    def _validate_selected_axes(self) -> None:
+        """
+        Validate that the selected axes are compatible coordinate system.
+
+        In cases where two coord systems behave the same, we raise an error in one of
+        them to enforce consistent coordinate system labelling i.e. (t, r) cylindrical
+        polars redirects you to (t, x) Cartesian.
+
+        Raises
+        ------
+        ValueError
+            If selected axes are not compatible.
+        """
+
+        # Extract metadata
+        name = self.metadata.name
+        coord_redirections = self.metadata.coord_redirections
+
+        # Coordinate system dimensions
+        self._validate_dimensions()
+        coord_dim = self.coord_dim
+        axes_labels_selected = self.axes_labels_selected
+
         # Error to redirect user to alternative coordinate system if necessary
-        if coord_dim_redirections and coord_dim in coord_dim_redirections:
-            alt_coord_system_label = coord_dim_redirections[coord_dim]
+        if (
+            coord_redirections
+            and (coord_dim, axes_labels_selected) in coord_redirections
+        ):
+            alt_coord_system_label = coord_redirections[
+                (coord_dim, axes_labels_selected)
+            ]
             alt_coord_system_name = COORD_SYSTEM_REGISTRY[
                 alt_coord_system_label
             ].metadata.name
             raise ValueError(
                 f"To enforce consistent coordinate system labelling, use "
                 f"{alt_coord_system_name} instead of {name} when using "
-                f"coord_dim={coord_dim}"
+                f"coord_dim={coord_dim} with axes {axes_labels_selected}"
             )
+
+    def _validate_required_or_fixed_axes(self) -> None:
+        """
+        Validate axes that are required either a selected axis or a fixed value.
+
+        Raises
+        ------
+        ValueError
+            If required axes are not given.
+        """
+
+        # Extract metadata
+        required_or_fixed_axes = self.metadata.required_or_fixed_axes
+
+        # Check lengths of fixed_axes and fixed_axes_values
+        if self.fixed_axes is not None and self.fixed_axes_values is not None:
+            if len(self.fixed_axes) != len(self.fixed_axes_values):
+                raise ValueError(
+                    "fixed_axes and fixed_axes_values must be of the same length."
+                )
+        elif self.fixed_axes is not None or self.fixed_axes_values is not None:
+            raise ValueError(
+                "fixed_axes and fixed_axes_values must both be None if one is."
+            )
+
+        # Check that all required axes are given
+        for axis_label in required_or_fixed_axes:
+            if (axis_label not in self.axes_labels_selected) and (
+                self.fixed_axes is None or axis_label not in self.fixed_axes
+            ):
+                raise ValueError(f"Missing required axis: {axis_label}")
 
     def _validate_bounds(self) -> None:
         """
@@ -338,14 +422,24 @@ class CartesianCoords(CoordSystem):
     metadata = CoordSystemMetadata(
         name="Cartesian Coordinates",
         axes_labels=("t", "x", "y", "z"),
+        required_or_fixed_axes=(),
+        required_fields=(),
+        required_consts=(),
         axes_bounds=((None, None), (None, None), (None, None), (None, None)),
         axes_bounds_inclusive=((None, None), (None, None), (None, None), (None, None)),
         max_coord_dim=4,
-        coord_dim_redirections=None,
+        coord_redirections=None,
     )
 
-    def __init__(self, coord_dim: int):
-        super().__init__(coord_dim)
+    def __init__(
+        self,
+        coord_dim: int,
+        coord_axes: tuple[str],
+        fixed_axes: tuple[str] | None = None,
+        fixed_axes_values: tuple[str] | None = None,
+    ):
+        super().__init__(coord_dim, coord_axes, fixed_axes, fixed_axes_values)
+        self._cartesian_validate_selected_axes()
 
     def metric_tensor(
         self, n_points: int, _coords: torch.Tensor | None = None
@@ -365,11 +459,49 @@ class CartesianCoords(CoordSystem):
          torch.Tensor
              Metric tensors of shape (n_points, coord_dim, coord_dim).
         """
-        g = torch.eye(self.coord_dim)
+        g = torch.eye(self.metadata.max_coord_dim)
         G = g.unsqueeze(0).repeat(
             n_points, 1, 1
         )  # Shape: (n_points, coord_dim, coord_dim)
+
+        # Only use rows and columns of axes included in coords
+        mask_keep = [
+            i for i in range(self.metadata.max_coord_dim) if i in self.indices_selected
+        ]
+        G = G[:, mask_keep, mask_keep]
+
+        # Validate output
+        validate_pytorch_tensor(G, (n_points, self.coord_dim, self.coord_dim))
+
         return G
+
+    def _cartesian_validate_selected_axes(self) -> None:
+        """
+        Validate that the selected axes are compatible coordinate system.
+
+        In cases where two combinations of selected coords behave the same, we raise an
+        error in one of them to enforce consistent coordinate system labelling i.e.
+        (t, x) and (t, y).
+
+        Raises
+        ------
+        ValueError
+            If selected axes are not compatible.
+        """
+
+        # Extract metadata
+        name = self.metadata.name
+        axes_labels = self.metadata.axes_labels
+
+        # Only valid combinations
+        valid_axes = [axes_labels[: self.coord_dim]]
+
+        if self.axes_labels_selected not in valid_axes:
+            raise ValueError(
+                f"To enforce consistent coordinate system labelling, use "
+                f"axes {valid_axes} instead of {self.axes_labels_selected} "
+                f"when using {name} with coord_dim={self.coord_dim}"
+            )
 
 
 class CylindricalCoords(CoordSystem):
@@ -379,14 +511,28 @@ class CylindricalCoords(CoordSystem):
     metadata = CoordSystemMetadata(
         name="Cylindrical Polar Coordinates",
         axes_labels=("t", "r", "theta", "z"),
+        required_or_fixed_axes=("r",),
+        required_fields=(),
+        required_consts=(),
         axes_bounds=((None, None), (0, None), (0, 2 * np.pi), (None, None)),
         axes_bounds_inclusive=((None, None), (True, None), (True, False), (None, None)),
         max_coord_dim=4,
-        coord_dim_redirections={2: CoordSystemLabels.CARTESIAN},
+        coord_redirections={
+            (2, ("t", "r")): CoordSystemLabels.CARTESIAN,
+            (2, ("t", "z")): CoordSystemLabels.CARTESIAN,
+            (2, ("r", "z")): CoordSystemLabels.CARTESIAN,
+            (3, ("t", "r", "z")): CoordSystemLabels.CARTESIAN,
+        },
     )
 
-    def __init__(self, coord_dim: int):
-        super().__init__(coord_dim)
+    def __init__(
+        self,
+        coord_dim: int,
+        coord_axes: tuple[str],
+        fixed_axes: tuple[str] | None = None,
+        fixed_axes_values: tuple[str] | None = None,
+    ):
+        super().__init__(coord_dim, coord_axes, fixed_axes, fixed_axes_values)
 
     def metric_tensor(self, n_points: int, coords: torch.Tensor) -> torch.Tensor:
         """
@@ -407,12 +553,61 @@ class CylindricalCoords(CoordSystem):
         # Validate coords tensor
         self._validate_coordinates(coords)
 
-        g = torch.eye(self.coord_dim)
+        # Get quantities needed in metric tensor
+        r = get_required_or_fixed_coord(
+            "r",
+            coords,
+            self.axes_labels_selected,
+            self.fixed_axes,
+            self.fixed_axes_values,
+        )
+
+        g = torch.eye(self.metadata.max_coord_dim)
         G = g.unsqueeze(0).repeat(
             n_points, 1, 1
         )  # Shape: (n_points, coord_dim, coord_dim)
-        G[:, 2, 2] = coords[:, 1] ** 2  # theta theta components
+        G[:, 2, 2] = r  # theta theta components
+
+        # Only use rows and columns of axes included in coords
+        mask_keep = [
+            i for i in range(self.metadata.max_coord_dim) if i in self.indices_selected
+        ]
+        G = G[:, mask_keep, mask_keep]
+
+        # Validate output
+        validate_pytorch_tensor(G, (n_points, self.coord_dim, self.coord_dim))
+
         return G
+
+    def _cylindrical_validate_selected_axes(self) -> None:
+        """
+        Validate that the selected axes are compatible coordinate system.
+
+        In cases where two combinations of selected coords behave the same, we raise an
+        error in one of them to enforce consistent coordinate system labelling i.e.
+        (t, theta) and (r, theta).
+
+        Raises
+        ------
+        ValueError
+            If selected axes are not compatible.
+        """
+
+        # Extract metadata
+        name = self.metadata.name
+        axes_labels = self.metadata.axes_labels
+
+        # valid combinations
+        valid_axes = [axes_labels[: self.coord_dim]]
+        if self.coord_dim == 2:
+            valid_axes.append(("t", "theta"))
+
+        if self.axes_labels_selected not in valid_axes:
+            raise ValueError(
+                f"To enforce consistent coordinate system labelling, use "
+                f"axes {valid_axes} instead of {self.axes_labels_selected} "
+                f"when using {name} with coord_dim={self.coord_dim}"
+            )
 
 
 class SphericalCoords(CoordSystem):
@@ -422,17 +617,26 @@ class SphericalCoords(CoordSystem):
     metadata = CoordSystemMetadata(
         name="Spherical Polar Coordinates",
         axes_labels=("t", "r", "theta", "phi"),
+        required_or_fixed_axes=("r", "theta"),
+        required_fields=(),
+        required_consts=(),
         axes_bounds=((None, None), (0, None), (0, np.pi), (0, 2 * np.pi)),
         axes_bounds_inclusive=((None, None), (True, None), (True, True), (True, False)),
         max_coord_dim=4,
-        coord_dim_redirections={
-            2: CoordSystemLabels.CARTESIAN,
-            3: CoordSystemLabels.CYLINDRICAL,
+        coord_redirections={
+            (2, ("t", "r")): CoordSystemLabels.CARTESIAN,
+            (3, ("t", "r", "phi")): CoordSystemLabels.CYLINDRICAL,
         },
     )
 
-    def __init__(self, coord_dim: int):
-        super().__init__(coord_dim)
+    def __init__(
+        self,
+        coord_dim: int,
+        coord_axes: tuple[str],
+        fixed_axes: tuple[str] | None = None,
+        fixed_axes_values: tuple[str] | None = None,
+    ):
+        super().__init__(coord_dim, coord_axes, fixed_axes, fixed_axes_values)
 
     def metric_tensor(self, n_points: int, coords: torch.Tensor) -> torch.Tensor:
         """
@@ -453,15 +657,72 @@ class SphericalCoords(CoordSystem):
         # Validate coords tensor
         self._validate_coordinates(coords)
 
-        g = torch.eye(self.coord_dim)
+        # Get quantities needed in metric tensor
+        r = get_required_or_fixed_coord(
+            "r",
+            coords,
+            self.axes_labels_selected,
+            self.fixed_axes,
+            self.fixed_axes_values,
+        )
+        theta = get_required_or_fixed_coord(
+            "theta",
+            coords,
+            self.axes_labels_selected,
+            self.fixed_axes,
+            self.fixed_axes_values,
+        )
+
+        g = torch.eye(self.metadata.max_coord_dim)
         G = g.unsqueeze(0).repeat(
             n_points, 1, 1
         )  # Shape: (n_points, coord_dim, coord_dim)
-        G[:, 2, 2] = coords[:, 1] ** 2  # theta theta components
-        G[:, 3, 3] = (
-            coords[:, 1] ** 2 * torch.sin(coords[:, 2]) ** 2
-        )  # phi phi components
+        G[:, 2, 2] = r**2  # theta theta components
+        G[:, 3, 3] = r**2 * torch.sin(theta) ** 2  # phi phi components
+
+        # Only use rows and columns of axes included in coords
+        mask_keep = [
+            i for i in range(self.metadata.max_coord_dim) if i in self.indices_selected
+        ]
+        G = G[:, mask_keep, mask_keep]
+
+        # Validate output
+        validate_pytorch_tensor(G, (n_points, self.coord_dim, self.coord_dim))
+
         return G
+
+    def _spherical_validate_selected_axes(self) -> None:
+        """
+        Validate that the selected axes are compatible coordinate system.
+
+        In cases where two combinations of selected coords behave the same, we raise an
+        error in one of them to enforce consistent coordinate system labelling i.e.
+        (t, theta) and (r, theta).
+
+        Raises
+        ------
+        ValueError
+            If selected axes are not compatible.
+        """
+
+        # Extract metadata
+        name = self.metadata.name
+        axes_labels = self.metadata.axes_labels
+
+        # valid combinations
+        valid_axes = [axes_labels[: self.coord_dim]]
+        if self.coord_dim == 2:
+            valid_axes.append(("t", "theta"))
+            valid_axes.append(("t", "phi"))
+        elif self.coord_dim == 3:
+            valid_axes.append(("t", "theta", "phi"))
+
+        if self.axes_labels_selected not in valid_axes:
+            raise ValueError(
+                f"To enforce consistent coordinate system labelling, use "
+                f"axes {valid_axes} instead of {self.axes_labels_selected} "
+                f"when using {name} with coord_dim={self.coord_dim}"
+            )
 
 
 # Mapping from coordinate system labels to classes

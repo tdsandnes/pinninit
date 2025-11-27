@@ -98,6 +98,10 @@ class GeometryParams:
         self.spatial_dimensions = load_compulsory(
             "spatial_dimensions", "Geometry", input_params, data_type=int
         )
+        # coordinates
+        self.coordinates = load_compulsory(
+            "coordinates", "Geometry", input_params, data_type=tuple[str]
+        )
         # domain_boundary_conditions
         ###domain_boundary_conditions_raw = load_optional(
         ###    "domain_boundary_conditions", "Geometry", input_params, data_type=str
