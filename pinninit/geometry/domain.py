@@ -1,6 +1,12 @@
-from coordinate_system import CoordSystem
-from input_parameters import PINNParameters
-from utils import check_against_data_type
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from ..utils import check_against_data_type
+
+if TYPE_CHECKING:
+    from ..io.input_parameters import PINNParameters
+    from .coordinate_system import CoordSystem
 
 
 def extract_domain_bounds(

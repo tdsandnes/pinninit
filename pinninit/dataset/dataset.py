@@ -1,9 +1,16 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import numpy as np
 import scipy
 import torch
-from dataset_sampler import DATA_SET_SAMPLER_REGISTRY
-from input_parameters import PINNParameters
-from utils import execute_from_registry
+
+from ..utils import execute_from_registry
+from .dataset_sampler import DATA_SET_SAMPLER_REGISTRY
+
+if TYPE_CHECKING:
+    from ..io.input_parameters import PINNParameters
 
 
 def load_dataset(

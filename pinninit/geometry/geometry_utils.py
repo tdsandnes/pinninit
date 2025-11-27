@@ -1,16 +1,18 @@
+from __future__ import annotations
+
 import torch
 
 
 def select_coord_system_axes(
-    axes_labels: tuple[str],
-    axes_bounds: tuple[float | None],
-    axes_bounds_inclusive: tuple[float | None],
+    axes_labels: tuple[str, ...],
+    axes_bounds: tuple[tuple[float | None, float | None], ...],
+    axes_bounds_inclusive: tuple[tuple[bool | None, bool | None], ...],
     input_labels: tuple[str],
 ) -> tuple[
     tuple[str, ...],
-    tuple[float | None, ...],
-    tuple[float | None, ...],
-    tuple[int | None, ...],
+    tuple[tuple[float | None, float | None], ...],
+    tuple[tuple[bool | None, bool | None], ...],
+    tuple[int, ...],
 ]:
     """
     Select a subset of axis labels and their corresponding bounds input labels.
@@ -32,9 +34,9 @@ def select_coord_system_axes(
         A tuple containing:
         - axes_labels_selected : tuple of str
             Selected labels in the order they appear in axes_labels.
-        - axes_bounds_selected : tuple of float or None
+        - axes_bounds_selected : tuple of tuples of float or None
             Bounds corresponding to axes_labels_selected.
-        - axes_bounds_inclusive_selected : tuple of float or None
+        - axes_bounds_inclusive_selected : tuple of tuples of bool or None
             Inclusive conditions corresponding to axes_labels_selected.
         - indices_selected : tuple of int
             The indices of elements in axes_labels also in input_labels.
@@ -84,15 +86,19 @@ def select_coord_system_axes(
 def get_required_or_fixed_coord(
     axis_label: str,
     coords: torch.Tensor,
-    axes_labels_selected: tuple[str],
-    fixed_axes: tuple[str],
-    fixed_axes_values: tuple[float],
-) -> torch.Tensor | float:
+    axes_labels_selected: tuple[str, ...],
+    fixed_axes: tuple[str, ...] | None,
+    fixed_axes_values: tuple[float, ...] | None,
+) -> torch.Tensor:
     if axis_label in axes_labels_selected:
         idx = axes_labels_selected.index(axis_label)
         return coords[:, idx]
-    elif axis_label in fixed_axes:
+    elif (
+        fixed_axes is not None
+        and fixed_axes_values is not None
+        and axis_label in fixed_axes
+    ):
         idx = fixed_axes.index(axis_label)
-        return fixed_axes_values[idx]
+        return torch.tensor(fixed_axes_values[idx]).float()
     else:
         raise ValueError(f"Missing required axis: {axis_label}")

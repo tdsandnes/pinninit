@@ -1,7 +1,10 @@
-import layers as lr
+from __future__ import annotations
+
 import torch
 import torch.nn as nn
-from validate_data import validate_pytorch_tensor
+
+from ..checks.validate_data import validate_pytorch_tensor
+from .layers import Layer
 
 ### Maybe eventually add multiple NN subclasses if we want multiple options
 
@@ -11,7 +14,7 @@ class NeuralNetwork(nn.Module):
     Use a list of Layer instances to produce a sequential model.
     """
 
-    def __init__(self, layers: list[lr.Layer], lb: torch.Tensor, ub: torch.Tensor):
+    def __init__(self, layers: list[Layer], lb: torch.Tensor, ub: torch.Tensor):
         super().__init__()
         self.layers = nn.ModuleList(layers)  # registers layers as submodules
 

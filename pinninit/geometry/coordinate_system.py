@@ -1,12 +1,15 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 
 import numpy as np
 import torch
-from geometry_utils import get_required_or_fixed_coord, select_coord_system_axes
-from utils import interval_str
-from validate_data import validate_pytorch_tensor
+
+from ..checks.validate_data import validate_pytorch_tensor
+from ..utils import interval_str
+from .geometry_utils import get_required_or_fixed_coord, select_coord_system_axes
 
 
 class CoordSystemLabels(str, Enum):
@@ -43,7 +46,7 @@ class CoordSystem(ABC):
         coord_dim: int,
         coord_axes: tuple[str],
         fixed_axes: tuple[str] | None = None,
-        fixed_axes_values: tuple[str] | None = None,
+        fixed_axes_values: tuple[float] | None = None,
     ):
         self.coord_dim = coord_dim
 
@@ -117,6 +120,7 @@ class CoordSystem(ABC):
             coords,
             grad_outputs=torch.ones_like(f),
             create_graph=True,
+            retain_graph=True,
             allow_unused=True,  # If not a function of a coord, gives 0 rather than None
         )[0]
 
@@ -436,7 +440,7 @@ class CartesianCoords(CoordSystem):
         coord_dim: int,
         coord_axes: tuple[str],
         fixed_axes: tuple[str] | None = None,
-        fixed_axes_values: tuple[str] | None = None,
+        fixed_axes_values: tuple[float] | None = None,
     ):
         super().__init__(coord_dim, coord_axes, fixed_axes, fixed_axes_values)
         self._cartesian_validate_selected_axes()
@@ -530,7 +534,7 @@ class CylindricalCoords(CoordSystem):
         coord_dim: int,
         coord_axes: tuple[str],
         fixed_axes: tuple[str] | None = None,
-        fixed_axes_values: tuple[str] | None = None,
+        fixed_axes_values: tuple[float] | None = None,
     ):
         super().__init__(coord_dim, coord_axes, fixed_axes, fixed_axes_values)
 
@@ -634,7 +638,7 @@ class SphericalCoords(CoordSystem):
         coord_dim: int,
         coord_axes: tuple[str],
         fixed_axes: tuple[str] | None = None,
-        fixed_axes_values: tuple[str] | None = None,
+        fixed_axes_values: tuple[float] | None = None,
     ):
         super().__init__(coord_dim, coord_axes, fixed_axes, fixed_axes_values)
 

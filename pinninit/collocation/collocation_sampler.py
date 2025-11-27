@@ -1,12 +1,17 @@
+from __future__ import annotations
+
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import torch
-from coordinate_system import CoordSystem
-from input_parameters import PINNParameters
+
+if TYPE_CHECKING:
+    from ..geometry.coordinate_system import CoordSystem
+    from ..io.input_parameters import PINNParameters
 
 
-class DataSetSamplerLabels(str, Enum):
-    """Enumeration of data set sampler method labels."""
+class CollocationSamplerLabels(str, Enum):
+    """Enumeration of collocation point sampler method labels."""
 
     RANDOM = "random"
 
@@ -37,8 +42,8 @@ def random_domain_sampler(
         Sampled data. Shape (n_points, coord_dim)
     """
     # Extract params
-    num_samples = pinn_params.collocation_params.num_train_samples
-    seed = pinn_params.collocation_params.train_sampling_seed
+    num_samples = pinn_params.collocation_params.num_collocation_points
+    seed = pinn_params.collocation_params.collocation_sampling_seed
     coord_dim = coord_system.coord_dim
 
     # Set seed
@@ -54,6 +59,6 @@ def random_domain_sampler(
 
 
 # Mapping from data set sampler method labels to python functions
-DATA_SET_SAMPLER_REGISTRY = {
-    DataSetSamplerLabels.RANDOM: random_domain_sampler,
+COLLOCATION_SAMPLER_REGISTRY = {
+    CollocationSamplerLabels.RANDOM: random_domain_sampler,
 }

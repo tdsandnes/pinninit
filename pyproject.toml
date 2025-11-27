@@ -14,4 +14,5 @@ ignore = []
 [tool.mypy]
 python_version = 3.11
 ignore_missing_imports = true
+implicit_reexport = true
 strict = true

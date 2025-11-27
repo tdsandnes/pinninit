@@ -1,21 +1,24 @@
+from __future__ import annotations
+
 import os
 from typing import Any
 
 import yaml
-from activation_functions import ActivationFuncLabels
-from collocation_sampler import CollocationSamplerLabels
-from coordinate_system import CoordSystemLabels
-from dataset_sampler import DataSetSamplerLabels
-from initialise_biases import BiasInitLabels
-from initialise_weights import WeightInitLabels
-from io_utils import (
+
+from ..collocation.collocation_sampler import CollocationSamplerLabels
+from ..dataset.dataset_sampler import DataSetSamplerLabels
+from ..geometry.coordinate_system import CoordSystemLabels
+from ..nn.activation_function import ActivationFuncLabels
+from ..nn.initialise_biases import BiasInitLabels
+from ..nn.initialise_weights import WeightInitLabels
+from ..nn.layers import LayerTypeLabels
+from ..optimizer.optimizer import OptimizerLabels
+from .io_utils import (
     expand_if_alias,
     get_enum_label_from_value,
     load_compulsory,
     load_optional,
 )
-from layers import LayerTypeLabels
-from optimizer import OptimizerLabels
 
 
 class DataParams:
@@ -101,6 +104,10 @@ class GeometryParams:
         # coordinates
         self.coordinates = load_compulsory(
             "coordinates", "Geometry", input_params, data_type=tuple[str]
+        )
+        # fixed_coordinates
+        self.fixed_coordinates = load_optional(
+            "fixed_coordinates", "Geometry", input_params, data_type=dict
         )
         # domain_boundary_conditions
         ###domain_boundary_conditions_raw = load_optional(

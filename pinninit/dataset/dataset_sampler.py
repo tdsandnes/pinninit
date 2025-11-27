@@ -1,7 +1,12 @@
+from __future__ import annotations
+
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import numpy as np
-from input_parameters import PINNParameters
+
+if TYPE_CHECKING:
+    from ..io.input_parameters import PINNParameters
 
 
 class DataSetSamplerLabels(str, Enum):

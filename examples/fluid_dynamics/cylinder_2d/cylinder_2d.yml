@@ -15,21 +15,18 @@ Geometry:
   coordinate_system:  cartesian
   spatial_dimensions: 2
   coordinates: (t, x, y)
+  #fixed_coordinates:
+  #  - coordinate: r
+  #    value: 20
   # domain_boundary_conditions: periodic ###
   domain: # Not same as coord system bounds. Make sure to have checks in code to validate that labels match expected ones for coord system.
     - coordinate: t
-      is_fixed: 0
-      # fixed_value:
       min:
       max:
     - coordinate: x
-      is_fixed: 0
-      # fixed_value:
       min:
       max:
     - coordinate: y
-      is_fixed: 0
-      # fixed_value:
       min:
       max:
 
@@ -89,7 +86,7 @@ Optimizer:
   learning_rate:  0.001
 
 Layers:
-  neurons:              [3, 20, 20, 20, 20, 20, 20, 20, 20, 2]
+  neurons:              [20, 20, 20, 20, 20, 20, 20, 20]
   layer_types:          all_linear ### Here (and similar below) we want to be able to have [linear, linear, other, ...] and all_* is alias
   activation_functions: all_tanh
   init_weights:         all_xavier

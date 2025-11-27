@@ -1,13 +1,22 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from enum import Enum
+from typing import TYPE_CHECKING
 
-import activation_function as af
-import bias_init as bi
 import torch
 import torch.nn as nn
-import weight_init as wi
-from utils import execute_from_registry, lookup_from_registry
-from validate_data import validate_pytorch_tensor
+
+from ..checks.validate_data import validate_pytorch_tensor
+from ..utils import execute_from_registry, lookup_from_registry
+from .activation_function import ACTIVATION_FUNC_REGISTRY
+from .initialise_biases import BIAS_INIT_REGISTRY
+from .initialise_weights import WEIGHT_INIT_REGISTRY
+
+if TYPE_CHECKING:
+    from .activation_function import ActivationFuncLabels
+    from .initialise_biases import BiasInitLabels
+    from .initialise_weights import WeightInitLabels
 
 
 class LayerTypeLabels(str, Enum):
@@ -23,9 +32,9 @@ class Layer(nn.Module, ABC):
         self,
         in_features: int,
         out_features: int,
-        activation_func_label: af.ActivationFuncLabels,
-        weight_init_label: wi.WeightInitLabels,
-        bias_init_label: wi.BiasInitLabels,
+        activation_func_label: ActivationFuncLabels,
+        weight_init_label: WeightInitLabels,
+        bias_init_label: BiasInitLabels,
     ):
         super().__init__()
         self.activation_func_label = activation_func_label
@@ -35,15 +44,15 @@ class Layer(nn.Module, ABC):
 
         # Look up activation function in registry
         self.activation_func = lookup_from_registry(
-            activation_func_label, af.ACTIVATION_FUNC_REGISTRY
+            activation_func_label, ACTIVATION_FUNC_REGISTRY
         )
 
         # Define weights and biases as trainable parameters
         weights = execute_from_registry(
-            weight_init_label, wi.WEIGHT_INIT_REGISTRY, in_features, out_features
+            weight_init_label, WEIGHT_INIT_REGISTRY, in_features, out_features
         )
         biases = execute_from_registry(
-            bias_init_label, bi.BIAS_INIT_REGISTRY, out_features
+            bias_init_label, BIAS_INIT_REGISTRY, out_features
         )
         validate_pytorch_tensor(weights, (in_features, out_features))
         validate_pytorch_tensor(biases, (out_features,))
@@ -65,9 +74,9 @@ class LinearLayer(Layer):
         self,
         in_features: int,
         out_features: int,
-        activation_func_label: af.ActivationFuncLabels,
-        weight_init_label: wi.WeightInitLabels,
-        bias_init_label: wi.BiasInitLabels,
+        activation_func_label: ActivationFuncLabels,
+        weight_init_label: WeightInitLabels,
+        bias_init_label: BiasInitLabels,
     ):
         super().__init__(
             in_features,

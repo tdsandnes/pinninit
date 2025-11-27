@@ -17,3 +17,4 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies: [types-PyYAML, torch]
+        args: ["--namespace-packages"]

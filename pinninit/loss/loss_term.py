@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 from enum import Enum
 
-import loss_function as lf
 import torch
-from loss_utils import is_loss_input_residual
-from utils import lookup_from_registry
+
+from ..utils import lookup_from_registry
+from .loss_function import LOSS_FUNCTION_REGISTRY, LossFunctionLabels
+from .loss_utils import is_loss_input_residual
 
 
 class LossTermLabels(str, Enum):
@@ -16,11 +19,11 @@ class LossTermLabels(str, Enum):
 class LossTerm:
     """Base class for loss terms"""
 
-    def __init__(self, loss_function_label: lf.LossFunctionLabels):
+    def __init__(self, loss_function_label: LossFunctionLabels):
         self.loss_function_label = loss_function_label
         # Look up the loss function in registry
         self.loss_func = lookup_from_registry(
-            loss_function_label, lf.LOSS_FUNCTION_REGISTRY
+            loss_function_label, LOSS_FUNCTION_REGISTRY
         )
 
     def compute_loss(
@@ -103,7 +106,7 @@ class LossTerm:
 class DataLoss(LossTerm):
     """Data loss term"""
 
-    def __init__(self, loss_function_label: lf.LossFunctionLabels):
+    def __init__(self, loss_function_label: LossFunctionLabels):
         super().__init__(loss_function_label)
 
     def compute_predicted_value(self, coords: torch.Tensor, net: None) -> torch.Tensor:
@@ -137,7 +140,7 @@ class DataLoss(LossTerm):
 class PhysicsLoss(LossTerm):
     """Physics loss term"""
 
-    def __init__(self, loss_function_label: lf.LossFunctionLabels):
+    def __init__(self, loss_function_label: LossFunctionLabels):
         super().__init__(loss_function_label)
 
     def compute_predicted_value(self, coords: torch.Tensor, net: None) -> torch.Tensor:

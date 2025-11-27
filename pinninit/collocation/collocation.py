@@ -1,8 +1,15 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import torch
-from coordinate_system import CoordSystem
-from dataset_sampler import DATA_SET_SAMPLER_REGISTRY
-from input_parameters import PINNParameters
-from utils import execute_from_registry
+
+from ..utils import execute_from_registry
+from .collocation_sampler import COLLOCATION_SAMPLER_REGISTRY
+
+if TYPE_CHECKING:
+    from ..geometry.coordinate_system import CoordSystem
+    from ..io.input_parameters import PINNParameters
 
 
 def load_collocation(
@@ -24,7 +31,7 @@ def load_collocation(
 
     collocation_coords = execute_from_registry(
         collocation_strategy,
-        DATA_SET_SAMPLER_REGISTRY,
+        COLLOCATION_SAMPLER_REGISTRY,
         coord_system,
         lb,
         ub,

@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 from enum import Enum
 
 import torch
-from loss_utils import is_loss_input_residual
+
+from .loss_utils import is_loss_input_residual
 
 
 class LossFunctionLabels(str, Enum):
