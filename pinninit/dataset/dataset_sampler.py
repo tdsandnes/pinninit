@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from ..io.input_parameters import PINNParameters
 
 
@@ -42,6 +44,8 @@ def random_array_sampler(array: np.ndarray, pinn_params: PINNParameters) -> np.n
 
 
 # Mapping from data set sampler method labels to python functions
-DATA_SET_SAMPLER_REGISTRY = {
+DATA_SET_SAMPLER_REGISTRY: dict[
+    DataSetSamplerLabels, Callable[[np.ndarray, PINNParameters], np.ndarray]
+] = {
     DataSetSamplerLabels.RANDOM: random_array_sampler,
 }

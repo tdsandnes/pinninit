@@ -3,13 +3,18 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 
 from ..checks.validate_data import validate_pytorch_tensor
+from ..misc import lookup_from_registry
 from ..utils import interval_str
 from .geometry_utils import get_required_or_fixed_coord, select_coord_system_axes
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class CoordSystemLabels(str, Enum):
@@ -83,11 +88,15 @@ class CoordSystem(ABC):
         self._validate_bounds()
 
     @abstractmethod
-    def metric_tensor(self, n_points: int, coords: torch.Tensor) -> torch.Tensor:
+    def metric_tensor(
+        self, n_points: int, coords: torch.Tensor, device: torch.device | None = None
+    ) -> torch.Tensor:
         """Subclasses must implement this method to return the metric tensor(s)."""
         pass
 
-    def grad(self, f: torch.Tensor, coords: torch.Tensor) -> torch.Tensor:
+    def grad(
+        self, f: torch.Tensor, coords: torch.Tensor, device: torch.device | None = None
+    ) -> torch.Tensor:
         """
         Compute the gradient of a function in a given coordinate system.
 
@@ -130,7 +139,7 @@ class CoordSystem(ABC):
 
         # Tensor of metric tensors for each point
         G = self.metric_tensor(
-            n_points, coords
+            n_points, coords, device
         )  # Shape: (n_points, coord_dim, coord_dim)
         validate_pytorch_tensor(G, (n_points, coord_dim, coord_dim))
 
@@ -211,9 +220,9 @@ class CoordSystem(ABC):
             alt_coord_system_label = coord_redirections[
                 (coord_dim, axes_labels_selected)
             ]
-            alt_coord_system_name = COORD_SYSTEM_REGISTRY[
-                alt_coord_system_label
-            ].metadata.name
+            alt_coord_system_name = lookup_from_registry(
+                alt_coord_system_label, COORD_SYSTEM_REGISTRY
+            ).metadata.name
             raise ValueError(
                 f"To enforce consistent coordinate system labelling, use "
                 f"{alt_coord_system_name} instead of {name} when using "
@@ -448,7 +457,10 @@ class CartesianCoords(CoordSystem):
         self._cartesian_validate_selected_axes()
 
     def metric_tensor(
-        self, n_points: int, _coords: torch.Tensor | None = None
+        self,
+        n_points: int,
+        _coords: torch.Tensor | None = None,
+        device: torch.device | None = None,
     ) -> torch.Tensor:
         """
          Return the metric tensor(s) for Cartesian coordinates.
@@ -465,7 +477,7 @@ class CartesianCoords(CoordSystem):
          torch.Tensor
              Metric tensors of shape (n_points, coord_dim, coord_dim).
         """
-        g = torch.eye(self.metadata.max_coord_dim)
+        g = torch.eye(self.metadata.max_coord_dim).to(device)
         G = g.unsqueeze(0).repeat(
             n_points, 1, 1
         )  # Shape: (n_points, coord_dim, coord_dim)
@@ -474,7 +486,7 @@ class CartesianCoords(CoordSystem):
         mask_keep = [
             i for i in range(self.metadata.max_coord_dim) if i in self.indices_selected
         ]
-        G = G[:, mask_keep, mask_keep]
+        G = G[:, mask_keep, :][:, :, mask_keep]
 
         # Validate output
         validate_pytorch_tensor(G, (n_points, self.coord_dim, self.coord_dim))
@@ -540,7 +552,9 @@ class CylindricalCoords(CoordSystem):
     ):
         super().__init__(coord_dim, coord_axes, fixed_axes, fixed_axes_values)
 
-    def metric_tensor(self, n_points: int, coords: torch.Tensor) -> torch.Tensor:
+    def metric_tensor(
+        self, n_points: int, coords: torch.Tensor, device: torch.device | None = None
+    ) -> torch.Tensor:
         """
          Return the metric tensor(s) for cylindrical polar coordinates.
 
@@ -568,7 +582,7 @@ class CylindricalCoords(CoordSystem):
             self.fixed_axes_values,
         )
 
-        g = torch.eye(self.metadata.max_coord_dim)
+        g = torch.eye(self.metadata.max_coord_dim).to(device)
         G = g.unsqueeze(0).repeat(
             n_points, 1, 1
         )  # Shape: (n_points, coord_dim, coord_dim)
@@ -644,7 +658,9 @@ class SphericalCoords(CoordSystem):
     ):
         super().__init__(coord_dim, coord_axes, fixed_axes, fixed_axes_values)
 
-    def metric_tensor(self, n_points: int, coords: torch.Tensor) -> torch.Tensor:
+    def metric_tensor(
+        self, n_points: int, coords: torch.Tensor, device: torch.device | None = None
+    ) -> torch.Tensor:
         """
          Return the metric tensor(s) for spherical polar coordinates.
 
@@ -679,7 +695,7 @@ class SphericalCoords(CoordSystem):
             self.fixed_axes_values,
         )
 
-        g = torch.eye(self.metadata.max_coord_dim)
+        g = torch.eye(self.metadata.max_coord_dim).to(device)
         G = g.unsqueeze(0).repeat(
             n_points, 1, 1
         )  # Shape: (n_points, coord_dim, coord_dim)
@@ -732,7 +748,9 @@ class SphericalCoords(CoordSystem):
 
 
 # Mapping from coordinate system labels to classes
-COORD_SYSTEM_REGISTRY = {
+COORD_SYSTEM_REGISTRY: dict[
+    CoordSystemLabels, Callable[..., CoordSystem] | type[CoordSystem]
+] = {
     CoordSystemLabels.CARTESIAN: CartesianCoords,
     CoordSystemLabels.CYLINDRICAL: CylindricalCoords,
     CoordSystemLabels.SPHERICAL: SphericalCoords,

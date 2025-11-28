@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 def load_dataset(
-    pinn_params: PINNParameters,
+    pinn_params: PINNParameters, device: torch.device
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     # Extract DataParams
     file_path = pinn_params.data_params.file_path
@@ -64,9 +64,13 @@ def load_dataset(
     coords_sampled_array = sampled_array[:, :3]
     fields_sampled_array = sampled_array[:, 3:]
 
-    input_coords = torch.tensor(coords_sampled_array, requires_grad=True).float()
-    input_fields = torch.tensor(fields_sampled_array, requires_grad=True).float()
+    input_coords = (
+        torch.tensor(coords_sampled_array, requires_grad=True).float().to(device)
+    )
+    input_fields = (
+        torch.tensor(fields_sampled_array, requires_grad=True).float().to(device)
+    )
     ### Adding this here as a placeholder for overhall of this func
-    input_consts = torch.tensor([])
+    input_consts = torch.tensor([]).to(device)
 
     return input_coords, input_fields, input_consts

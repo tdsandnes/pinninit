@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from enum import Enum
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import torch
 import torch.optim as optim
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class OptimizerLabels(str, Enum):
@@ -47,6 +50,8 @@ class AdamOptimizer(Optimizer):
 
 
 # Mapping from optimizer labels to classes
-OPTIMIZER_REGISTRY = {
+OPTIMIZER_REGISTRY: dict[
+    OptimizerLabels, Callable[..., Optimizer] | type[Optimizer]
+] = {
     OptimizerLabels.ADAM: AdamOptimizer,
 }

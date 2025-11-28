@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import torch
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class BiasInitLabels(str, Enum):
@@ -29,6 +33,6 @@ def zeros_bias_init(out_features: int) -> torch.Tensor:
 
 
 # Mapping from bias initialisation method labels to python functions
-BIAS_INIT_REGISTRY = {
+BIAS_INIT_REGISTRY: dict[BiasInitLabels, Callable[[int], torch.Tensor]] = {
     BiasInitLabels.ZEROS: zeros_bias_init,
 }

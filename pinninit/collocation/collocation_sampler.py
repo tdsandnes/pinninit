@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 import torch
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from ..geometry.coordinate_system import CoordSystem
     from ..io.input_parameters import PINNParameters
 
@@ -21,6 +23,7 @@ def random_domain_sampler(
     lb: torch.Tensor,
     ub: torch.Tensor,
     pinn_params: PINNParameters,
+    device: torch.device,
 ) -> torch.Tensor:
     """
     Randomly sample coordinate domain.
@@ -51,7 +54,7 @@ def random_domain_sampler(
 
     # Sample uniformly in [lb, ub] for each dimension
     # torch.rand(num_samples, coord_dim) gives values in [0, 1]
-    collocation_coords = lb + (ub - lb) * torch.rand(num_samples, coord_dim)
+    collocation_coords = lb + (ub - lb) * torch.rand(num_samples, coord_dim).to(device)
 
     ### Currently this is uniform in coordinate space
 
@@ -59,6 +62,12 @@ def random_domain_sampler(
 
 
 # Mapping from data set sampler method labels to python functions
-COLLOCATION_SAMPLER_REGISTRY = {
+COLLOCATION_SAMPLER_REGISTRY: dict[
+    CollocationSamplerLabels,
+    Callable[
+        [CoordSystem, torch.Tensor, torch.Tensor, PINNParameters, torch.device],
+        torch.Tensor,
+    ],
+] = {
     CollocationSamplerLabels.RANDOM: random_domain_sampler,
 }

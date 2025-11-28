@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING
 
 from ..utils import check_against_data_type
+
+if TYPE_CHECKING:
+    from typing import Any
 
 
 def load_compulsory(

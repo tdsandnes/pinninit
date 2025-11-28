@@ -1,16 +1,22 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from enum import Enum
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
-# Generic type for Enum
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+
+# Type variables for generics:
+# EnumType: represents any Enum type used as a key in the registry
+# R: represents the return type of the function or class in registry
 EnumType = TypeVar("EnumType", bound=Enum)
+R = TypeVar("R")
 
 
 def lookup_from_registry(
-    label: EnumType, registry: dict[EnumType, Callable[..., Any]]
-) -> Any:
+    label: EnumType, registry: dict[EnumType, Callable[..., R] | type[R]]
+) -> Callable[..., R] | type[R]:
     """
     Generic function to look up a class or function from a registry.
 
@@ -44,10 +50,10 @@ def lookup_from_registry(
 
 def execute_from_registry(
     label: EnumType,
-    registry: dict[EnumType, Callable[..., Any]],
+    registry: dict[EnumType, Callable[..., R] | type[R]],
     *args: Any,
     **kwargs: Any,
-) -> Any:
+) -> R:
     """
     Generic function to create an object or call a function from a registry.
 

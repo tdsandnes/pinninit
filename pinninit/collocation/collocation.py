@@ -17,6 +17,7 @@ def load_collocation(
     lb: torch.Tensor,
     ub: torch.Tensor,
     pinn_params: PINNParameters,
+    device: torch.device,
 ) -> torch.Tensor:
     # Extract DataParams
     ###from_file = pinn_params.collocation_params.from_file
@@ -36,10 +37,11 @@ def load_collocation(
         lb,
         ub,
         pinn_params,
+        device,
     )
 
-    collocation_coords_tensor: torch.Tensor = torch.tensor(
-        collocation_coords, requires_grad=True
-    ).float()
+    collocation_coords_tensor: torch.Tensor = (
+        torch.tensor(collocation_coords, requires_grad=True).float().to(device)
+    )
 
     return collocation_coords_tensor

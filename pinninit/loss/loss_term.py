@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import torch
 
 from ..utils import lookup_from_registry
 from .loss_function import LOSS_FUNCTION_REGISTRY, LossFunctionLabels
 from .loss_utils import is_loss_input_residual
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class LossTermLabels(str, Enum):
@@ -160,7 +164,7 @@ class PhysicsLoss(LossTerm):
 
 
 # Mapping from loss term labels to classes
-LOSS_TERM_REGISTRY = {
+LOSS_TERM_REGISTRY: dict[LossTermLabels, Callable[..., LossTerm] | type[LossTerm]] = {
     LossTermLabels.DATA: DataLoss,
     LossTermLabels.PHYSICS: PhysicsLoss,
 }

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import TYPE_CHECKING
 
 import yaml
 
@@ -19,6 +19,9 @@ from .io_utils import (
     load_compulsory,
     load_optional,
 )
+
+if TYPE_CHECKING:
+    from typing import Any
 
 
 class DataParams:

@@ -14,6 +14,8 @@ from .initialise_biases import BIAS_INIT_REGISTRY
 from .initialise_weights import WEIGHT_INIT_REGISTRY
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from .activation_function import ActivationFuncLabels
     from .initialise_biases import BiasInitLabels
     from .initialise_weights import WeightInitLabels
@@ -54,7 +56,7 @@ class Layer(nn.Module, ABC):
         biases = execute_from_registry(
             bias_init_label, BIAS_INIT_REGISTRY, out_features
         )
-        validate_pytorch_tensor(weights, (in_features, out_features))
+        validate_pytorch_tensor(weights, (out_features, in_features))
         validate_pytorch_tensor(biases, (out_features,))
         self.weights = nn.Parameter(weights)
         self.biases = nn.Parameter(biases)
@@ -103,7 +105,7 @@ class LinearLayer(Layer):
         # Validate input tensors
         n_points = tensor.shape[0]
         validate_pytorch_tensor(tensor, (n_points, self.in_features))
-        validate_pytorch_tensor(self.weights, (self.in_features, self.out_features))
+        validate_pytorch_tensor(self.weights, (self.out_features, self.in_features))
         validate_pytorch_tensor(self.biases, (self.out_features,))
 
         linear_combination = (
@@ -118,6 +120,6 @@ class LinearLayer(Layer):
 
 
 # Mapping from layer type labels to classes
-LAYER_TYPE_REGISTRY = {
+LAYER_TYPE_REGISTRY: dict[LayerTypeLabels, Callable[..., Layer] | type[Layer]] = {
     LayerTypeLabels.LINEAR: LinearLayer,
 }

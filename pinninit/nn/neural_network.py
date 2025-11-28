@@ -23,6 +23,7 @@ class NeuralNetwork(nn.Module):
 
         # Validate input lower and upper bounds
         nn_in_features = layers[0].in_features
+
         validate_pytorch_tensor(lb, (nn_in_features,))
         validate_pytorch_tensor(ub, (nn_in_features,))
 
@@ -33,7 +34,9 @@ class NeuralNetwork(nn.Module):
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         # Normalisation ### temp hardcoded for now, but should add a normalisation.py
         ### that selects methods and then the method function in set in __init__
-        tensor = 2.0 * (tensor - self.lb) / (self.ub - self.lb) - 1.0
+        lb = self.lb.unsqueeze(0)
+        ub = self.ub.unsqueeze(0)
+        tensor = 2.0 * (tensor - lb) / (ub - lb) - 1.0
 
         for layer in self.layers:
             tensor = layer(tensor)  # call each layer's forward

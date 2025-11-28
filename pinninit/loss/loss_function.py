@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import torch
 
 from .loss_utils import is_loss_input_residual
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class LossFunctionLabels(str, Enum):
@@ -52,6 +56,11 @@ def mse_loss(
 
 
 # Mapping from loss function labels to python functions
-LOSS_FUNCTION_REGISTRY = {
+LOSS_FUNCTION_REGISTRY: dict[
+    LossFunctionLabels,
+    Callable[
+        [torch.Tensor | None, torch.Tensor | None, torch.Tensor | None], torch.Tensor
+    ],
+] = {
     LossFunctionLabels.MSE: mse_loss,
 }
