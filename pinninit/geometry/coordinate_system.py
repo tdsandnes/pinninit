@@ -9,8 +9,7 @@ import numpy as np
 import torch
 
 from ..checks.validate_data import validate_pytorch_tensor
-from ..misc import lookup_from_registry
-from ..utils import interval_str
+from ..utils import interval_str, lookup_from_registry
 from .geometry_utils import get_required_or_fixed_coord, select_coord_system_axes
 
 if TYPE_CHECKING:
@@ -220,9 +219,20 @@ class CoordSystem(ABC):
             alt_coord_system_label = coord_redirections[
                 (coord_dim, axes_labels_selected)
             ]
-            alt_coord_system_name = lookup_from_registry(
+            alt_coord_system_class = lookup_from_registry(
                 alt_coord_system_label, COORD_SYSTEM_REGISTRY
-            ).metadata.name
+            )
+
+            if isinstance(alt_coord_system_class, type) and issubclass(
+                alt_coord_system_class, CoordSystem
+            ):
+                alt_coord_system_name = alt_coord_system_class.metadata.name
+            else:
+                raise TypeError(
+                    "Expected a CoordSystem from lookup_from_registry, "
+                    "got a function"
+                )
+
             raise ValueError(
                 f"To enforce consistent coordinate system labelling, use "
                 f"{alt_coord_system_name} instead of {name} when using "
