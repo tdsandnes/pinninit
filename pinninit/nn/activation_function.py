@@ -12,7 +12,13 @@ if TYPE_CHECKING:
 class ActivationFuncLabels(str, Enum):
     """Enumeration of activation function labels."""
 
+    NONE = "none"
     TANH = "tanh"
+
+
+def no_activation_func(x: torch.Tensor) -> torch.Tensor:
+    """No activation function."""
+    return x
 
 
 def tanh_activation_func(x: torch.Tensor) -> torch.Tensor:
@@ -24,5 +30,6 @@ def tanh_activation_func(x: torch.Tensor) -> torch.Tensor:
 ACTIVATION_FUNC_REGISTRY: dict[
     ActivationFuncLabels, Callable[[torch.Tensor], torch.Tensor]
 ] = {
+    ActivationFuncLabels.NONE: no_activation_func,
     ActivationFuncLabels.TANH: tanh_activation_func,
 }
