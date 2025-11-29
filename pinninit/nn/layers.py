@@ -9,9 +9,9 @@ import torch.nn as nn
 
 from ..checks.validate_data import validate_pytorch_tensor
 from ..utils import execute_from_registry, lookup_from_registry
-from .activation_function import ACTIVATION_FUNC_REGISTRY
-from .initialise_biases import BIAS_INIT_REGISTRY
-from .initialise_weights import WEIGHT_INIT_REGISTRY
+from .activation_function import ACTIVATION_FUNC_REGISTRY, ActivationFuncLabels
+from .initialise_biases import BIAS_INIT_REGISTRY, BiasInitLabels
+from .initialise_weights import WEIGHT_INIT_REGISTRY, WeightInitLabels
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -41,6 +41,7 @@ class Layer(nn.Module, ABC):
         super().__init__()
         self.activation_func_label = activation_func_label
         self.weight_init_label = weight_init_label
+        self.bias_init_label = bias_init_label
         self.in_features = in_features
         self.out_features = out_features
 
@@ -65,6 +66,24 @@ class Layer(nn.Module, ABC):
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         """Subclasses must implement this method to forward pass through the layer.."""
         pass
+
+    def __repr__(self) -> str:
+        subclass_name = self.__class__.__name__
+
+        # Get layer properties
+        activation_function = self.activation_func_label.value
+        weight_init_method = self.weight_init_label.value
+        bias_init_method = self.bias_init_label.value
+
+        # Return descriptive string of layer preoperties
+        return (
+            f"{subclass_name}("
+            f"in_features={self.in_features}, "
+            f"out_features={self.out_features}, "
+            f"activation={activation_function}, "
+            f"init_weights = {weight_init_method}, "
+            f"init_biases = {bias_init_method})"
+        )
 
 
 class LinearLayer(Layer):
