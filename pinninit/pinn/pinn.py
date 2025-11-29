@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 import torch
 import torch.nn as nn
 
@@ -158,10 +160,10 @@ class PINN:
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         ### HARDCODED FOR NOW
         psi_and_p = self.model(coords)
-        psi = psi_and_p[:, 0:1]
-        p = psi_and_p[:, 1:2]
+        psi = psi_and_p[:, 0]
+        p = psi_and_p[:, 1]
 
-        grad_psi = self.coord_system.grad(psi, coords)
+        grad_psi = self.coord_system.grad(psi, coords, self.device)
 
         u = grad_psi[:, 2]
         v = -grad_psi[:, 1]
@@ -175,53 +177,66 @@ class PINN:
         #       torch.mean(f_u_pred**2) + \
         #       torch.mean(f_v_pred**2)
 
-        coords = self.input_coords
+        data_coords = self.input_coords
+        collocation_coords = self.collocation_coords
         ### HARDCODED FOR NOW
-        psi_and_p = self.model(coords)
+
+        ### data coords
+        psi_and_p = self.model(data_coords)
         psi = psi_and_p[:, 0]
-        p = psi_and_p[:, 1]
 
-        grad_psi = self.coord_system.grad(psi, coords, self.device)
+        grad_psi_data = self.coord_system.grad(psi, data_coords, self.device)
 
-        u = grad_psi[:, 2]
-        v = -grad_psi[:, 1]
+        u_data = grad_psi_data[:, 2]
+        v_data = -grad_psi_data[:, 1]
 
-        grad_u = self.coord_system.grad(u, coords, self.device)
-        grad_v = self.coord_system.grad(v, coords, self.device)
-        ut = grad_u[:, 0]
-        ux = grad_u[:, 1]
-        uy = grad_u[:, 2]
-        vt = grad_v[:, 0]
-        vx = grad_v[:, 1]
-        vy = grad_v[:, 2]
+        ### collocation coords
+        psi_and_p = self.model(collocation_coords)
+        psi = psi_and_p[:, 0]
+        p_co = psi_and_p[:, 1]
 
-        ### Maybe nicer way of doing this in gra where we don't calculate grads we don't
-        ### need. Although we need all of coords for metric tensor
-        uxx = self.coord_system.grad(ux, coords, self.device)[:, 1]
-        uyy = self.coord_system.grad(uy, coords, self.device)[:, 2]
-        vxx = self.coord_system.grad(vx, coords, self.device)[:, 1]
-        vyy = self.coord_system.grad(vy, coords, self.device)[:, 2]
+        grad_psi_co = self.coord_system.grad(psi, collocation_coords, self.device)
 
-        grad_p = self.coord_system.grad(p, coords, self.device)
-        px = grad_p[:, 1]
-        py = grad_p[:, 2]
+        u_co = grad_psi_co[:, 2]
+        v_co = -grad_psi_co[:, 1]
+
+        grad_u_co = self.coord_system.grad(u_co, collocation_coords, self.device)
+        grad_v_co = self.coord_system.grad(v_co, collocation_coords, self.device)
+        ut = grad_u_co[:, 0]
+        ux = grad_u_co[:, 1]
+        uy = grad_u_co[:, 2]
+        vt = grad_v_co[:, 0]
+        vx = grad_v_co[:, 1]
+        vy = grad_v_co[:, 2]
+
+        ### Maybe nicer way of doing this in grad where we don't calculate grads we
+        ### don't need. Although we need all of coords for metric tensor. Probabaly
+        ### Easiest just to add laplacian function to coord system.
+        uxx = self.coord_system.grad(ux, collocation_coords, self.device)[:, 1]
+        uyy = self.coord_system.grad(uy, collocation_coords, self.device)[:, 2]
+        vxx = self.coord_system.grad(vx, collocation_coords, self.device)[:, 1]
+        vyy = self.coord_system.grad(vy, collocation_coords, self.device)[:, 2]
+
+        grad_p_co = self.coord_system.grad(p_co, collocation_coords, self.device)
+        px = grad_p_co[:, 1]
+        py = grad_p_co[:, 2]
 
         # Navier-Stokes residuals
         f_u = (
             ut
-            + self.learnable_consts[0] * (u * ux + v * uy)
+            + self.learnable_consts[0] * (u_co * ux + v_co * uy)
             + px
             - self.learnable_consts[1] * (uxx + uyy)
         )
         f_v = (
             vt
-            + self.learnable_consts[0] * (u * vx + v * vy)
+            + self.learnable_consts[0] * (u_co * vx + v_co * vy)
             + py
             - self.learnable_consts[1] * (vxx + vyy)
         )
 
-        loss_data = torch.mean((self.input_fields[:, 0] - u) ** 2) + torch.mean(
-            (self.input_fields[:, 1] - v) ** 2
+        loss_data = torch.mean((self.input_fields[:, 0] - u_data) ** 2) + torch.mean(
+            (self.input_fields[:, 1] - v_data) ** 2
         )
         loss_phys = torch.mean(f_u**2) + torch.mean(f_v**2)
 
@@ -261,3 +276,28 @@ class PINN:
             },
             path,
         )
+
+    def load(self, path: str) -> None:
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"No such file: '{path}'")
+
+        checkpoint = torch.load(path, map_location=self.device)
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+        self.lambda_1 = torch.tensor(
+            checkpoint["lambda_1"], requires_grad=True, dtype=torch.float32
+        )
+        self.lambda_2 = torch.tensor(
+            checkpoint["lambda_2"], requires_grad=True, dtype=torch.float32
+        )
+
+    def inputs(
+        self,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        t = self.input_coords
+        x = self.input_coords
+        y = self.input_coords
+
+        u = self.input_fields
+        v = self.input_fields
+
+        return t, x, y, u, v
