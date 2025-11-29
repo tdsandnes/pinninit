@@ -87,7 +87,7 @@ Optimizer:
   learning_rate:  0.001
 
 Layers:
-  neurons:              [20, 20, 20, 20, 20, 20, 20, 20]
+  hidden_layer_widths:  [20, 20, 20, 20, 20, 20, 20, 20]
   layer_types:          all_linear ### Here (and similar below) we want to be able to have [linear, linear, other, ...] and all_* is alias
   activation_functions: all_tanh
   init_weights:         all_xavier

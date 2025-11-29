@@ -199,11 +199,11 @@ class LayersParams:
     }
 
     def __init__(self, input_params: dict[str, Any]):
-        # neurons
-        self.neurons = load_compulsory(
-            "neurons", "Layers", input_params, data_type=list
+        # hidden_layer_widths
+        self.hidden_layer_widths = load_compulsory(
+            "hidden_layer_widths", "Layers", input_params, data_type=list
         )
-        num_layers = len(self.neurons)
+        num_layers = len(self.hidden_layer_widths) + 1
 
         # layer_types
         layer_types_raw = load_compulsory("layer_types", "Layers", input_params)
