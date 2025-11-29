@@ -67,9 +67,7 @@ def load_dataset(
     input_coords = (
         torch.tensor(coords_sampled_array, requires_grad=True).float().to(device)
     )
-    input_fields = (
-        torch.tensor(fields_sampled_array, requires_grad=True).float().to(device)
-    )
+    input_fields = torch.tensor(fields_sampled_array).float().to(device)
     ### Adding this here as a placeholder for overhall of this func
     input_consts = torch.tensor([]).to(device)
 
