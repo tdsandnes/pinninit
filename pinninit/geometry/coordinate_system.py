@@ -146,11 +146,16 @@ class CoordSystem(ABC):
         G_inv = torch.linalg.inv(G)  # Shape: (n_points, coord_dim, coord_dim)
         validate_pytorch_tensor(G_inv, (n_points, coord_dim, coord_dim))
 
+        # Get diagonal elements for each point
+        G_diag = torch.diagonal(G, dim1=1, dim2=2)  # Shape: (n_points, coord_dim)
+        scale_factors = torch.sqrt(torch.abs(G_diag))
+
         # Batch matrix multiplication:
         # (n_points, coord_dim, coord_dim) @ (n_points, coord_dim, 1) ->
         # (n_points, coord_dim, 1)
         # Squeeze the result to get the final (n_points, coord_dim) vector
-        grad_f = torch.bmm(G_inv, derivative_f.unsqueeze(2)).squeeze(2)
+        grad_f = scale_factors * torch.bmm(G_inv, derivative_f.unsqueeze(2)).squeeze(2)
+
         validate_pytorch_tensor(grad_f, (n_points, coord_dim))
 
         return grad_f
