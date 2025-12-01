@@ -119,7 +119,7 @@ class CoordSystem(ABC):
         Returns
         -------
         torch.Tensor
-            Gradient of the function: (n_points, dim_geometry)
+            Contravarient gradient of the function: (n_points, dim_geometry)
         """
         # Coordinate system dimensions
         dim_geometry = self.dim_geometry
@@ -219,9 +219,7 @@ class CoordSystem(ABC):
         device: torch.device | None = None,
     ) -> torch.Tensor:
         """
-        Compute the contravarient gradient of a function in a given coordinate system.
-
-        contravariant_grad(f) = g^{ij} * partial_j f
+        Compute the gradient of a function in a given coordinate system.
 
         Parameters
         ----------
