@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import torch
 import torch.nn as nn
 
-from ..checks.validate_data import validate_pytorch_tensor
-from .layers import Layer
+from ..utils import execute_from_registry
+from .activation_function import ACTIVATION_FUNC_REGISTRY
+from .initialise_biases import BIAS_INIT_REGISTRY
+from .initialise_weights import WEIGHT_INIT_REGISTRY
+
+if TYPE_CHECKING:
+    from ..io.input_parameters import LayersParams
 
 ### Maybe eventually add multiple NN subclasses if we want multiple options
 
@@ -17,16 +24,38 @@ class NeuralNetwork(nn.Module):
     lb: torch.Tensor
     ub: torch.Tensor
 
-    def __init__(self, layers: list[Layer], lb: torch.Tensor, ub: torch.Tensor):
+    def __init__(
+        self,
+        layers: list[nn.Module],
+        layers_params: LayersParams,
+        lb: torch.Tensor,
+        ub: torch.Tensor,
+    ):
         super().__init__()
         self.layers = nn.ModuleList(layers)  # registers layers as submodules
+        activation_function_labels = layers_params.activation_functions
+        init_weight_lables = layers_params.init_weights
+        init_bias_labels = layers_params.init_biases
 
-        # Validate input lower and upper bounds
-        nn_in_features = layers[0].in_features
+        # Set activation functions and inital weights and biases for each layer
+        activation_funcs = []
+        for i, layer in enumerate(self.layers):
+            # Look up activation function in registry
+            activation_funcs.append(
+                execute_from_registry(
+                    activation_function_labels[i], ACTIVATION_FUNC_REGISTRY
+                )
+            )
 
-        validate_pytorch_tensor(lb, (nn_in_features,))
-        validate_pytorch_tensor(ub, (nn_in_features,))
+            # Define weights and biases as trainable parameters
+            execute_from_registry(
+                init_weight_lables[i], WEIGHT_INIT_REGISTRY, layer.weight
+            )
+            execute_from_registry(init_bias_labels[i], BIAS_INIT_REGISTRY, layer.bias)
 
+        self.activation_funcs = activation_funcs
+
+        ### hardcoded normalisation for now
         # Register as buffers (not trainable parameters)
         self.register_buffer("lb", lb)
         self.register_buffer("ub", ub)
@@ -38,6 +67,8 @@ class NeuralNetwork(nn.Module):
         ub = self.ub.unsqueeze(0)
         tensor = 2.0 * (tensor - lb) / (ub - lb) - 1.0
 
-        for layer in self.layers:
+        for i, layer in enumerate(self.layers):
             tensor = layer(tensor)  # call each layer's forward
+            tensor = self.activation_funcs[i](tensor)  # Call activation function
+
         return tensor

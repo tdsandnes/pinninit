@@ -4,6 +4,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 import torch
+import torch.nn.init as init
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -15,24 +16,14 @@ class BiasInitLabels(str, Enum):
     ZEROS = "zeros"
 
 
-def zeros_bias_init(out_features: int) -> torch.Tensor:
+def zeros_bias_init(bias: torch.Tensor) -> None:
     """
-    Initialise the bias of a layer with zeros.
-
-    Parameters:
-    ----------
-    out_features : int
-        Number of output features.
-
-    Returns:
-    ----------
-    torch.Tensor
-        A tensor with the initialised biases.
+    Initialise the bias of a layer with zeros using PyTorch's built-in function.
     """
-    return torch.zeros(out_features)
+    init.zeros_(bias)
 
 
 # Mapping from bias initialisation method labels to python functions
-BIAS_INIT_REGISTRY: dict[BiasInitLabels, Callable[[int], torch.Tensor]] = {
+BIAS_INIT_REGISTRY: dict[BiasInitLabels, Callable[[torch.Tensor], None]] = {
     BiasInitLabels.ZEROS: zeros_bias_init,
 }

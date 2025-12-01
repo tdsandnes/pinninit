@@ -137,35 +137,31 @@ class PINN:
         ]
 
     def _init_nn(self) -> None:
-        hidden_layer_widths = self.pinn_params.layers_params.hidden_layer_widths
-        layer_types = self.pinn_params.layers_params.layer_types
-        activation_functions = self.pinn_params.layers_params.activation_functions
-        init_weights = self.pinn_params.layers_params.init_weights
-        init_biases = self.pinn_params.layers_params.init_biases
+        # Extract params
+        layers_params = self.pinn_params.layers_params
+        hidden_layer_widths = layers_params.hidden_layer_widths
+        layer_types = layers_params.layer_types
+        self.num_layers = len(hidden_layer_widths) + 1
 
-        ### Make this more general where it's not just the input coords etc.
+        ### Make this more general
         output_fields = self.pinn_params.fields_params.output_fields
 
         ### Currently hard code this. Only works for feed forward NN
         in_features = [self.coord_dim] + hidden_layer_widths
         out_features = hidden_layer_widths + [len(output_fields)]
 
-        num_layers = len(hidden_layer_widths) + 1
         self.layers = [
             execute_from_registry(
                 layer_types[i],
                 LAYER_TYPE_REGISTRY,
                 in_features=in_features[i],
                 out_features=out_features[i],
-                activation_func_label=activation_functions[i],
-                weight_init_label=init_weights[i],
-                bias_init_label=init_biases[i],
             )
-            for i in range(num_layers)
+            for i in range(self.num_layers)
         ]
 
         self.model = NeuralNetwork(
-            self.layers, self.input_coords_lb, self.input_coords_ub
+            self.layers, layers_params, self.input_coords_lb, self.input_coords_ub
         ).to(self.device)
 
     def _init_learnable_parameters(self) -> None:
