@@ -91,38 +91,18 @@ class CollocationParams:
             )
 
 
-class GeometryParams:
+class CoordinatesParams:
     def __init__(self, input_params: dict[str, Any]):
         # coordinate_system
         coordinate_system_raw = load_compulsory(
-            "coordinate_system", "Geometry", input_params, data_type=str
+            "coordinate_system", "Coordinates", input_params, data_type=str
         )
         self.coordinate_system = get_enum_label_from_value(
             coordinate_system_raw, CoordSystemLabels
         )
-        # spatial_dimensions
-        self.spatial_dimensions = load_compulsory(
-            "spatial_dimensions", "Geometry", input_params, data_type=int
-        )
         # coordinates
         self.coordinates = load_compulsory(
-            "coordinates", "Geometry", input_params, data_type=list
-        )
-        # fixed_coordinates
-        self.fixed_coordinates = load_optional(
-            "fixed_coordinates", "Geometry", input_params, data_type=dict
-        )
-        # domain_boundary_conditions
-        ###domain_boundary_conditions_raw = load_optional(
-        ###    "domain_boundary_conditions", "Geometry", input_params, data_type=str
-        ###)  ### Add registry. Make it so that None is an option.
-        ###self.domain_boundary_conditions = (
-        ###   BoundaryConditionLabels.NONE  ###domain_boundary_conditions_raw  ###This
-        ###)
-        ### should be:get_enum_label_from_value(domain_boundary_conditions_raw, ...)
-        # domain
-        self.domain = load_compulsory(
-            "domain", "Geometry", input_params, data_type=list
+            "coordinates", "Coordinates", input_params, data_type=list
         )
 
 
@@ -277,7 +257,7 @@ class PINNParameters:
         """Extract parameters as objects of individual classes"""
         self.data_params = DataParams(self.input_params)
         self.collocation_params = CollocationParams(self.input_params)
-        self.geometry_params = GeometryParams(self.input_params)
+        self.coordinates_params = CoordinatesParams(self.input_params)
         self.fields_params = FieldsParams(self.input_params)
         self.constants_params = ConstantsParams(self.input_params)
         self.dataloss_params = DataLossParams(self.input_params)

@@ -11,25 +11,26 @@ Collocation:
   num_collocation_points:     5000
   collocation_sampling_seed:  12345
 
-Geometry:
+Coordinates:
   coordinate_system:  cartesian
-  spatial_dimensions: 2
   coordinates:
-    - t
-    - x
-    - y
-  #fixed_coordinates:
-  #  - coordinate: r
-  #    value: 20
-  # domain_boundary_conditions: periodic ###
-  domain: # Not same as coord system bounds. Make sure to have checks in code to validate that labels match expected ones for coord system.
-    - coordinate: t
-    - coordinate: x
-      min: 1
-      max: 8
-    - coordinate: y
-      min: -2
-      max: 2
+    - label: t
+      is_geometric: 0
+    - label: x
+      is_geometric: 1
+      domain_lower_bound:   1
+      domain_upper_bound:   8
+  #   domain_boundary_conditions: periodic ###
+    - label: y
+      is_geometric: 1
+      domain_lower_bound:  -2
+      domain_upper_bound:   2
+  #   domain_boundary_conditions: periodic ###
+    ### example of fixed coord:
+    ###- label: r
+    ###  is_geometric: 1
+    ###  is_fixed:     1
+    ###  fixed_value:  20
 
 Fields:
   input_fields:

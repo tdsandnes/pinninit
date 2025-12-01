@@ -8,17 +8,17 @@ from ..utils import execute_from_registry
 from .collocation_sampler import COLLOCATION_SAMPLER_REGISTRY
 
 if TYPE_CHECKING:
-    from ..geometry.coordinate_system import CoordSystem
     from ..io.input_parameters import PINNParameters
 
 
 def load_collocation(
-    coord_system: CoordSystem,
+    dim_nongeometry: int,
+    dim_geometry: int,
     lb: torch.Tensor,
     ub: torch.Tensor,
     pinn_params: PINNParameters,
     device: torch.device,
-) -> torch.Tensor:
+) -> tuple[torch.Tensor, torch.Tensor]:
     # Extract DataParams
     ###from_file = pinn_params.collocation_params.from_file
 
@@ -30,18 +30,20 @@ def load_collocation(
     ###else:
     collocation_strategy = pinn_params.collocation_params.collocation_strategy
 
-    collocation_coords = execute_from_registry(
-        collocation_strategy,
-        COLLOCATION_SAMPLER_REGISTRY,
-        coord_system,
-        lb,
-        ub,
-        pinn_params,
-        device,
+    collocation_coords_nongeometric, collocation_coords_geometric = (
+        execute_from_registry(
+            collocation_strategy,
+            COLLOCATION_SAMPLER_REGISTRY,
+            dim_nongeometry,
+            dim_geometry,
+            lb,
+            ub,
+            pinn_params,
+            device,
+        )
     )
 
-    collocation_coords_tensor: torch.Tensor = (
-        torch.tensor(collocation_coords, requires_grad=True).float().to(device)
-    )
+    collocation_coords_nongeometric.requires_grad_(True)
+    collocation_coords_geometric.requires_grad_(True)
 
-    return collocation_coords_tensor
+    return collocation_coords_nongeometric, collocation_coords_geometric

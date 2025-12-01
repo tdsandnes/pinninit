@@ -8,7 +8,6 @@ import torch.nn as nn
 from ..collocation.collocation import load_collocation
 from ..dataset.dataset import load_dataset
 from ..geometry.coordinate_system import COORD_SYSTEM_REGISTRY
-from ..geometry.domain import extract_domain_bounds
 from ..io.input_parameters import PINNParameters
 from ..loss.loss_term import DataLoss, PhysicsLoss
 from ..nn.layers import LAYER_TYPE_REGISTRY
@@ -36,42 +35,70 @@ class PINN:
 
     def _init_geometry(self) -> None:
         # Extract params
-        coord_system_label = self.pinn_params.geometry_params.coordinate_system
-        spatial_dimensions = self.pinn_params.geometry_params.spatial_dimensions
-        coord_dim = spatial_dimensions + 1  # add time dim
-        coord_axes = self.pinn_params.geometry_params.coordinates
-        if self.pinn_params.geometry_params.fixed_coordinates is not None:
-            fixed_axes = self.pinn_params.geometry_params.fixed_coordinates[
-                "coordinate"
-            ]
-            fixed_axes_values = self.pinn_params.geometry_params.fixed_coordinates[
-                "value"
-            ]
-        else:
-            fixed_axes = None
-            fixed_axes_values = None
+        self.coord_system_label = self.pinn_params.coordinates_params.coordinate_system
+        coordinates = self.pinn_params.coordinates_params.coordinates
+        self.coord_axes = [axis["label"] for axis in coordinates]
+        self.coord_dim = len(self.coord_axes)
+
+        # Geometric axes
+        self.geometric_axes = [
+            axis for axis in coordinates if axis.get("is_geometric", 0) == 1
+        ]
+        self.geometric_axes_labels = [axis["label"] for axis in self.geometric_axes]
+        self.dim_geometry = len(self.geometric_axes_labels)
+
+        # Non-geometric axes
+        self.nongeometric_axes = [
+            axis for axis in coordinates if axis.get("is_geometric", 0) == 0
+        ]
+        self.nongeometric_axes_labels = [
+            axis["label"] for axis in self.nongeometric_axes
+        ]
+        self.dim_nongeometry = len(self.nongeometric_axes_labels)
+
+        # Fixed axes
+        self.fixed_axes = []
+        self.fixed_axes_values = []
+        for axis in coordinates:
+            if axis.get("is_fixed", 0) == 1:
+                if "fixed_value" in axis:
+                    self.fixed_axes.append(axis["label"])
+                    self.fixed_axes_values.append(axis["fixed_value"])
+                else:
+                    raise ValueError(
+                        f"Axis '{axis['label']}' is marked as fixed but no "
+                        "'fixed_value' is provided."
+                    )
 
         # Set coordinate system
         self.coord_system = execute_from_registry(
-            coord_system_label,
+            self.coord_system_label,
             COORD_SYSTEM_REGISTRY,
-            coord_dim,
-            coord_axes,
-            fixed_axes,
-            fixed_axes_values,
+            self.dim_geometry,
+            self.geometric_axes_labels,
+            self.fixed_axes,
+            self.fixed_axes_values,
         )
-
+        """ removed this file until coord treatment is finalised
         ### Keep these as lists rather than tensors for now because of None
         self.domain_lb, self.domain_ub = extract_domain_bounds(
             self.coord_system, self.pinn_params
         )
+        """
 
         ### Do boundary conditions here
 
     def _init_dataset(self) -> None:
         # Load datasets
-        self.input_coords, self.input_fields, self.input_consts = load_dataset(
-            self.pinn_params, self.device
+        (
+            self.input_coords_nongeometric,
+            self.input_coords_geometric,
+            self.input_fields,
+            self.input_consts,
+        ) = load_dataset(self.pinn_params, self.device)
+
+        self.input_coords = torch.cat(
+            [self.input_coords_nongeometric, self.input_coords_geometric], dim=1
         )
 
         # Lower and upper bounds of coords ### this is after filtering. Is that right?
@@ -80,12 +107,20 @@ class PINN:
 
     def _init_collocation(self) -> None:
         # Set coords of collocation points
-        self.collocation_coords = load_collocation(
-            self.coord_system,
-            self.input_coords_lb,
-            self.input_coords_ub,
-            self.pinn_params,
-            self.device,
+        self.collocation_coords_nongeometric, self.collocation_coords_geometric = (
+            load_collocation(
+                self.dim_nongeometry,
+                self.dim_geometry,
+                self.input_coords_lb,
+                self.input_coords_ub,
+                self.pinn_params,
+                self.device,
+            )
+        )
+
+        self.collocation_coords = torch.cat(
+            [self.collocation_coords_nongeometric, self.collocation_coords_geometric],
+            dim=1,
         )
 
     def _init_loss(self) -> None:
@@ -109,11 +144,10 @@ class PINN:
         init_biases = self.pinn_params.layers_params.init_biases
 
         ### Make this more general where it's not just the input coords etc.
-        input_coords = self.pinn_params.geometry_params.coordinates
         output_fields = self.pinn_params.fields_params.output_fields
 
         ### Currently hard code this. Only works for feed forward NN
-        in_features = [len(input_coords)] + hidden_layer_widths
+        in_features = [self.coord_dim] + hidden_layer_widths
         out_features = hidden_layer_widths + [len(output_fields)]
 
         num_layers = len(hidden_layer_widths) + 1
@@ -165,8 +199,8 @@ class PINN:
 
         grad_psi = self.coord_system.grad(psi, coords, self.device)
 
-        u = grad_psi[:, 2]
-        v = -grad_psi[:, 1]
+        u = grad_psi[:, 1]
+        v = -grad_psi[:, 0]
 
         return u, v, p
 
@@ -178,48 +212,81 @@ class PINN:
         #       torch.mean(f_v_pred**2)
 
         data_coords = self.input_coords
+        data_coords_geometric = self.input_coords_geometric
         collocation_coords = self.collocation_coords
+        collocation_coords_nongeometric = self.collocation_coords_nongeometric
+        collocation_coords_geometric = self.collocation_coords_geometric
         ### HARDCODED FOR NOW
 
         ### data coords
-        psi_and_p = self.model(data_coords)
-        psi = psi_and_p[:, 0]
+        psi_and_p_data = self.model(data_coords)
+        psi_data = psi_and_p_data[:, 0]
 
-        grad_psi_data = self.coord_system.grad(psi, data_coords, self.device)
+        grad_psi_data = self.coord_system.grad(
+            psi_data, data_coords_geometric, self.device
+        )
 
-        u_data = grad_psi_data[:, 2]
-        v_data = -grad_psi_data[:, 1]
+        u_data = grad_psi_data[:, 1]
+        v_data = -grad_psi_data[:, 0]
 
         ### collocation coords
-        psi_and_p = self.model(collocation_coords)
-        psi = psi_and_p[:, 0]
-        p_co = psi_and_p[:, 1]
+        psi_and_p_co = self.model(collocation_coords)
+        psi_co = psi_and_p_co[:, 0]
+        p_co = psi_and_p_co[:, 1]
 
-        grad_psi_co = self.coord_system.grad(psi, collocation_coords, self.device)
+        grad_psi_co = self.coord_system.grad(
+            psi_co, collocation_coords_geometric, self.device
+        )
 
-        u_co = grad_psi_co[:, 2]
-        v_co = -grad_psi_co[:, 1]
+        u_co = grad_psi_co[:, 1]
+        v_co = -grad_psi_co[:, 0]
 
-        grad_u_co = self.coord_system.grad(u_co, collocation_coords, self.device)
-        grad_v_co = self.coord_system.grad(v_co, collocation_coords, self.device)
-        ut = grad_u_co[:, 0]
-        ux = grad_u_co[:, 1]
-        uy = grad_u_co[:, 2]
-        vt = grad_v_co[:, 0]
-        vx = grad_v_co[:, 1]
-        vy = grad_v_co[:, 2]
+        grad_u_co = self.coord_system.grad(
+            u_co, collocation_coords_geometric, self.device
+        )
+        grad_v_co = self.coord_system.grad(
+            v_co, collocation_coords_geometric, self.device
+        )
+        ut = torch.autograd.grad(
+            u_co,
+            collocation_coords_nongeometric,
+            torch.ones_like(u_co),
+            retain_graph=True,
+            create_graph=True,
+        )[0][:, 0]
+        ux = grad_u_co[:, 0]
+        uy = grad_u_co[:, 1]
+        vt = torch.autograd.grad(
+            v_co,
+            collocation_coords_nongeometric,
+            torch.ones_like(v_co),
+            retain_graph=True,
+            create_graph=True,
+        )[0][:, 0]
+        vx = grad_v_co[:, 0]
+        vy = grad_v_co[:, 1]
 
         ### Maybe nicer way of doing this in grad where we don't calculate grads we
         ### don't need. Although we need all of coords for metric tensor. Probabaly
         ### Easiest just to add laplacian function to coord system.
-        uxx = self.coord_system.grad(ux, collocation_coords, self.device)[:, 1]
-        uyy = self.coord_system.grad(uy, collocation_coords, self.device)[:, 2]
-        vxx = self.coord_system.grad(vx, collocation_coords, self.device)[:, 1]
-        vyy = self.coord_system.grad(vy, collocation_coords, self.device)[:, 2]
+        uxx = self.coord_system.grad(ux, collocation_coords_geometric, self.device)[
+            :, 0
+        ]
+        uyy = self.coord_system.grad(uy, collocation_coords_geometric, self.device)[
+            :, 1
+        ]
+        vxx = self.coord_system.grad(vx, collocation_coords_geometric, self.device)[
+            :, 0
+        ]
+        vyy = self.coord_system.grad(vy, collocation_coords_geometric, self.device)[
+            :, 1
+        ]
 
-        grad_p_co = self.coord_system.grad(p_co, collocation_coords, self.device)
-        px = grad_p_co[:, 1]
-        py = grad_p_co[:, 2]
+        grad_p_co = self.coord_system.grad(
+            p_co, collocation_coords_geometric, self.device
+        )
+        px = grad_p_co[:, 0]
+        py = grad_p_co[:, 1]
 
         # Navier-Stokes residuals
         f_u = (
