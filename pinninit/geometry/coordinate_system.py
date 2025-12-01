@@ -29,6 +29,7 @@ class CoordSystemMetadata:
     """Dataclass for coordinate system metadata."""
 
     name: str
+    is_orthogonal: bool
     axes_labels: tuple[str, ...]
     required_or_fixed_axes: tuple[str, ...]
     required_fields: tuple[str, ...]
@@ -96,14 +97,16 @@ class CoordSystem(ABC):
         """Subclasses must implement this method to return the metric tensor(s)."""
         pass
 
-    def grad(
+    def contravariant_grad(
         self,
         f: torch.Tensor,
         coords_geometry: torch.Tensor,
         device: torch.device | None = None,
     ) -> torch.Tensor:
         """
-        Compute the gradient of a function in a given coordinate system.
+        Compute the contravarient gradient of a function in a given coordinate system.
+
+        contravariant_grad(f) = g^{ij} * partial_j f
 
         Parameters
         ----------
@@ -126,6 +129,16 @@ class CoordSystem(ABC):
         validate_pytorch_tensor(f, (n_points,))
         validate_pytorch_tensor(coords_geometry, (n_points, dim_geometry))
 
+        # Tensor of metric tensors for each point
+        G = self.metric_tensor(
+            n_points, coords_geometry, device
+        )  # Shape: (n_points, dim_geometry, dim_geometry)
+        validate_pytorch_tensor(G, (n_points, dim_geometry, dim_geometry))
+
+        # Inverse metric tensor
+        G_inv = torch.linalg.inv(G)  # Shape: (n_points, dim_geometry, dim_geometry)
+        validate_pytorch_tensor(G_inv, (n_points, dim_geometry, dim_geometry))
+
         # Reshape for derivative calculation
         f = f.unsqueeze(1)  # (n_points, 1)
 
@@ -143,6 +156,125 @@ class CoordSystem(ABC):
         if derivative_f is None:
             derivative_f = torch.zeros_like(coords_geometry)
 
+        # Batch matrix multiplication:
+        # (n_points, dim_geometry, dim_geometry) @ (n_points, dim_geometry, 1) ->
+        # (n_points, dim_geometry, 1)
+        # Squeeze the result to get the final (n_points, dim_geometry) vector
+        contra_grad_f = torch.bmm(G_inv, derivative_f.unsqueeze(2)).squeeze(2)
+        validate_pytorch_tensor(contra_grad_f, (n_points, dim_geometry))
+
+        return contra_grad_f
+
+    def get_scale_factors(
+        self,
+        coords_geometry: torch.Tensor,
+        device: torch.device | None = None,
+    ) -> torch.Tensor:
+        """
+        Compute coordinate scale factors in an orthogonal coordinate system.
+
+        NOTE: only works for orthogonal coord systems
+
+        Parameters
+        ----------
+        coords_geometry : torch.Tensor
+            A set of points and their geometric coordinates.
+            Shape: (n_points, dim_geometry)
+
+        Returns
+        -------
+        torch.Tensor
+            Scale factors for each coordinate axis. Shape: (n_points, dim_geometry)
+        """
+        # Check that coord system is orthogonal
+        if not self.metadata.is_orthogonal:
+            raise ValueError(
+                "metric_scale_factors function can only be used for orthogonal "
+                "coordinate systems."
+            )
+
+        # Coordinate system dimensions
+        dim_geometry = self.dim_geometry
+
+        # Validate input tensors
+        n_points = coords_geometry.shape[0]
+        validate_pytorch_tensor(coords_geometry, (n_points, dim_geometry))
+
+        # Tensor of metric tensors for each point
+        G = self.metric_tensor(
+            n_points, coords_geometry, device
+        )  # Shape: (n_points, dim_geometry, dim_geometry)
+        validate_pytorch_tensor(G, (n_points, dim_geometry, dim_geometry))
+
+        # Get diagonal elements for each point
+        G_diag = torch.diagonal(G, dim1=1, dim2=2)  # Shape: (n_points, dim_geometry)
+        scale_factors = torch.sqrt(torch.abs(G_diag))
+
+        return scale_factors
+
+    def grad(
+        self,
+        f: torch.Tensor,
+        coords_geometry: torch.Tensor,
+        device: torch.device | None = None,
+    ) -> torch.Tensor:
+        """
+        Compute the contravarient gradient of a function in a given coordinate system.
+
+        contravariant_grad(f) = g^{ij} * partial_j f
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            Function to be taken gradient of. Shape: (n_points,)
+        coords_geometry : torch.Tensor
+            A set of points and their geometric coordinates.
+            Shape: (n_points, dim_geometry)
+
+        Returns
+        -------
+        torch.Tensor
+            Gradient of the function: (n_points, dim_geometry)
+        """
+
+        # Get contravariant grad of f
+        contra_grad_f = self.contravariant_grad(f, coords_geometry, device)
+
+        # Get scale factors (assumes the coordinate system is orthogonal)
+        scale_factors = self.get_scale_factors(coords_geometry, device)
+
+        return scale_factors * contra_grad_f
+
+    def laplacian(
+        self,
+        f: torch.Tensor,
+        coords_geometry: torch.Tensor,
+        device: torch.device | None = None,
+    ) -> torch.Tensor:
+        """
+        Compute the laplacian operator of a function in a given coordinate system.
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            Function to be taken gradient of. Shape: (n_points,)
+        coords_geometry : torch.Tensor
+            A set of points and their geometric coordinates.
+            Shape: (n_points, dim_geometry)
+
+        Returns
+        -------
+        torch.Tensor
+            Laplacian of the function: (n_points,)
+        """
+        # Coordinate system dimensions
+        dim_geometry = self.dim_geometry
+
+        # Validate input tensors
+        n_points = f.shape[0]
+        validate_pytorch_tensor(f, (n_points,))
+        validate_pytorch_tensor(coords_geometry, (n_points, dim_geometry))
+
         # Tensor of metric tensors for each point
         G = self.metric_tensor(
             n_points, coords_geometry, device
@@ -153,20 +285,41 @@ class CoordSystem(ABC):
         G_inv = torch.linalg.inv(G)  # Shape: (n_points, dim_geometry, dim_geometry)
         validate_pytorch_tensor(G_inv, (n_points, dim_geometry, dim_geometry))
 
-        ### Hardcoded for orthonormal basis
-        # Get diagonal elements for each point
-        G_diag = torch.diagonal(G, dim1=1, dim2=2)  # Shape: (n_points, dim_geometry)
-        scale_factors = torch.sqrt(torch.abs(G_diag))
+        # Metric determinant
+        det_G = torch.det(G)  # Shape: (n_points, 1)
+        sqrt_det_G = torch.sqrt(torch.abs(det_G))  # Shape: (n_points,)
 
-        # Batch matrix multiplication:
-        # (n_points, dim_geometry, dim_geometry) @ (n_points, dim_geometry, 1) ->
-        # (n_points, dim_geometry, 1)
-        # Squeeze the result to get the final (n_points, dim_geometry) vector
-        grad_f = scale_factors * torch.bmm(G_inv, derivative_f.unsqueeze(2)).squeeze(2)
+        # Get contravariant grad of f
+        contra_grad_f = self.contravariant_grad(f, coords_geometry, device)
+        inner_terms = sqrt_det_G.unsqueeze(1) * contra_grad_f
 
-        validate_pytorch_tensor(grad_f, (n_points, dim_geometry))
+        # Now take divergence
+        divergence_accum = torch.zeros(n_points, device=device)
+        for i in range(dim_geometry):
+            inner_term = inner_terms[:, i]  # Shape (n_points,)
 
-        return grad_f
+            # Differentiate this component w.r.t the coordinates
+            derivative_inner = torch.autograd.grad(
+                inner_term,
+                coords_geometry,
+                grad_outputs=torch.ones_like(inner_term),
+                create_graph=True,
+                retain_graph=True,
+                allow_unused=True,
+            )[0]
+
+            # Set derivatives to zero in None (Case where f is indep of coords_geometry)
+            if derivative_inner is None:
+                derivative_inner = torch.zeros_like(coords_geometry)
+
+            # Add to cumulative sum
+            divergence_accum += derivative_inner[:, i]
+
+        # Divide by sqrt of det G
+        laplacian_f = divergence_accum / (sqrt_det_G)
+        validate_pytorch_tensor(laplacian_f, (n_points,))
+
+        return laplacian_f
 
     def _validate_dimensions(self) -> None:
         """
@@ -460,6 +613,7 @@ class CartesianCoords(CoordSystem):
     # Metadata as class attributes
     metadata = CoordSystemMetadata(
         name="Cartesian Coordinates",
+        is_orthogonal=True,
         axes_labels=("x", "y", "z"),
         required_or_fixed_axes=(),
         required_fields=(),
@@ -554,6 +708,7 @@ class CylindricalCoords(CoordSystem):
     # Metadata as class attributes
     metadata = CoordSystemMetadata(
         name="Cylindrical Polar Coordinates",
+        is_orthogonal=True,
         axes_labels=("r", "theta", "z"),
         required_or_fixed_axes=("r",),
         required_fields=(),
@@ -636,6 +791,7 @@ class SphericalCoords(CoordSystem):
     # Metadata as class attributes
     metadata = CoordSystemMetadata(
         name="Spherical Polar Coordinates",
+        is_orthogonal=True,
         axes_labels=("r", "theta", "phi"),
         required_or_fixed_axes=("r", "theta"),
         required_fields=(),

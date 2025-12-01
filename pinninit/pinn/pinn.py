@@ -266,21 +266,13 @@ class PINN:
         vx = grad_v_co[:, 0]
         vy = grad_v_co[:, 1]
 
-        ### Maybe nicer way of doing this in grad where we don't calculate grads we
-        ### don't need. Although we need all of coords for metric tensor. Probabaly
-        ### Easiest just to add laplacian function to coord system.
-        uxx = self.coord_system.grad(ux, collocation_coords_geometric, self.device)[
-            :, 0
-        ]
-        uyy = self.coord_system.grad(uy, collocation_coords_geometric, self.device)[
-            :, 1
-        ]
-        vxx = self.coord_system.grad(vx, collocation_coords_geometric, self.device)[
-            :, 0
-        ]
-        vyy = self.coord_system.grad(vy, collocation_coords_geometric, self.device)[
-            :, 1
-        ]
+        # Laplacians
+        laplacian_u = self.coord_system.laplacian(
+            u_co, collocation_coords_geometric, self.device
+        )
+        laplacian_v = self.coord_system.laplacian(
+            v_co, collocation_coords_geometric, self.device
+        )
 
         grad_p_co = self.coord_system.grad(
             p_co, collocation_coords_geometric, self.device
@@ -293,13 +285,13 @@ class PINN:
             ut
             + self.learnable_consts[0] * (u_co * ux + v_co * uy)
             + px
-            - self.learnable_consts[1] * (uxx + uyy)
+            - self.learnable_consts[1] * laplacian_u
         )
         f_v = (
             vt
             + self.learnable_consts[0] * (u_co * vx + v_co * vy)
             + py
-            - self.learnable_consts[1] * (vxx + vyy)
+            - self.learnable_consts[1] * laplacian_v
         )
 
         loss_data = torch.mean((self.input_fields[:, 0] - u_data) ** 2) + torch.mean(
