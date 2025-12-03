@@ -7,7 +7,10 @@ import yaml
 
 from ..collocation.collocation_sampler import CollocationSamplerLabels
 from ..dataset.dataset_sampler import DataSetSamplerLabels
-from ..geometry.coordinate_system import CoordSystemLabels
+from ..geometry.coordinate_system import (
+    COORD_SYSTEM_REGISTRY,
+    CoordSystemLabels,
+)
 from ..nn.activation_function import ActivationFuncLabels
 from ..nn.initialise_biases import BiasInitLabels
 from ..nn.initialise_weights import WeightInitLabels
@@ -91,6 +94,14 @@ class CollocationParams:
             )
 
 
+class EquationsParams:
+    def __init__(self, input_params: dict[str, Any]):
+        # equations
+        self.equations = load_optional(
+            "equations", "Equations", input_params, data_type=list
+        )
+
+
 class CoordinatesParams:
     def __init__(self, input_params: dict[str, Any]):
         # coordinate_system
@@ -116,10 +127,6 @@ class FieldsParams:
         self.output_fields = load_compulsory(
             "output_fields", "Fields", input_params, data_type=list
         )
-        # derived_fields
-        self.derived_fields = load_optional(
-            "derived_fields", "Fields", input_params, data_type=list
-        )
 
 
 class ConstantsParams:
@@ -131,10 +138,6 @@ class ConstantsParams:
         # learnt_consts
         self.learnt_consts = load_optional(
             "learnt_consts", "Constants", input_params, data_type=list
-        )
-        # derived_consts
-        self.derived_consts = load_optional(
-            "derived_consts", "Constants", input_params, data_type=list
         )
 
 
@@ -253,10 +256,17 @@ class PINNParameters:
         # Extract data
         self._extract_parameters()
 
+        # Set attributes needed for consistent ordering
+        self._set_coord_index_dicts()
+        self._set_geometric_axes_labels_and_mask()
+        self._set_input_field_index_dicts()
+        self._set_output_field_index_dicts()
+
     def _extract_parameters(self) -> None:
         """Extract parameters as objects of individual classes"""
         self.data_params = DataParams(self.input_params)
         self.collocation_params = CollocationParams(self.input_params)
+        self.equations_params = EquationsParams(self.input_params)
         self.coordinates_params = CoordinatesParams(self.input_params)
         self.fields_params = FieldsParams(self.input_params)
         self.constants_params = ConstantsParams(self.input_params)
@@ -265,3 +275,68 @@ class PINNParameters:
         self.optimizer_params = OptimizerParams(self.input_params)
         self.layers_params = LayersParams(self.input_params)
         self.training_params = TrainingParams(self.input_params)
+
+    def _set_coord_index_dicts(self) -> None:
+        """Set dictionary of coordinate label to index, and the other way around,
+        for consistent ordering of lists"""
+
+        coord_to_index_dict = {}
+        for i, coordinate in enumerate(self.coordinates_params.coordinates):
+            label = coordinate["label"]
+            coord_to_index_dict[label] = i
+
+        self.coord_to_index_dict = coord_to_index_dict
+        self.index_to_coord_dict = {v: k for k, v in coord_to_index_dict.items()}
+
+    def _set_geometric_axes_labels_and_mask(self) -> None:
+        """Mask and corrsponding labels for extracting geometric axes in order
+        required by the coordinate system"""
+        # Coord system label
+        coord_system_label = self.coordinates_params.coordinate_system
+
+        # Labels of geometric axes set in parameter file
+        self.geometric_axes_labels = tuple(
+            [
+                axis["label"]
+                for axis in self.coordinates_params.coordinates
+                if axis.get("is_geometric", 0) == 1
+            ]
+        )
+
+        # Get coord system axis labels
+        coord_system = COORD_SYSTEM_REGISTRY[coord_system_label]
+        axes_labels = coord_system.metadata.axes_labels
+
+        self.geometric_axis_mask = [
+            self.coord_to_index_dict[label]
+            for label in axes_labels
+            if label in self.geometric_axes_labels
+        ]
+
+    def _set_input_field_index_dicts(self) -> None:
+        """Set dictionary of input field label to index, and the other way around,
+        for consistent ordering of lists"""
+
+        input_field_to_index_dict = {}
+        for i, field in enumerate(self.fields_params.input_fields):
+            label = field["label"]
+            input_field_to_index_dict[label] = i
+
+        self.input_field_to_index_dict = input_field_to_index_dict
+        self.index_to_input_field_dict = {
+            v: k for k, v in input_field_to_index_dict.items()
+        }
+
+    def _set_output_field_index_dicts(self) -> None:
+        """Set dictionary of output field label to index, and the other way around,
+        for consistent ordering of lists"""
+
+        output_field_to_index_dict = {}
+        for i, field in enumerate(self.fields_params.input_fields):
+            label = field["label"]
+            output_field_to_index_dict[label] = i
+
+        self.output_field_to_index_dict = output_field_to_index_dict
+        self.index_to_output_field_dict = {
+            v: k for k, v in output_field_to_index_dict.items()
+        }

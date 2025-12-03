@@ -9,11 +9,10 @@ import numpy as np
 import torch
 
 from ..checks.validate_data import validate_pytorch_tensor
-from ..utils import interval_str, lookup_from_registry
 from .geometry_utils import get_required_or_fixed_coord, select_coord_system_axes
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    pass
 
 
 class CoordSystemLabels(str, Enum):
@@ -91,7 +90,7 @@ class CoordSystem(ABC):
     def metric_tensor(
         self,
         n_points: int,
-        coords_geometry: torch.Tensor,
+        coords_geometry: list[torch.Tensor],
         device: torch.device | None = None,
     ) -> torch.Tensor:
         """Subclasses must implement this method to return the metric tensor(s)."""
@@ -100,7 +99,7 @@ class CoordSystem(ABC):
     def contravariant_grad(
         self,
         f: torch.Tensor,
-        coords_geometry: torch.Tensor,
+        coords_geometry: list[torch.Tensor],
         device: torch.device | None = None,
     ) -> torch.Tensor:
         """
@@ -112,9 +111,9 @@ class CoordSystem(ABC):
         ----------
         f : torch.Tensor
             Function to be taken gradient of. Shape: (n_points,)
-        coords_geometry : torch.Tensor
+        coords_geometry : list[torch.Tensor]
             A set of points and their geometric coordinates.
-            Shape: (n_points, dim_geometry)
+            List length: dim_geometry, tensor lengths: n_points
 
         Returns
         -------
@@ -127,7 +126,7 @@ class CoordSystem(ABC):
         # Validate input tensors
         n_points = f.shape[0]
         validate_pytorch_tensor(f, (n_points,))
-        validate_pytorch_tensor(coords_geometry, (n_points, dim_geometry))
+        self._validate_coordinates(coords_geometry)
 
         # Tensor of metric tensors for each point
         G = self.metric_tensor(
@@ -139,35 +138,40 @@ class CoordSystem(ABC):
         G_inv = torch.linalg.inv(G)  # Shape: (n_points, dim_geometry, dim_geometry)
         validate_pytorch_tensor(G_inv, (n_points, dim_geometry, dim_geometry))
 
-        # Reshape for derivative calculation
-        f = f.unsqueeze(1)  # (n_points, 1)
+        derivative_f: list[torch.Tensor] = []
+        for coord in coords_geometry:
+            # Calculate derivative wrt a coord using autograd
+            derivative_f_coord = torch.autograd.grad(
+                f,
+                coord,
+                grad_outputs=torch.ones_like(f),
+                create_graph=True,
+                retain_graph=True,
+            )[0]
 
-        # Calculate derivatives using autograd
-        derivative_f = torch.autograd.grad(
-            f,
-            coords_geometry,
-            grad_outputs=torch.ones_like(f),
-            create_graph=True,
-            retain_graph=True,
-            allow_unused=True,  # If not a function of a coord, gives 0 rather than None
-        )[0]
+            # Set derivatives to zero in None (Case where f is indep of coord)
+            if derivative_f is None:
+                derivative_f_coord = torch.zeros_like(coord)
 
-        # Set derivatives to zero in None (Case where f is indep of all coords_geometry)
-        if derivative_f is None:
-            derivative_f = torch.zeros_like(coords_geometry)
+            # Append to list
+            derivative_f.append(derivative_f_coord)
+
+        derivative_f_tensor = torch.stack(derivative_f, dim=1)
+        validate_pytorch_tensor(derivative_f_tensor, (n_points, dim_geometry))
 
         # Batch matrix multiplication:
         # (n_points, dim_geometry, dim_geometry) @ (n_points, dim_geometry, 1) ->
         # (n_points, dim_geometry, 1)
         # Squeeze the result to get the final (n_points, dim_geometry) vector
-        contra_grad_f = torch.bmm(G_inv, derivative_f.unsqueeze(2)).squeeze(2)
+        contra_grad_f = torch.bmm(G_inv, derivative_f_tensor.unsqueeze(2)).squeeze(2)
         validate_pytorch_tensor(contra_grad_f, (n_points, dim_geometry))
 
         return contra_grad_f
 
     def get_scale_factors(
         self,
-        coords_geometry: torch.Tensor,
+        coords_geometry: list[torch.Tensor],
+        n_points: int,
         device: torch.device | None = None,
     ) -> torch.Tensor:
         """
@@ -177,9 +181,11 @@ class CoordSystem(ABC):
 
         Parameters
         ----------
-        coords_geometry : torch.Tensor
+        coords_geometry : list[torch.Tensor]
             A set of points and their geometric coordinates.
-            Shape: (n_points, dim_geometry)
+            List length: dim_geometry, tensor lengths: n_points
+        n_points : int
+            Number of points that each tensor should have elements for.
 
         Returns
         -------
@@ -197,8 +203,7 @@ class CoordSystem(ABC):
         dim_geometry = self.dim_geometry
 
         # Validate input tensors
-        n_points = coords_geometry.shape[0]
-        validate_pytorch_tensor(coords_geometry, (n_points, dim_geometry))
+        self._validate_coordinates(coords_geometry)
 
         # Tensor of metric tensors for each point
         G = self.metric_tensor(
@@ -215,7 +220,7 @@ class CoordSystem(ABC):
     def grad(
         self,
         f: torch.Tensor,
-        coords_geometry: torch.Tensor,
+        coords_geometry: list[torch.Tensor],
         device: torch.device | None = None,
     ) -> torch.Tensor:
         """
@@ -225,9 +230,9 @@ class CoordSystem(ABC):
         ----------
         f : torch.Tensor
             Function to be taken gradient of. Shape: (n_points,)
-        coords_geometry : torch.Tensor
+        coords_geometry : list[torch.Tensor]
             A set of points and their geometric coordinates.
-            Shape: (n_points, dim_geometry)
+            List length: dim_geometry, tensor lengths: n_points
 
         Returns
         -------
@@ -239,14 +244,15 @@ class CoordSystem(ABC):
         contra_grad_f = self.contravariant_grad(f, coords_geometry, device)
 
         # Get scale factors (assumes the coordinate system is orthogonal)
-        scale_factors = self.get_scale_factors(coords_geometry, device)
+        n_points = f.shape[0]
+        scale_factors = self.get_scale_factors(coords_geometry, n_points, device)
 
         return scale_factors * contra_grad_f
 
     def laplacian(
         self,
         f: torch.Tensor,
-        coords_geometry: torch.Tensor,
+        coords_geometry: list[torch.Tensor],
         device: torch.device | None = None,
     ) -> torch.Tensor:
         """
@@ -256,9 +262,9 @@ class CoordSystem(ABC):
         ----------
         f : torch.Tensor
             Function to be taken gradient of. Shape: (n_points,)
-        coords_geometry : torch.Tensor
+        coords_geometry : list[torch.Tensor]
             A set of points and their geometric coordinates.
-            Shape: (n_points, dim_geometry)
+            List length: dim_geometry, tensor lengths: n_points
 
         Returns
         -------
@@ -271,7 +277,7 @@ class CoordSystem(ABC):
         # Validate input tensors
         n_points = f.shape[0]
         validate_pytorch_tensor(f, (n_points,))
-        validate_pytorch_tensor(coords_geometry, (n_points, dim_geometry))
+        self._validate_coordinates(coords_geometry)
 
         # Tensor of metric tensors for each point
         G = self.metric_tensor(
@@ -284,7 +290,7 @@ class CoordSystem(ABC):
         validate_pytorch_tensor(G_inv, (n_points, dim_geometry, dim_geometry))
 
         # Metric determinant
-        det_G = torch.det(G)  # Shape: (n_points, 1)
+        det_G = torch.det(G)  # Shape: (n_points,)
         sqrt_det_G = torch.sqrt(torch.abs(det_G))  # Shape: (n_points,)
 
         # Get contravariant grad of f
@@ -293,25 +299,24 @@ class CoordSystem(ABC):
 
         # Now take divergence
         divergence_accum = torch.zeros(n_points, device=device)
-        for i in range(dim_geometry):
+        for i, coord in enumerate(coords_geometry):
             inner_term = inner_terms[:, i]  # Shape (n_points,)
 
-            # Differentiate this component w.r.t the coordinates
-            derivative_inner = torch.autograd.grad(
+            # Differentiate this component w.r.t each coordinate
+            derivative_inner_coord = torch.autograd.grad(
                 inner_term,
-                coords_geometry,
+                coord,
                 grad_outputs=torch.ones_like(inner_term),
                 create_graph=True,
                 retain_graph=True,
-                allow_unused=True,
             )[0]
 
-            # Set derivatives to zero in None (Case where f is indep of coords_geometry)
-            if derivative_inner is None:
-                derivative_inner = torch.zeros_like(coords_geometry)
+            # Set derivatives to zero in None (Case where f is indep of coord)
+            if derivative_inner_coord is None:
+                derivative_inner_coord = torch.zeros_like(coord)
 
             # Add to cumulative sum
-            divergence_accum += derivative_inner[:, i]
+            divergence_accum += derivative_inner_coord
 
         # Divide by sqrt of det G
         laplacian_f = divergence_accum / (sqrt_det_G)
@@ -384,19 +389,8 @@ class CoordSystem(ABC):
             alt_coord_system_label = coord_redirections[
                 (dim_geometry, axes_labels_selected)
             ]
-            alt_coord_system_class = lookup_from_registry(
-                alt_coord_system_label, COORD_SYSTEM_REGISTRY
-            )
-
-            if isinstance(alt_coord_system_class, type) and issubclass(
-                alt_coord_system_class, CoordSystem
-            ):
-                alt_coord_system_name = alt_coord_system_class.metadata.name
-            else:
-                raise TypeError(
-                    "Expected a CoordSystem from lookup_from_registry, "
-                    "got a function"
-                )
+            alt_coord_system_class = COORD_SYSTEM_REGISTRY[alt_coord_system_label]
+            alt_coord_system_name = alt_coord_system_class.metadata.name
 
             raise ValueError(
                 f"To enforce consistent coordinate system labelling, use "
@@ -406,7 +400,7 @@ class CoordSystem(ABC):
 
     def _validate_required_or_fixed_axes(self) -> None:
         """
-        Validate axes that are required either a selected axis or a fixed value.
+        Validate axes that are required either as selected axis or a fixed value.
 
         Raises
         ------
@@ -510,99 +504,41 @@ class CoordSystem(ABC):
         if not np.all(np.logical_and(lower_ab, upper_ab)):
             raise ValueError("Inconsistent axes bounds.")
 
-    def _validate_coordinates(self, coords_geometry: torch.Tensor) -> None:
+    def _validate_coordinates(
+        self, coords_geometry: list[torch.Tensor], n_points: int | None = None
+    ) -> None:
         """
-        Validate that a set of provided coordinates are compatible with the coordinate
-        system.
+        Validate that a set of provided geometriccoordinates are in the right form.
 
         Parameters
         ----------
-        coords_geometry : torch.Tensor
-            Coordinates to validate. Shape: (n_points, dim_geometry)
+        coords_geometry : list[torch.Tensor]
+            Coordinates to validate. List length: dim_geometry, tensor lengths: n_points
+        n_points : int
+            Number of points that each tensor should have elements for.
 
         Raises
         ------
         ValueError
-            If coordinates are incompatible with the coordinate system.
+            If coordinates have incorrect form.
         """
         # Coordinate system dimensions
         self._validate_dimensions()
         dim_geometry = self.dim_geometry
 
         # Extract metadata
-        axes_labels = self.metadata.axes_labels
         self._validate_bounds()
-        axes_bounds = self.metadata.axes_bounds
-        axes_bounds_inclusive = self.metadata.axes_bounds_inclusive
 
         # Validate coords_geometry tensor type and shape
-        n_points = coords_geometry.shape[0]
-        validate_pytorch_tensor(coords_geometry, (n_points, dim_geometry))
-
-        # Separate lower and upper bounds and inclusivity
-        lower_bounds = np.array(axes_bounds)[:, 0]
-        upper_bounds = np.array(axes_bounds)[:, 1]
-        lower_inclusive = np.array(axes_bounds_inclusive)[:, 0]
-        upper_inclusive = np.array(axes_bounds_inclusive)[:, 1]
-
-        # Convert bounds to tensors, replacing None with -inf / +inf. Reshape to
-        # (1, dim_geometry) so that PyTorch will broadcast to (n_points, dim_geometry)
-        # in comparisons with coords_geometry which has shape (n_points, dim_geometry).
-        lower_bounds_tensor = torch.tensor(
-            [lb if lb is not None else -torch.inf for lb in lower_bounds],
-            dtype=coords_geometry.dtype,
-        ).unsqueeze(0)
-        upper_bounds_tensor = torch.tensor(
-            [ub if ub is not None else torch.inf for ub in upper_bounds],
-            dtype=coords_geometry.dtype,
-        ).unsqueeze(0)
-        lower_inclusive_tensor = torch.tensor(
-            [li if li is not None else True for li in lower_inclusive], dtype=torch.bool
-        ).unsqueeze(0)
-        upper_inclusive_tensor = torch.tensor(
-            [ui if ui is not None else True for ui in upper_inclusive], dtype=torch.bool
-        ).unsqueeze(0)
-
-        # Vectorized mask checks
-        mask_in_bounds_lower = torch.where(
-            lower_inclusive_tensor,
-            coords_geometry >= lower_bounds_tensor,
-            coords_geometry > lower_bounds_tensor,
-        )
-        mask_in_bounds_upper = torch.where(
-            upper_inclusive_tensor,
-            coords_geometry <= upper_bounds_tensor,
-            coords_geometry < upper_bounds_tensor,
-        )
-
-        # Out-of-bounds mask
-        mask_out_of_bounds = ~(mask_in_bounds_lower & mask_in_bounds_upper)
-
-        # Initialise list to collect error messages
-        errors = []
-
-        # Iterate over dimensions to find and report out-of-bounds elements
-        for idx_dim, label in enumerate(axes_labels):
-            # Get n_points indices where this coordinate is out of bounds
-            idx_points_errors = torch.nonzero(mask_out_of_bounds[:, idx_dim]).squeeze(1)
-            if idx_points_errors.numel() == 0:
-                continue  # no errors for this coordinate
-
-            # String representation of bounds
-            bounds_str = interval_str(
-                np.array(axes_bounds)[idx_dim, :], np.array(axes_bounds)[idx_dim, :]
+        if len(coords_geometry) != dim_geometry:
+            raise ValueError(
+                f"Expected coords_geometry to have length {dim_geometry}, "
+                f"got {len(coords_geometry)}"
             )
 
-            # Generate messages for this dimension
-            for idx_points_error in idx_points_errors:
-                value = coords_geometry[idx_points_error, idx_dim].item()
-                errors.append(
-                    f"Coordinate '{label}'={value} is out of bounds {bounds_str}"
-                )
-
-        # Raise error if any violations
-        if errors:
-            raise ValueError("\n".join(errors))
+        if n_points is not None:
+            for i in range(dim_geometry):
+                validate_pytorch_tensor(coords_geometry[i], (n_points,))
 
 
 class CartesianCoords(CoordSystem):
@@ -635,7 +571,7 @@ class CartesianCoords(CoordSystem):
     def metric_tensor(
         self,
         n_points: int,
-        _coords_geometry: torch.Tensor | None = None,
+        _coords_geometry: list[torch.Tensor] | None = None,
         device: torch.device | None = None,
     ) -> torch.Tensor:
         """
@@ -645,7 +581,7 @@ class CartesianCoords(CoordSystem):
          ----------
          n_points : int
              Number of points for which to generate metric tensors.
-         _coords_geometry : torch.Tensor
+         _coords_geometry : list[torch.Tensor]
              Coordinates of the points. Unused for Cartesian coordinates.
 
          Returns
@@ -733,7 +669,7 @@ class CylindricalCoords(CoordSystem):
     def metric_tensor(
         self,
         n_points: int,
-        coords_geometry: torch.Tensor,
+        coords_geometry: list[torch.Tensor],
         device: torch.device | None = None,
     ) -> torch.Tensor:
         """
@@ -743,7 +679,7 @@ class CylindricalCoords(CoordSystem):
          ----------
          n_points : int
              Number of points for which to generate metric tensors.
-         coords_geometry : torch.Tensor
+         coords_geometry : list[torch.Tensor]
              Coordinates of the points. Shape: (n_points, dim_geometry).
 
          Returns
@@ -751,7 +687,7 @@ class CylindricalCoords(CoordSystem):
          torch.Tensor
              Metric tensors of shape (n_points, dim_geometry, dim_geometry).
         """
-        # Validate coords_geometry tensor
+        # Validate coords_geometry
         self._validate_coordinates(coords_geometry)
 
         # Get quantities needed in metric tensor
@@ -815,7 +751,7 @@ class SphericalCoords(CoordSystem):
     def metric_tensor(
         self,
         n_points: int,
-        coords_geometry: torch.Tensor,
+        coords_geometry: list[torch.Tensor],
         device: torch.device | None = None,
     ) -> torch.Tensor:
         """
@@ -825,7 +761,7 @@ class SphericalCoords(CoordSystem):
          ----------
          n_points : int
              Number of points for which to generate metric tensors.
-         coords_geometry : torch.Tensor
+         coords_geometry : list[torch.Tensor]
              Coordinates of the points. Shape: (n_points, dim_geometry).
 
          Returns
@@ -833,7 +769,7 @@ class SphericalCoords(CoordSystem):
          torch.Tensor
              Metric tensors of shape (n_points, dim_geometry, dim_geometry).
         """
-        # Validate coords_geometry tensor
+        # Validate coords_geometry
         self._validate_coordinates(coords_geometry)
 
         # Get quantities needed in metric tensor
@@ -874,9 +810,7 @@ class SphericalCoords(CoordSystem):
 
 
 # Mapping from coordinate system labels to classes
-COORD_SYSTEM_REGISTRY: dict[
-    CoordSystemLabels, Callable[..., CoordSystem] | type[CoordSystem]
-] = {
+COORD_SYSTEM_REGISTRY: dict[CoordSystemLabels, type[CoordSystem]] = {
     CoordSystemLabels.CARTESIAN: CartesianCoords,
     CoordSystemLabels.CYLINDRICAL: CylindricalCoords,
     CoordSystemLabels.SPHERICAL: SphericalCoords,

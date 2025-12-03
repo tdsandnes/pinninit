@@ -7,13 +7,14 @@ import torch.nn as nn
 
 from ..collocation.collocation import load_collocation
 from ..dataset.dataset import load_dataset
+from ..differential_equations.operators import Operators
 from ..geometry.coordinate_system import COORD_SYSTEM_REGISTRY
+from ..io.input_equations import EQUATION_REGISTRY, load_functions_from_file_to_registry
 from ..io.input_parameters import PINNParameters
 from ..loss.loss_term import DataLoss, PhysicsLoss
 from ..nn.layers import LAYER_TYPE_REGISTRY
 from ..nn.neural_network import NeuralNetwork
 from ..optimizer.optimizer import OPTIMIZER_REGISTRY
-from ..utils import execute_from_registry
 
 
 class PINN:
@@ -28,6 +29,7 @@ class PINN:
         self._init_geometry()  ### most general
         self._init_dataset()  ### depends on geometry
         self._init_collocation()  #### depends on geometry
+        self._init_equations()
         self._init_loss()
         self._init_nn()
         self._init_learnable_parameters()
@@ -40,44 +42,32 @@ class PINN:
         self.coord_axes = [axis["label"] for axis in coordinates]
         self.coord_dim = len(self.coord_axes)
 
-        # Geometric axes
-        self.geometric_axes = [
-            axis for axis in coordinates if axis.get("is_geometric", 0) == 1
-        ]
-        self.geometric_axes_labels = [axis["label"] for axis in self.geometric_axes]
-        self.dim_geometry = len(self.geometric_axes_labels)
-
-        # Non-geometric axes
-        self.nongeometric_axes = [
-            axis for axis in coordinates if axis.get("is_geometric", 0) == 0
-        ]
-        self.nongeometric_axes_labels = [
-            axis["label"] for axis in self.nongeometric_axes
-        ]
-        self.dim_nongeometry = len(self.nongeometric_axes_labels)
-
         # Fixed axes
-        self.fixed_axes = []
-        self.fixed_axes_values = []
+        fixed_axes_list = []
+        fixed_axes_values_list = []
         for axis in coordinates:
             if axis.get("is_fixed", 0) == 1:
                 if "fixed_value" in axis:
-                    self.fixed_axes.append(axis["label"])
-                    self.fixed_axes_values.append(axis["fixed_value"])
+                    fixed_axes_list.append(axis["label"])
+                    fixed_axes_values_list.append(axis["fixed_value"])
                 else:
                     raise ValueError(
                         f"Axis '{axis['label']}' is marked as fixed but no "
                         "'fixed_value' is provided."
                     )
+        fixed_axes = tuple(fixed_axes_list)
+        fixed_axes_values = tuple(fixed_axes_values_list)
+
+        # Geometric axes
+        geometric_axes_labels = self.pinn_params.geometric_axes_labels
+        dim_geometry = len(geometric_axes_labels)
 
         # Set coordinate system
-        self.coord_system = execute_from_registry(
-            self.coord_system_label,
-            COORD_SYSTEM_REGISTRY,
-            self.dim_geometry,
-            self.geometric_axes_labels,
-            self.fixed_axes,
-            self.fixed_axes_values,
+        self.coord_system = COORD_SYSTEM_REGISTRY[self.coord_system_label](
+            dim_geometry,
+            geometric_axes_labels,
+            fixed_axes,
+            fixed_axes_values,
         )
         """ removed this file until coord treatment is finalised
         ### Keep these as lists rather than tensors for now because of None
@@ -91,37 +81,27 @@ class PINN:
     def _init_dataset(self) -> None:
         # Load datasets
         (
-            self.input_coords_nongeometric,
-            self.input_coords_geometric,
+            self.input_coords,
             self.input_fields,
             self.input_consts,
         ) = load_dataset(self.pinn_params, self.device)
 
-        self.input_coords = torch.cat(
-            [self.input_coords_nongeometric, self.input_coords_geometric], dim=1
-        )
-
         # Lower and upper bounds of coords ### this is after filtering. Is that right?
-        self.input_coords_lb = torch.min(self.input_coords, dim=0).values.detach()
-        self.input_coords_ub = torch.max(self.input_coords, dim=0).values.detach()
+        self.input_coords_lb = [torch.min(tensor) for tensor in self.input_coords]
+        self.input_coords_ub = [torch.max(tensor) for tensor in self.input_coords]
 
     def _init_collocation(self) -> None:
         # Set coords of collocation points
-        self.collocation_coords_nongeometric, self.collocation_coords_geometric = (
-            load_collocation(
-                self.dim_nongeometry,
-                self.dim_geometry,
-                self.input_coords_lb,
-                self.input_coords_ub,
-                self.pinn_params,
-                self.device,
-            )
+        self.collocation_coords = load_collocation(
+            self.input_coords_lb,
+            self.input_coords_ub,
+            self.pinn_params,
+            self.device,
         )
 
-        self.collocation_coords = torch.cat(
-            [self.collocation_coords_nongeometric, self.collocation_coords_geometric],
-            dim=1,
-        )
+    def _init_equations(self) -> None:
+        # Load functions to registry
+        load_functions_from_file_to_registry(self.pinn_params.equations_params)
 
     def _init_loss(self) -> None:
         data_loss_terms_params = self.pinn_params.dataloss_params.terms
@@ -151,9 +131,7 @@ class PINN:
         out_features = hidden_layer_widths + [len(output_fields)]
 
         self.layers = [
-            execute_from_registry(
-                layer_types[i],
-                LAYER_TYPE_REGISTRY,
+            LAYER_TYPE_REGISTRY[layer_types[i]](
                 in_features=in_features[i],
                 out_features=out_features[i],
             )
@@ -174,29 +152,35 @@ class PINN:
         )
 
     def _init_optimizer(self) -> None:
-        optimizer = self.pinn_params.optimizer_params.optimizer
+        optimizer_label = self.pinn_params.optimizer_params.optimizer
         lr = self.pinn_params.optimizer_params.learning_rate
 
-        self.optimizer = execute_from_registry(
-            optimizer,
-            OPTIMIZER_REGISTRY,
+        self.optimizer = OPTIMIZER_REGISTRY[optimizer_label](
             list(self.model.parameters()) + list(self.learnable_consts),
             lr=lr,
         )
 
     # Function to predict values
     def predict(
-        self, coords: torch.Tensor
+        self, coords: list[torch.Tensor]
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         ### HARDCODED FOR NOW
-        psi_and_p = self.model(coords)
+        data_coords_tensor = torch.stack(coords, dim=1)
+        psi_and_p = self.model(data_coords_tensor)
         psi = psi_and_p[:, 0]
         p = psi_and_p[:, 1]
 
-        grad_psi = self.coord_system.grad(psi, coords, self.device)
+        geometric_axis_mask = self.pinn_params.geometric_axis_mask
+        coord_to_index_dict = self.pinn_params.coord_to_index_dict
+        operators = Operators(
+            self.coord_system,
+            coords,
+            geometric_axis_mask,
+            coord_to_index_dict,
+            self.device,
+        )
 
-        u = grad_psi[:, 1]
-        v = -grad_psi[:, 0]
+        u, v = EQUATION_REGISTRY["velocity_from_psi"](psi, operators)
 
         return u, v, p
 
@@ -207,93 +191,60 @@ class PINN:
         #       torch.mean(f_u_pred**2) + \
         #       torch.mean(f_v_pred**2)
 
-        data_coords = self.input_coords
-        data_coords_geometric = self.input_coords_geometric
-        collocation_coords = self.collocation_coords
-        collocation_coords_nongeometric = self.collocation_coords_nongeometric
-        collocation_coords_geometric = self.collocation_coords_geometric
-        ### HARDCODED FOR NOW
+        geometric_axis_mask = self.pinn_params.geometric_axis_mask
+        coord_to_index_dict = self.pinn_params.coord_to_index_dict
+        input_field_to_index_dict = self.pinn_params.input_field_to_index_dict
+        idx_u = input_field_to_index_dict["u"]
+        idx_v = input_field_to_index_dict["v"]
 
-        ### data coords
-        psi_and_p_data = self.model(data_coords)
-        psi_data = psi_and_p_data[:, 0]
+        # Make tensors for model inputs
+        data_coords_tensor = torch.stack(self.input_coords, dim=1)
+        collocation_coords_tensor = torch.stack(self.collocation_coords, dim=1)
 
-        grad_psi_data = self.coord_system.grad(
-            psi_data, data_coords_geometric, self.device
+        # Define differential eqn operator objects for data and collocation points
+        operators_data = Operators(
+            self.coord_system,
+            self.input_coords,
+            geometric_axis_mask,
+            coord_to_index_dict,
+            self.device,
+        )
+        operators_co = Operators(
+            self.coord_system,
+            self.collocation_coords,
+            geometric_axis_mask,
+            coord_to_index_dict,
+            self.device,
         )
 
-        u_data = grad_psi_data[:, 1]
-        v_data = -grad_psi_data[:, 0]
+        ### data coords
+        psi_and_p_data = self.model(data_coords_tensor)
+        psi_data = psi_and_p_data[:, 0]
+
+        # velocity_from_psi
+        u_data, v_data = EQUATION_REGISTRY["velocity_from_psi"](
+            psi_data, operators_data
+        )
 
         ### collocation coords
-        psi_and_p_co = self.model(collocation_coords)
+        psi_and_p_co = self.model(collocation_coords_tensor)
         psi_co = psi_and_p_co[:, 0]
         p_co = psi_and_p_co[:, 1]
 
-        grad_psi_co = self.coord_system.grad(
-            psi_co, collocation_coords_geometric, self.device
+        # velocity_from_psi
+        u_co, v_co = EQUATION_REGISTRY["velocity_from_psi"](psi_co, operators_co)
+
+        # navier_stokes
+        l1 = self.learnable_consts[0]
+        l2 = self.learnable_consts[1]
+        residual_u, residual_v = EQUATION_REGISTRY["navier_stokes"](
+            u_co, v_co, p_co, l1, l2, operators_co
         )
 
-        u_co = grad_psi_co[:, 1]
-        v_co = -grad_psi_co[:, 0]
-
-        grad_u_co = self.coord_system.grad(
-            u_co, collocation_coords_geometric, self.device
+        loss_data = torch.mean((self.input_fields[idx_u] - u_data) ** 2) + torch.mean(
+            (self.input_fields[idx_v] - v_data) ** 2
         )
-        grad_v_co = self.coord_system.grad(
-            v_co, collocation_coords_geometric, self.device
-        )
-        ut = torch.autograd.grad(
-            u_co,
-            collocation_coords_nongeometric,
-            torch.ones_like(u_co),
-            retain_graph=True,
-            create_graph=True,
-        )[0][:, 0]
-        ux = grad_u_co[:, 0]
-        uy = grad_u_co[:, 1]
-        vt = torch.autograd.grad(
-            v_co,
-            collocation_coords_nongeometric,
-            torch.ones_like(v_co),
-            retain_graph=True,
-            create_graph=True,
-        )[0][:, 0]
-        vx = grad_v_co[:, 0]
-        vy = grad_v_co[:, 1]
-
-        # Laplacians
-        laplacian_u = self.coord_system.laplacian(
-            u_co, collocation_coords_geometric, self.device
-        )
-        laplacian_v = self.coord_system.laplacian(
-            v_co, collocation_coords_geometric, self.device
-        )
-
-        grad_p_co = self.coord_system.grad(
-            p_co, collocation_coords_geometric, self.device
-        )
-        px = grad_p_co[:, 0]
-        py = grad_p_co[:, 1]
-
-        # Navier-Stokes residuals
-        f_u = (
-            ut
-            + self.learnable_consts[0] * (u_co * ux + v_co * uy)
-            + px
-            - self.learnable_consts[1] * laplacian_u
-        )
-        f_v = (
-            vt
-            + self.learnable_consts[0] * (u_co * vx + v_co * vy)
-            + py
-            - self.learnable_consts[1] * laplacian_v
-        )
-
-        loss_data = torch.mean((self.input_fields[:, 0] - u_data) ** 2) + torch.mean(
-            (self.input_fields[:, 1] - v_data) ** 2
-        )
-        loss_phys = torch.mean(f_u**2) + torch.mean(f_v**2)
+        loss_phys = torch.mean(residual_u**2) + torch.mean(residual_v**2)
 
         # Total loss
         loss = loss_data + loss_phys
@@ -344,15 +295,3 @@ class PINN:
         self.lambda_2 = torch.tensor(
             checkpoint["lambda_2"], requires_grad=True, dtype=torch.float32
         )
-
-    def inputs(
-        self,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-        t = self.input_coords
-        x = self.input_coords
-        y = self.input_coords
-
-        u = self.input_fields
-        v = self.input_fields
-
-        return t, x, y, u, v

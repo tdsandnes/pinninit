@@ -85,14 +85,14 @@ def select_coord_system_axes(
 
 def get_required_or_fixed_coord(
     axis_label: str,
-    coords_geometry: torch.Tensor,
+    coords_geometry: list[torch.Tensor],
     axes_labels_selected: tuple[str, ...],
     fixed_axes: tuple[str, ...] | None,
     fixed_axes_values: tuple[float, ...] | None,
 ) -> torch.Tensor:
     if axis_label in axes_labels_selected:
         idx = axes_labels_selected.index(axis_label)
-        return coords_geometry[:, idx]
+        return coords_geometry[idx]
     elif (
         fixed_axes is not None
         and fixed_axes_values is not None

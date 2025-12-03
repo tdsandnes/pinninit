@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import torch.nn as nn
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    pass
 
 
 class LayerTypeLabels(str, Enum):
@@ -16,8 +16,6 @@ class LayerTypeLabels(str, Enum):
 
 
 # Mapping from layer type labels to classes
-LAYER_TYPE_REGISTRY: dict[
-    LayerTypeLabels, Callable[..., nn.Module] | type[nn.Module]
-] = {
+LAYER_TYPE_REGISTRY: dict[LayerTypeLabels, type[nn.Module]] = {
     LayerTypeLabels.LINEAR: nn.Linear,
 }

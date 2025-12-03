@@ -5,12 +5,11 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from ..utils import lookup_from_registry
 from .loss_function import LOSS_FUNCTION_REGISTRY, LossFunctionLabels
 from .loss_utils import is_loss_input_residual
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    pass
 
 
 class LossTermLabels(str, Enum):
@@ -26,9 +25,7 @@ class LossTerm:
     def __init__(self, loss_function_label: LossFunctionLabels):
         self.loss_function_label = loss_function_label
         # Look up the loss function in registry
-        self.loss_func = lookup_from_registry(
-            loss_function_label, LOSS_FUNCTION_REGISTRY
-        )
+        self.loss_func = LOSS_FUNCTION_REGISTRY[loss_function_label]
 
     def compute_loss(
         self,
@@ -164,7 +161,7 @@ class PhysicsLoss(LossTerm):
 
 
 # Mapping from loss term labels to classes
-LOSS_TERM_REGISTRY: dict[LossTermLabels, Callable[..., LossTerm] | type[LossTerm]] = {
+LOSS_TERM_REGISTRY: dict[LossTermLabels, type[LossTerm]] = {
     LossTermLabels.DATA: DataLoss,
     LossTermLabels.PHYSICS: PhysicsLoss,
 }

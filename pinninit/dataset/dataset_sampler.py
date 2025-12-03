@@ -17,21 +17,21 @@ class DataSetSamplerLabels(str, Enum):
     RANDOM = "random"
 
 
-def random_array_sampler(array: np.ndarray, pinn_params: PINNParameters) -> np.ndarray:
+def mask_random_array_sampler(length: int, pinn_params: PINNParameters) -> np.ndarray:
     """
-    Randomly sample NumPy array.
+    Mask for randomly sampling 1D array of given length.
 
     Parameters:
     ----------
-    array : ndarray
-        array to sample. Shape (n_points, :)
+    length:
+        Mask length
     pinn_params : PINNParameters
         PINN parameters.
 
     Returns:
     ----------
     ndarray
-        Sampled data.
+        Mask.
     """
     # Extract DataParams
     num_samples = pinn_params.data_params.num_train_samples
@@ -39,13 +39,13 @@ def random_array_sampler(array: np.ndarray, pinn_params: PINNParameters) -> np.n
 
     # Use seed to select num_train_samples points
     rng = np.random.default_rng(seed)
-    mask = rng.choice(array.shape[0], num_samples, replace=False)
-    return array[mask, :]
+    mask = rng.choice(length, num_samples, replace=False)
+    return mask
 
 
 # Mapping from data set sampler method labels to python functions
 DATA_SET_SAMPLER_REGISTRY: dict[
-    DataSetSamplerLabels, Callable[[np.ndarray, PINNParameters], np.ndarray]
+    DataSetSamplerLabels, Callable[[int, PINNParameters], np.ndarray]
 ] = {
-    DataSetSamplerLabels.RANDOM: random_array_sampler,
+    DataSetSamplerLabels.RANDOM: mask_random_array_sampler,
 }

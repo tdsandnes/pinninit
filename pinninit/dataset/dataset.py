@@ -6,7 +6,6 @@ import numpy as np
 import scipy
 import torch
 
-from ..utils import execute_from_registry
 from .dataset_sampler import DATA_SET_SAMPLER_REGISTRY
 
 if TYPE_CHECKING:
@@ -15,7 +14,7 @@ if TYPE_CHECKING:
 
 def load_dataset(
     pinn_params: PINNParameters, device: torch.device
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[list[torch.Tensor], list[torch.Tensor], list[torch.Tensor]]:
     # Extract DataParams
     file_path = pinn_params.data_params.file_path
     train_sampling_strategy = pinn_params.data_params.train_sampling_strategy
@@ -41,42 +40,66 @@ def load_dataset(
     UU = U_star[:, 0, :]  # N x T
     VV = U_star[:, 1, :]  # N x T
 
-    # Flatten and stack
-    coords_and_fields_array = np.hstack(
-        [
-            TT.flatten()[:, None],  # t
-            XX.flatten()[:, None],  # x
-            YY.flatten()[:, None],  # y
-            UU.flatten()[:, None],  # u
-            VV.flatten()[:, None],  # v
-        ]
-    )  # shape (N*T, 3+2)
+    # Flatten data
+    t = TT.flatten()
+    x = XX.flatten()
+    y = YY.flatten()
+    u = UU.flatten()
+    v = VV.flatten()
 
-    # Sample arrays
-    sampled_array = execute_from_registry(
-        train_sampling_strategy,
-        DATA_SET_SAMPLER_REGISTRY,
-        coords_and_fields_array,
+    # Get mask for sampling
+    data_length = len(t)
+    mask = DATA_SET_SAMPLER_REGISTRY[train_sampling_strategy](
+        data_length,
         pinn_params,
     )
 
-    ### Hardcoded 3 here must come from spatial coords + 1
-    coords_nongeometric_sampled_array = sampled_array[:, 0:1]
-    coords_geometric_sampled_array = sampled_array[:, 1:3]
-    fields_sampled_array = sampled_array[:, 3:]
+    # Sample data
+    t_sampled = t[mask]
+    x_sampled = x[mask]
+    y_sampled = y[mask]
+    u_sampled = u[mask]
+    v_sampled = v[mask]
 
-    input_coords_nongeometric = (
-        torch.tensor(coords_nongeometric_sampled_array, requires_grad=True)
-        .float()
-        .to(device)
-    )
-    input_coords_geometric = (
-        torch.tensor(coords_geometric_sampled_array, requires_grad=True)
-        .float()
-        .to(device)
-    )
-    input_fields = torch.tensor(fields_sampled_array).float().to(device)
-    ### Adding this here as a placeholder for overhall of this func
-    input_consts = torch.tensor([]).to(device)
+    ### TEMPORARY to give an idea of what it will look like from hdf5
+    input_coord_dict = {"t": t_sampled, "x": x_sampled, "y": y_sampled}
+    input_field_dict = {"u": u_sampled, "v": v_sampled}
 
-    return input_coords_nongeometric, input_coords_geometric, input_fields, input_consts
+    # Set up coords in correct order
+    input_coords = []
+    index_to_coord_dict = pinn_params.index_to_coord_dict
+    num_input_coords = len(index_to_coord_dict)
+    for i in range(num_input_coords):
+        if i in index_to_coord_dict:
+            axis_label = index_to_coord_dict[i]
+            coord_values = torch.tensor(input_coord_dict[axis_label])
+            coord_values = coord_values.float().to(device)
+            coord_values.requires_grad_(True)
+            input_coords.append(coord_values)
+        else:
+            raise ValueError(
+                "index_to_coord_dict must contain all integer keys from 0 to "
+                f"{num_input_coords} without gaps. Missing index: {i}"
+            )
+
+    # Set up fields in correct order
+    input_fields = []
+    index_to_input_field_dict = pinn_params.index_to_input_field_dict
+    num_input_fields = len(index_to_input_field_dict)
+    for i in range(num_input_fields):
+        if i in index_to_input_field_dict:
+            axis_label = index_to_input_field_dict[i]
+            field_values = torch.tensor(input_field_dict[axis_label])
+            field_values = field_values.float().to(device)
+            field_values.requires_grad_(True)
+            input_fields.append(field_values)
+        else:
+            raise ValueError(
+                "index_to_input_field_dict must contain all integer keys from 0 to "
+                f"{num_input_fields} without gaps. Missing index: {i}"
+            )
+
+    ### Adding this here as a placeholder for future
+    input_consts = [torch.tensor([]).to(device)]
+
+    return input_coords, input_fields, input_consts

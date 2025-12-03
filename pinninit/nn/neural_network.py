@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 import torch
 import torch.nn as nn
 
-from ..utils import execute_from_registry
 from .activation_function import ACTIVATION_FUNC_REGISTRY
 from .initialise_biases import BIAS_INIT_REGISTRY
 from .initialise_weights import WEIGHT_INIT_REGISTRY
@@ -28,8 +27,8 @@ class NeuralNetwork(nn.Module):
         self,
         layers: list[nn.Module],
         layers_params: LayersParams,
-        lb: torch.Tensor,
-        ub: torch.Tensor,
+        lb: list[torch.Tensor],
+        ub: list[torch.Tensor],
     ):
         super().__init__()
         self.layers = nn.ModuleList(layers)  # registers layers as submodules
@@ -40,25 +39,34 @@ class NeuralNetwork(nn.Module):
         # Set activation functions and inital weights and biases for each layer
         activation_funcs = []
         for i, layer in enumerate(self.layers):
+            ### Maybe have to do this differently in case for general layer that might
+            ### not have weights and biases
+            assert isinstance(
+                layer.weight, torch.Tensor
+            ), f"Expected layer weight to be torch.Tensor, got {type(layer.weight)}"
+            assert isinstance(
+                layer.bias, torch.Tensor
+            ), f"Expected layer bias to be torch.Tensor, got {type(layer.bias)}"
+
             # Look up activation function in registry
-            activation_funcs.append(
-                execute_from_registry(
-                    activation_function_labels[i], ACTIVATION_FUNC_REGISTRY
-                )
-            )
+            activation_function_object = ACTIVATION_FUNC_REGISTRY[
+                activation_function_labels[i]
+            ]()
+            activation_funcs.append(activation_function_object)
 
             # Define weights and biases as trainable parameters
-            execute_from_registry(
-                init_weight_lables[i], WEIGHT_INIT_REGISTRY, layer.weight
-            )
-            execute_from_registry(init_bias_labels[i], BIAS_INIT_REGISTRY, layer.bias)
+            WEIGHT_INIT_REGISTRY[init_weight_lables[i]](layer.weight)
+            BIAS_INIT_REGISTRY[init_bias_labels[i]](layer.bias)
 
         self.activation_funcs = activation_funcs
 
         ### hardcoded normalisation for now
+        lb_tensor = torch.tensor(lb)
+        ub_tensor = torch.tensor(ub)
+
         # Register as buffers (not trainable parameters)
-        self.register_buffer("lb", lb)
-        self.register_buffer("ub", ub)
+        self.register_buffer("lb", lb_tensor)
+        self.register_buffer("ub", ub_tensor)
 
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         # Normalisation ### temp hardcoded for now, but should add a normalisation.py

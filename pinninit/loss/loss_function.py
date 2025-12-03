@@ -58,9 +58,7 @@ def mse_loss(
 # Mapping from loss function labels to python functions
 LOSS_FUNCTION_REGISTRY: dict[
     LossFunctionLabels,
-    Callable[
-        [torch.Tensor | None, torch.Tensor | None, torch.Tensor | None], torch.Tensor
-    ],
+    Callable[..., torch.Tensor],
 ] = {
     LossFunctionLabels.MSE: mse_loss,
 }
