@@ -12,15 +12,13 @@ class Operators:
     def __init__(
         self,
         coord_system: CoordSystem,
-        coords: list[torch.Tensor],
-        geometric_axis_mask: list[int],
-        coord_to_index_dict: dict[str, int],
+        coords: dict[str, torch.Tensor],
+        geometric_axes_labels: tuple[str, ...],
         device: torch.device,
     ):
         self.coord_system = coord_system
         self.coords = coords
-        self.geometric_axis_mask = geometric_axis_mask
-        self.coord_to_index_dict = coord_to_index_dict
+        self.geometric_axes_labels = geometric_axes_labels
         self.device = device
 
     def d_dcoord(
@@ -29,8 +27,7 @@ class Operators:
         coord_label: str,
     ) -> torch.Tensor:
         # Get coordinate from label
-        coord_index = self.coord_to_index_dict[coord_label]
-        coord = self.coords[coord_index]
+        coord = self.coords[coord_label]
 
         # Calculate derivatives using autograd
         derivative_f = torch.autograd.grad(
@@ -48,7 +45,7 @@ class Operators:
         f: torch.Tensor,
     ) -> torch.Tensor:
         # Get geometric coordinates
-        coords_geometric = [self.coords[i] for i in self.geometric_axis_mask]
+        coords_geometric = [self.coords[label] for label in self.geometric_axes_labels]
 
         # Take transpose so that eqn. file uses indices like [0] rather than [:, 0]
         grad = self.coord_system.grad(f, coords_geometric, self.device).T
@@ -60,7 +57,7 @@ class Operators:
         f: torch.Tensor,
     ) -> torch.Tensor:
         # Get geometric coordinates
-        coords_geometric = [self.coords[i] for i in self.geometric_axis_mask]
+        coords_geometric = [self.coords[label] for label in self.geometric_axes_labels]
 
         # Take transpose so that eqn. file uses indices like [0] rather than [:, 0]
         contra_grad = self.coord_system.contravariant_grad(
@@ -74,6 +71,6 @@ class Operators:
         f: torch.Tensor,
     ) -> torch.Tensor:
         # Get geometric coordinates
-        coords_geometric = [self.coords[i] for i in self.geometric_axis_mask]
+        coords_geometric = [self.coords[label] for label in self.geometric_axes_labels]
 
         return self.coord_system.laplacian(f, coords_geometric, self.device)

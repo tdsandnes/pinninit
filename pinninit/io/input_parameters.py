@@ -257,10 +257,7 @@ class PINNParameters:
         self._extract_parameters()
 
         # Set attributes needed for consistent ordering
-        self._set_coord_index_dicts()
         self._set_geometric_axes_labels_and_mask()
-        self._set_input_field_index_dicts()
-        self._set_output_field_index_dicts()
 
     def _extract_parameters(self) -> None:
         """Extract parameters as objects of individual classes"""
@@ -276,67 +273,25 @@ class PINNParameters:
         self.layers_params = LayersParams(self.input_params)
         self.training_params = TrainingParams(self.input_params)
 
-    def _set_coord_index_dicts(self) -> None:
-        """Set dictionary of coordinate label to index, and the other way around,
-        for consistent ordering of lists"""
-
-        coord_to_index_dict = {}
-        for i, coordinate in enumerate(self.coordinates_params.coordinates):
-            label = coordinate["label"]
-            coord_to_index_dict[label] = i
-
-        self.coord_to_index_dict = coord_to_index_dict
-        self.index_to_coord_dict = {v: k for k, v in coord_to_index_dict.items()}
-
     def _set_geometric_axes_labels_and_mask(self) -> None:
-        """Mask and corrsponding labels for extracting geometric axes in order
-        required by the coordinate system"""
+        """Set geometric axes in order required by the coordinate system"""
         # Coord system label
         coord_system_label = self.coordinates_params.coordinate_system
 
         # Labels of geometric axes set in parameter file
-        self.geometric_axes_labels = tuple(
-            [
-                axis["label"]
-                for axis in self.coordinates_params.coordinates
-                if axis.get("is_geometric", 0) == 1
-            ]
-        )
+        geometric_axes_labels_unsorted = [
+            axis["label"]
+            for axis in self.coordinates_params.coordinates
+            if axis.get("is_geometric", 0) == 1
+        ]
 
         # Get coord system axis labels
         coord_system = COORD_SYSTEM_REGISTRY[coord_system_label]
         axes_labels = coord_system.metadata.axes_labels
 
-        self.geometric_axis_mask = [
-            self.coord_to_index_dict[label]
-            for label in axes_labels
-            if label in self.geometric_axes_labels
-        ]
+        # Tuple of labels in order required for coord system
+        self.geometric_axes_labels = tuple(
+            [label for label in axes_labels if label in geometric_axes_labels_unsorted]
+        )
 
-    def _set_input_field_index_dicts(self) -> None:
-        """Set dictionary of input field label to index, and the other way around,
-        for consistent ordering of lists"""
-
-        input_field_to_index_dict = {}
-        for i, field in enumerate(self.fields_params.input_fields):
-            label = field["label"]
-            input_field_to_index_dict[label] = i
-
-        self.input_field_to_index_dict = input_field_to_index_dict
-        self.index_to_input_field_dict = {
-            v: k for k, v in input_field_to_index_dict.items()
-        }
-
-    def _set_output_field_index_dicts(self) -> None:
-        """Set dictionary of output field label to index, and the other way around,
-        for consistent ordering of lists"""
-
-        output_field_to_index_dict = {}
-        for i, field in enumerate(self.fields_params.input_fields):
-            label = field["label"]
-            output_field_to_index_dict[label] = i
-
-        self.output_field_to_index_dict = output_field_to_index_dict
-        self.index_to_output_field_dict = {
-            v: k for k, v in output_field_to_index_dict.items()
-        }
+        self.dim_geometry = len(self.geometric_axes_labels)

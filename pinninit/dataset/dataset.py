@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 def load_dataset(
     pinn_params: PINNParameters, device: torch.device
-) -> tuple[list[torch.Tensor], list[torch.Tensor], list[torch.Tensor]]:
+) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     # Extract DataParams
     file_path = pinn_params.data_params.file_path
     train_sampling_strategy = pinn_params.data_params.train_sampling_strategy
@@ -62,44 +62,46 @@ def load_dataset(
     v_sampled = v[mask]
 
     ### TEMPORARY to give an idea of what it will look like from hdf5
-    input_coord_dict = {"t": t_sampled, "x": x_sampled, "y": y_sampled}
-    input_field_dict = {"u": u_sampled, "v": v_sampled}
+    all_input_coord_dict = {"t": t_sampled, "x": x_sampled, "y": y_sampled}
+    all_input_field_dict = {"u": u_sampled, "v": v_sampled}
 
-    # Set up coords in correct order
-    input_coords = []
-    index_to_coord_dict = pinn_params.index_to_coord_dict
-    num_input_coords = len(index_to_coord_dict)
-    for i in range(num_input_coords):
-        if i in index_to_coord_dict:
-            axis_label = index_to_coord_dict[i]
-            coord_values = torch.tensor(input_coord_dict[axis_label])
+    # coords included in input file
+    coord_params = pinn_params.coordinates_params
+    param_coord_labels = [coord["label"] for coord in coord_params.coordinates]
+
+    # Set up coords in dict
+    input_coords = {}
+    for coord_label, input_array in all_input_coord_dict.items():
+        if coord_label in param_coord_labels:
+            coord_values = torch.tensor(input_array)
             coord_values = coord_values.float().to(device)
             coord_values.requires_grad_(True)
-            input_coords.append(coord_values)
+            input_coords[coord_label] = coord_values
         else:
             raise ValueError(
-                "index_to_coord_dict must contain all integer keys from 0 to "
-                f"{num_input_coords} without gaps. Missing index: {i}"
+                "Data file must contain data for all coordinates specified in the "
+                f"parameter file. Missing coordinate: {coord_label}"
             )
 
-    # Set up fields in correct order
-    input_fields = []
-    index_to_input_field_dict = pinn_params.index_to_input_field_dict
-    num_input_fields = len(index_to_input_field_dict)
-    for i in range(num_input_fields):
-        if i in index_to_input_field_dict:
-            axis_label = index_to_input_field_dict[i]
-            field_values = torch.tensor(input_field_dict[axis_label])
+    # input fields included in input file
+    fields_params = pinn_params.fields_params
+    param_field_labels = [field["label"] for field in fields_params.input_fields]
+
+    # Set up fields in dict
+    input_fields = {}
+    for field_label, input_array in all_input_field_dict.items():
+        if field_label in param_field_labels:
+            field_values = torch.tensor(input_array)
             field_values = field_values.float().to(device)
             field_values.requires_grad_(True)
-            input_fields.append(field_values)
+            input_fields[field_label] = field_values
         else:
             raise ValueError(
-                "index_to_input_field_dict must contain all integer keys from 0 to "
-                f"{num_input_fields} without gaps. Missing index: {i}"
+                "Data file must contain data for all input fields specified in the "
+                f"parameter file. Missing input field: {field_label}"
             )
 
     ### Adding this here as a placeholder for future
-    input_consts = [torch.tensor([]).to(device)]
+    input_consts = {"": torch.tensor([]).to(device)}
 
     return input_coords, input_fields, input_consts

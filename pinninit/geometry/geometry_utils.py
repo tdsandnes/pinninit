@@ -7,7 +7,7 @@ def select_coord_system_axes(
     axes_labels: tuple[str, ...],
     axes_bounds: tuple[tuple[float | None, float | None], ...],
     axes_bounds_inclusive: tuple[tuple[bool | None, bool | None], ...],
-    input_labels: tuple[str],
+    input_labels: tuple[str, ...],
 ) -> tuple[
     tuple[str, ...],
     tuple[tuple[float | None, float | None], ...],

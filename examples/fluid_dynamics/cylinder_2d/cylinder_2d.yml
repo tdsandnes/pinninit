@@ -15,7 +15,7 @@ Equations:
   equations:
     - label: velocity_from_psi
       function_name: velocity_from_psi_2d
-      file_path: ./testing_pinns/pinninit/examples/fluid_dynamics/cylinder_2d/cylinder_2d_physics.py
+      file_path: ./testing_pinns/pinninit/examples/fluid_dynamics/cylinder_2d/cylinder_2d_equations.py
       input_args:
         - psi
       output_args:
@@ -23,7 +23,7 @@ Equations:
         - v
     - label: navier_stokes
       function_name: NS_residual_2d
-      file_path: ./testing_pinns/pinninit/examples/fluid_dynamics/cylinder_2d/cylinder_2d_physics.py
+      file_path: ./testing_pinns/pinninit/examples/fluid_dynamics/cylinder_2d/cylinder_2d_equations.py
       input_args:
         - u
         - v
@@ -88,11 +88,13 @@ DataLoss:
 PhysicsLoss:
   terms:
     - label:          NS_u
+      equation_label: navier_stokes
       residual:       residual_u
       loss_function:  mse
       weight_method:  constant
       weight_value:   1.0
     - label:          NS_v
+      equation_label: navier_stokes
       residual:       residual_v
       loss_function:  mse
       weight_method:  constant

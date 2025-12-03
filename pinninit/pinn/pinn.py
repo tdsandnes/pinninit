@@ -60,7 +60,7 @@ class PINN:
 
         # Geometric axes
         geometric_axes_labels = self.pinn_params.geometric_axes_labels
-        dim_geometry = len(geometric_axes_labels)
+        dim_geometry = self.pinn_params.dim_geometry
 
         # Set coordinate system
         self.coord_system = COORD_SYSTEM_REGISTRY[self.coord_system_label](
@@ -87,8 +87,21 @@ class PINN:
         ) = load_dataset(self.pinn_params, self.device)
 
         # Lower and upper bounds of coords ### this is after filtering. Is that right?
-        self.input_coords_lb = [torch.min(tensor) for tensor in self.input_coords]
-        self.input_coords_ub = [torch.max(tensor) for tensor in self.input_coords]
+        self.input_coords_lb = {
+            label: torch.min(tensor) for label, tensor in self.input_coords.items()
+        }
+        self.input_coords_ub = {
+            label: torch.max(tensor) for label, tensor in self.input_coords.items()
+        }
+
+        # Make dict based on order of alphabetically sorted coord labels
+        self.sorted_coord_labels = sorted(self.input_coords)
+        coord_to_index_dict = {}
+        for i, label in enumerate(self.sorted_coord_labels):
+            coord_to_index_dict[label] = i
+
+        self.coord_to_index_dict = coord_to_index_dict
+        self.index_to_coord_dict = {v: k for k, v in coord_to_index_dict.items()}
 
     def _init_collocation(self) -> None:
         # Set coords of collocation points
@@ -138,9 +151,18 @@ class PINN:
             for i in range(self.num_layers)
         ]
 
-        self.model = NeuralNetwork(
-            self.layers, layers_params, self.input_coords_lb, self.input_coords_ub
-        ).to(self.device)
+        # Get lists of lb, ub sorted alphabetically by axis label
+        lb_list = []
+        ub_list = []
+
+        for i in range(self.coord_dim):
+            coord_label = self.index_to_coord_dict[i]
+            lb_list.append(self.input_coords_lb[coord_label])
+            ub_list.append(self.input_coords_ub[coord_label])
+
+        self.model = NeuralNetwork(self.layers, layers_params, lb_list, ub_list).to(
+            self.device
+        )
 
     def _init_learnable_parameters(self) -> None:
         self.num_learnable_consts = len(self.pinn_params.constants_params.learnt_consts)
@@ -162,21 +184,27 @@ class PINN:
 
     # Function to predict values
     def predict(
-        self, coords: list[torch.Tensor]
+        self, coords: dict[str, torch.Tensor]
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        ### HARDCODED FOR NOW
-        data_coords_tensor = torch.stack(coords, dim=1)
-        psi_and_p = self.model(data_coords_tensor)
+        # Geometric axes
+        geometric_axes_labels = self.pinn_params.geometric_axes_labels
+
+        coords_list = []
+        for i in range(self.coord_dim):
+            coord_label = self.index_to_coord_dict[i]
+            coords_list.append(coords[coord_label])
+
+        # Make tensor
+        coords_tensor = torch.stack(coords_list, dim=1)
+
+        psi_and_p = self.model(coords_tensor)
         psi = psi_and_p[:, 0]
         p = psi_and_p[:, 1]
 
-        geometric_axis_mask = self.pinn_params.geometric_axis_mask
-        coord_to_index_dict = self.pinn_params.coord_to_index_dict
         operators = Operators(
             self.coord_system,
             coords,
-            geometric_axis_mask,
-            coord_to_index_dict,
+            geometric_axes_labels,
             self.device,
         )
 
@@ -191,29 +219,32 @@ class PINN:
         #       torch.mean(f_u_pred**2) + \
         #       torch.mean(f_v_pred**2)
 
-        geometric_axis_mask = self.pinn_params.geometric_axis_mask
-        coord_to_index_dict = self.pinn_params.coord_to_index_dict
-        input_field_to_index_dict = self.pinn_params.input_field_to_index_dict
-        idx_u = input_field_to_index_dict["u"]
-        idx_v = input_field_to_index_dict["v"]
-
         # Make tensors for model inputs
-        data_coords_tensor = torch.stack(self.input_coords, dim=1)
-        collocation_coords_tensor = torch.stack(self.collocation_coords, dim=1)
+        data_coords_list = []
+        collocation_coords_list = []
+        for i in range(self.coord_dim):
+            coord_label = self.index_to_coord_dict[i]
+            data_coords_list.append(self.input_coords[coord_label])
+            collocation_coords_list.append(self.collocation_coords[coord_label])
+
+        # Make tensor
+        data_coords_tensor = torch.stack(data_coords_list, dim=1)
+        collocation_coords_tensor = torch.stack(collocation_coords_list, dim=1)
+
+        # Geometric axes
+        geometric_axes_labels = self.pinn_params.geometric_axes_labels
 
         # Define differential eqn operator objects for data and collocation points
         operators_data = Operators(
             self.coord_system,
             self.input_coords,
-            geometric_axis_mask,
-            coord_to_index_dict,
+            geometric_axes_labels,
             self.device,
         )
         operators_co = Operators(
             self.coord_system,
             self.collocation_coords,
-            geometric_axis_mask,
-            coord_to_index_dict,
+            geometric_axes_labels,
             self.device,
         )
 
@@ -241,8 +272,8 @@ class PINN:
             u_co, v_co, p_co, l1, l2, operators_co
         )
 
-        loss_data = torch.mean((self.input_fields[idx_u] - u_data) ** 2) + torch.mean(
-            (self.input_fields[idx_v] - v_data) ** 2
+        loss_data = torch.mean((self.input_fields["u"] - u_data) ** 2) + torch.mean(
+            (self.input_fields["v"] - v_data) ** 2
         )
         loss_phys = torch.mean(residual_u**2) + torch.mean(residual_v**2)
 

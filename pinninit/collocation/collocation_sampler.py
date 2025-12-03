@@ -18,43 +18,42 @@ class CollocationSamplerLabels(str, Enum):
 
 
 def random_domain_sampler(
-    lb: list[torch.Tensor],
-    ub: list[torch.Tensor],
+    lb: dict[str, torch.Tensor],
+    ub: dict[str, torch.Tensor],
     pinn_params: PINNParameters,
     device: torch.device,
-) -> list[torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """
     Randomly sample coordinate domain.
 
     Parameters:
     ----------
-    lb : list[torch.Tensor]
+    lb : dict[str, torch.Tensor]
         Lower bounds for each coordinate
-    ub :  list[torch.Tensor]
+    ub : dict[str, torch.Tensor]
         Upper bounds for each coordinate
     pinn_params : PINNParameters
         PINN parameters.
 
     Returns:
     ----------
-    torch.Tensor
-        Sampled data. Shape (n_points, coord_dim)
+    dict[str, torch.Tensor]
+        Sampled data {axis_label: n_points}
     """
     # Extract params
     num_samples = pinn_params.collocation_params.num_collocation_points
     seed = pinn_params.collocation_params.collocation_sampling_seed
-    dim = len(pinn_params.coordinates_params.coordinates)
 
     # Set seed
     torch.manual_seed(seed)
 
     # Sample uniformly in [lb, ub] for each dimension
-    # torch.rand(num_samples, coord_dim) gives values in [0, 1]
-    collocation_coords = []
-    for i in range(dim):
-        collocation_coords.append(
-            lb[i] + (ub[i] - lb[i]) * torch.rand(num_samples).to(device)
-        )
+    # torch.rand(num_samples) gives values in [0, 1]
+    collocation_coords = {}
+    for coord_label in lb:
+        collocation_coords[coord_label] = lb[coord_label] + (
+            ub[coord_label] - lb[coord_label]
+        ) * torch.rand(num_samples).to(device)
 
     ### Currently this is uniform in coordinate space
 
@@ -65,8 +64,13 @@ def random_domain_sampler(
 COLLOCATION_SAMPLER_REGISTRY: dict[
     CollocationSamplerLabels,
     Callable[
-        [list[torch.Tensor], list[torch.Tensor], PINNParameters, torch.device],
-        list[torch.Tensor],
+        [
+            dict[str, torch.Tensor],
+            dict[str, torch.Tensor],
+            PINNParameters,
+            torch.device,
+        ],
+        dict[str, torch.Tensor],
     ],
 ] = {
     CollocationSamplerLabels.RANDOM: random_domain_sampler,

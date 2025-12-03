@@ -48,9 +48,9 @@ class CoordSystem(ABC):
     def __init__(
         self,
         dim_geometry: int,
-        coord_axes: tuple[str],
-        fixed_axes: tuple[str] | None = None,
-        fixed_axes_values: tuple[float] | None = None,
+        coord_axes: tuple[str, ...],
+        fixed_axes: tuple[str, ...] | None = None,
+        fixed_axes_values: tuple[float, ...] | None = None,
     ):
         self.dim_geometry = dim_geometry
 
@@ -561,9 +561,9 @@ class CartesianCoords(CoordSystem):
     def __init__(
         self,
         dim_geometry: int,
-        coord_axes: tuple[str],
-        fixed_axes: tuple[str] | None = None,
-        fixed_axes_values: tuple[float] | None = None,
+        coord_axes: tuple[str, ...],
+        fixed_axes: tuple[str, ...] | None = None,
+        fixed_axes_values: tuple[float, ...] | None = None,
     ):
         super().__init__(dim_geometry, coord_axes, fixed_axes, fixed_axes_values)
         self._cartesian_validate_selected_axes()
@@ -660,9 +660,9 @@ class CylindricalCoords(CoordSystem):
     def __init__(
         self,
         dim_geometry: int,
-        coord_axes: tuple[str],
-        fixed_axes: tuple[str] | None = None,
-        fixed_axes_values: tuple[float] | None = None,
+        coord_axes: tuple[str, ...],
+        fixed_axes: tuple[str, ...] | None = None,
+        fixed_axes_values: tuple[float, ...] | None = None,
     ):
         super().__init__(dim_geometry, coord_axes, fixed_axes, fixed_axes_values)
 
@@ -742,9 +742,9 @@ class SphericalCoords(CoordSystem):
     def __init__(
         self,
         dim_geometry: int,
-        coord_axes: tuple[str],
-        fixed_axes: tuple[str] | None = None,
-        fixed_axes_values: tuple[float] | None = None,
+        coord_axes: tuple[str, ...],
+        fixed_axes: tuple[str, ...] | None = None,
+        fixed_axes_values: tuple[float, ...] | None = None,
     ):
         super().__init__(dim_geometry, coord_axes, fixed_axes, fixed_axes_values)
 

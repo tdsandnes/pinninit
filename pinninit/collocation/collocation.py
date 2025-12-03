@@ -11,11 +11,11 @@ if TYPE_CHECKING:
 
 
 def load_collocation(
-    lb: list[torch.Tensor],
-    ub: list[torch.Tensor],
+    lb: dict[str, torch.Tensor],
+    ub: dict[str, torch.Tensor],
     pinn_params: PINNParameters,
     device: torch.device,
-) -> list[torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     # Extract DataParams
     ###from_file = pinn_params.collocation_params.from_file
 
@@ -35,10 +35,10 @@ def load_collocation(
     )
 
     # Redefine to clean history of tensor
-    collocation_coords = []
-    for coord in sampled_coords:
-        value = coord.detach().float().to(device)
-        value.requires_grad_(True)
-        collocation_coords.append(value)
+    collocation_coords = {}
+    for coord_label, sampled_tensor in sampled_coords.items():
+        clean_tensor = sampled_tensor.detach().float().to(device)
+        clean_tensor.requires_grad_(True)
+        collocation_coords[coord_label] = clean_tensor
 
     return collocation_coords
