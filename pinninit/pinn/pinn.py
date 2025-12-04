@@ -39,8 +39,8 @@ class PINN:
         # Extract params
         self.coord_system_label = self.pinn_params.coordinates_params.coordinate_system
         coordinates = self.pinn_params.coordinates_params.coordinates
-        self.coord_axes = [axis["label"] for axis in coordinates]
-        self.coord_dim = len(self.coord_axes)
+        self.coord_axes_labels = self.pinn_params.coord_axes_labels
+        self.coord_dim = len(self.coord_axes_labels)
 
         # Fixed axes
         fixed_axes_list = []
@@ -119,15 +119,52 @@ class PINN:
     def _init_loss(self) -> None:
         data_loss_terms_params = self.pinn_params.dataloss_params.terms
         physics_loss_terms_params = self.pinn_params.physicsloss_params.terms
+        equations_params = self.pinn_params.equations_params
 
-        self.data_loss_terms = [
-            DataLoss(data_loss_terms_params[i]["loss_function"])
-            for i in range(len(data_loss_terms_params))
-        ]
-        self.physics_loss_terms = [
-            PhysicsLoss(physics_loss_terms_params[i]["loss_function"])
-            for i in range(len(physics_loss_terms_params))
-        ]
+        # init data loss terms
+        data_loss_terms = []
+        all_data_loss_input_eqns_needed = set()
+        all_data_loss_output_eqns_needed = set()
+        for term in data_loss_terms_params:
+            data_loss_term = DataLoss(
+                term,
+                self.pinn_params.input_field_labels,
+                self.pinn_params.output_field_labels,
+                self.pinn_params.derived_input_field_eqn_dict,
+                self.pinn_params.derived_output_field_eqn_dict,
+            )
+            data_loss_terms.append(data_loss_term)
+
+            # Add equations to sets
+            all_data_loss_input_eqns_needed.update(data_loss_term.input_eqns_needed)
+            all_data_loss_output_eqns_needed.update(data_loss_term.output_eqns_needed)
+
+        # Store
+        self.data_loss_terms = data_loss_terms
+        self.all_data_loss_input_eqns_needed = all_data_loss_input_eqns_needed
+        self.all_data_loss_output_eqns_needed = all_data_loss_output_eqns_needed
+
+        # init phsyics loss terms
+        physics_loss_terms = []
+        all_physics_loss_eqns_needed = set()
+        for term in physics_loss_terms_params:
+            physics_loss_term = PhysicsLoss(
+                term,
+                self.pinn_params.output_field_labels,
+                self.pinn_params.input_const_labels,
+                self.pinn_params.learnt_const_labels,
+                self.pinn_params.coord_axes_labels,
+                self.pinn_params.derived_output_field_eqn_dict,
+                equations_params,
+            )
+            physics_loss_terms.append(physics_loss_term)
+
+            # Add equations to sets
+            all_physics_loss_eqns_needed.update(physics_loss_term.eqns_needed)
+
+        # Store
+        self.physics_loss_terms = physics_loss_terms
+        self.all_physics_loss_eqns_needed = all_physics_loss_eqns_needed
 
     def _init_nn(self) -> None:
         # Extract params

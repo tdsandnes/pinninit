@@ -72,11 +72,11 @@ Constants:
 
 DataLoss:
   terms:
-    - field:          u
+    - field_label:    u
       loss_function:  mse
       weight_method:  constant
       weight_value:   1.0
-    - field:          v
+    - field_label:    v
       loss_function:  mse
       weight_method:  constant
       weight_value:   1.0
