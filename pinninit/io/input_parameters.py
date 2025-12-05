@@ -260,7 +260,7 @@ class PINNParameters:
         self._set_label_sets()
 
         # Set attributes needed for consistent ordering
-        self._set_geometric_axes_labels_and_mask()
+        self._set_geometric_axes_labels()
 
         # Set attributes needed for directing to equations
         self._set_derived_field_dicts()
@@ -299,7 +299,7 @@ class PINNParameters:
 
         ### Do check here to make sure that all values in these sets are unique
 
-    def _set_geometric_axes_labels_and_mask(self) -> None:
+    def _set_geometric_axes_labels(self) -> None:
         """Set geometric axes in order required by the coordinate system"""
         # Coord system label
         coord_system_label = self.coordinates_params.coordinate_system

@@ -35,7 +35,7 @@ class LossTerm:
         # Look up the loss function in registry
         self.loss_func = LOSS_FUNCTION_REGISTRY[loss_function_label]
 
-    def compute_loss(
+    def _compute_loss(
         self,
         f_pred: torch.Tensor | None = None,
         f_target: torch.Tensor | None = None,
@@ -63,15 +63,17 @@ class LossTerm:
             Loss corresponding to the specific loss term.
         """
         # Use residual value if provided. Otherwise, use f_pred and f_target.
-        if is_loss_input_residual(f_pred, f_target, f_residual):
-            loss = self.loss_func(f_residual)
+        if is_loss_input_residual(
+            f_pred=f_pred, f_target=f_target, f_residual=f_residual
+        ):
+            loss = self.loss_func(f_residual=f_residual)
         else:
-            loss = self.loss_func(f_pred, f_target)
+            loss = self.loss_func(f_pred=f_pred, f_target=f_target)
 
         assert isinstance(loss, torch.Tensor), f"Loss returned {type(loss)}"
         return loss
 
-    def compute_weight(self) -> torch.Tensor:
+    def _compute_weight(self) -> torch.Tensor:
         """
         Computes the weight of the loss term.
 
@@ -80,7 +82,7 @@ class LossTerm:
         """
         return torch.tensor(1)
 
-    def compute_weighted_loss(
+    def _compute_weighted_loss(
         self,
         f_pred: torch.Tensor | None = None,
         f_target: torch.Tensor | None = None,
@@ -107,8 +109,10 @@ class LossTerm:
         torch.Tensor
             Weighted loss term.
         """
-        weight = self.compute_weight()
-        loss = self.compute_loss(f_pred, f_target, f_residual)
+        weight = self._compute_weight()
+        loss = self._compute_loss(
+            f_pred=f_pred, f_target=f_target, f_residual=f_residual
+        )
         return weight * loss
 
 
@@ -185,32 +189,57 @@ class DataLoss(LossTerm):
         self.input_eqns_needed = input_eqns_needed
         self.output_eqns_needed = output_eqns_needed
 
-    def compute_predicted_value(self, coords: torch.Tensor, net: None) -> torch.Tensor:
-        ### not sure on this, will have to come back when networks are added
-        ### In some way the loss term class will know what field(s) to use
-        ###field_label = "temp"  ### better function name
-        return torch.tensor(
-            1
-        )  ### temp: Something like this net.get_predicted_field(field_label, coords)
+    def compute_target_value(
+        self,
+        input_fields: dict[str, torch.Tensor],
+        derived_input_fields: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        if self.label in input_fields:
+            return input_fields[self.label]
+        elif self.label in derived_input_fields:
+            return derived_input_fields[self.label]
+        else:
+            raise KeyError(
+                f"Field label '{self.label}' not found in dictionaries of input or "
+                "derived input fields."
+            )
 
-    def compute_target_value(self, coords: torch.Tensor) -> torch.Tensor:
-        ### not sure on this, will have to come back when data handling is added
-        ### Note sure whether data would already only be for the specific field, or we
-        ### use the label here to extract right data
-        ### In some way the loss term class will know what field(s) to use
-        ###field_label = "temp"  ### better function name
-        ### data = self.data  ### or something like that. Only set for data loss
-        return torch.tensor(
-            1
-        )  ### temp: data[field_label, coords]  ### something like this? Maybe here the
-        ### label needs to be an int and called field_idx
+    def compute_predicted_value(
+        self,
+        output_fields: dict[str, torch.Tensor],
+        derived_output_fields: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        if self.label in output_fields:
+            return output_fields[self.label]
+        elif self.label in derived_output_fields:
+            return derived_output_fields[self.label]
+        else:
+            raise KeyError(
+                f"Field label '{self.label}' not found in dictionaries of output or "
+                "derived output fields."
+            )
 
-    def compute_residual(self, coords: torch.Tensor, net: None) -> torch.Tensor:
-        ### In some way the loss term class will know what field(s) to use
-        # Residual can be computed from f_pred - f_target
-        f_pred = self.compute_predicted_value(coords, net)
-        f_target = self.compute_target_value(coords)
+    def compute_residual(
+        self,
+        input_fields: dict[str, torch.Tensor],
+        output_fields: dict[str, torch.Tensor],
+        derived_input_fields: dict[str, torch.Tensor],
+        derived_output_fields: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        f_target = self.compute_target_value(input_fields, derived_input_fields)
+        f_pred = self.compute_predicted_value(output_fields, derived_output_fields)
         return f_pred - f_target
+
+    def compute_loss(
+        self,
+        input_fields: dict[str, torch.Tensor],
+        output_fields: dict[str, torch.Tensor],
+        derived_input_fields: dict[str, torch.Tensor],
+        derived_output_fields: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        f_target = self.compute_target_value(input_fields, derived_input_fields)
+        f_pred = self.compute_predicted_value(output_fields, derived_output_fields)
+        return self._compute_weighted_loss(f_target=f_target, f_pred=f_pred)
 
 
 class PhysicsLoss(LossTerm):
@@ -235,6 +264,7 @@ class PhysicsLoss(LossTerm):
         # Extract loss term params
         self.label = physics_loss_term["label"]
         self.equation_label = physics_loss_term["equation_label"]
+        self.residual_label = physics_loss_term["residual"]
 
         # Extract equation parameters for loss term equation
         equations_by_label = {eq["label"]: eq for eq in equations_params.equations}
@@ -265,7 +295,7 @@ class PhysicsLoss(LossTerm):
         derived_output_labels = derived_output_field_eqn_dict.keys()
 
         # Work out which equations need to be applied to be able to evaluate loss term
-        eqns_needed = set(self.equation_label)
+        eqns_needed = {self.equation_label}
 
         for field_label in field_labels:
             # Check that field is in allowed nonderived_labels or derived output labels
@@ -281,20 +311,28 @@ class PhysicsLoss(LossTerm):
         # Set the labels of all equations needed to evaluate physics loss term
         self.eqns_needed = eqns_needed
 
-    def compute_predicted_value(self, coords: torch.Tensor, net: None) -> torch.Tensor:
-        ### not sure if this makes sense for phys loss
-        return torch.tensor(1)  ### temp: Maybe error instead?
+    def compute_residual(
+        self,
+        output_fields: dict[str, torch.Tensor],
+        derived_output_fields: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        if self.residual_label in output_fields:
+            return output_fields[self.residual_label]
+        elif self.residual_label in derived_output_fields:
+            return derived_output_fields[self.residual_label]
+        else:
+            raise KeyError(
+                f"Residual label '{self.residual_label}' not found in dictionaries of "
+                "output or derived output fields."
+            )
 
-    def compute_target_value(self, coords: torch.Tensor) -> torch.Tensor:
-        ### not sure if this makes sense for phys loss
-        return torch.tensor(1)  ### temp: Maybe error instead?
-
-    def compute_residual(self, coords: torch.Tensor, net: None) -> torch.Tensor:
-        ### In some way the loss term class will know what eqn(s) to use
-        ### eqn_label = "temp"  ### better function name
-        return torch.tensor(
-            1
-        )  ### temp: phys.compute_eqn_residual(eqn_label, coords, net)
+    def compute_loss(
+        self,
+        output_fields: dict[str, torch.Tensor],
+        derived_output_fields: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        f_residual = self.compute_residual(output_fields, derived_output_fields)
+        return self._compute_weighted_loss(f_residual=f_residual)
 
 
 # Mapping from loss term labels to classes

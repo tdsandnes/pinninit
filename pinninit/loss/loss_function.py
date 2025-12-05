@@ -18,8 +18,8 @@ class LossFunctionLabels(str, Enum):
 
 
 def mse_loss(
-    f_pred: torch.Tensor | None,
-    f_target: torch.Tensor | None,
+    f_pred: torch.Tensor | None = None,
+    f_target: torch.Tensor | None = None,
     f_residual: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """
