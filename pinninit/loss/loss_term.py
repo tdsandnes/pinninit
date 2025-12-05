@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -21,8 +22,11 @@ class LossTermLabels(str, Enum):
     PHYSICS = "physics"
 
 
-class LossTerm:
+class LossTerm(ABC):
     """Base class for loss terms"""
+
+    input_eqns_needed: set[str]
+    output_eqns_needed: set[str]
 
     ### str for now but make all these enum
     def __init__(
@@ -34,6 +38,21 @@ class LossTerm:
         self.loss_function_label = loss_function_label
         # Look up the loss function in registry
         self.loss_func = LOSS_FUNCTION_REGISTRY[loss_function_label]
+
+        # Init the sets of equations needed for loss term group
+        self.input_eqns_needed = set()
+        self.output_eqns_needed = set()
+
+    @abstractmethod
+    def compute_loss(
+        self,
+        input_fields: dict[str, torch.Tensor],
+        output_fields: dict[str, torch.Tensor],
+        derived_input_fields: dict[str, torch.Tensor],
+        derived_output_fields: dict[str, torch.Tensor],
+    ) -> torch.Tensor:
+        """Subclasses must implement this method to compute loss."""
+        pass
 
     def _compute_loss(
         self,
@@ -309,7 +328,8 @@ class PhysicsLoss(LossTerm):
                 )
 
         # Set the labels of all equations needed to evaluate physics loss term
-        self.eqns_needed = eqns_needed
+        self.input_eqns_needed = set()
+        self.output_eqns_needed = eqns_needed
 
     def compute_residual(
         self,
@@ -328,7 +348,9 @@ class PhysicsLoss(LossTerm):
 
     def compute_loss(
         self,
+        input_fields: dict[str, torch.Tensor],
         output_fields: dict[str, torch.Tensor],
+        derived_input_fields: dict[str, torch.Tensor],
         derived_output_fields: dict[str, torch.Tensor],
     ) -> torch.Tensor:
         f_residual = self.compute_residual(output_fields, derived_output_fields)

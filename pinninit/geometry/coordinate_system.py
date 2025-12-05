@@ -571,7 +571,7 @@ class CartesianCoords(CoordSystem):
     def metric_tensor(
         self,
         n_points: int,
-        _coords_geometry: list[torch.Tensor] | None = None,
+        coords_geometry: list[torch.Tensor] | None = None,
         device: torch.device | None = None,
     ) -> torch.Tensor:
         """
@@ -581,7 +581,7 @@ class CartesianCoords(CoordSystem):
          ----------
          n_points : int
              Number of points for which to generate metric tensors.
-         _coords_geometry : list[torch.Tensor]
+         coords_geometry : list[torch.Tensor]
              Coordinates of the points. Unused for Cartesian coordinates.
 
          Returns

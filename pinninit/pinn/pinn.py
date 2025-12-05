@@ -10,8 +10,9 @@ from ..dataset.dataset import load_dataset
 from ..differential_equations.operators import Operators
 from ..geometry.coordinate_system import COORD_SYSTEM_REGISTRY
 from ..io.input_equations import EQUATION_REGISTRY, load_functions_from_file_to_registry
-from ..io.input_parameters import EquationsParams, PINNParameters
+from ..io.input_parameters import PINNParameters
 from ..loss.loss_term import DataLoss, PhysicsLoss
+from ..loss.loss_term_group import LossTermCoordGroup
 from ..nn.layers import LAYER_TYPE_REGISTRY
 from ..nn.neural_network import NeuralNetwork
 from ..optimizer.optimizer import OPTIMIZER_REGISTRY
@@ -121,10 +122,23 @@ class PINN:
         physics_loss_terms_params = self.pinn_params.physicsloss_params.terms
         equations_params = self.pinn_params.equations_params
 
-        # init data loss terms
-        data_loss_terms = []
-        all_data_loss_input_eqns_needed = set()
-        all_data_loss_output_eqns_needed = set()
+        # Init loss term groups
+        self.data_loss_terms = LossTermCoordGroup(
+            self.coord_system,
+            self.input_coords,
+            self.pinn_params.geometric_axes_labels,
+            self.index_to_coord_dict,
+            self.device,
+        )
+        self.physics_loss_terms = LossTermCoordGroup(
+            self.coord_system,
+            self.collocation_coords,
+            self.pinn_params.geometric_axes_labels,
+            self.index_to_coord_dict,
+            self.device,
+        )
+
+        # Data loss terms
         for term in data_loss_terms_params:
             data_loss_term = DataLoss(
                 term,
@@ -133,20 +147,11 @@ class PINN:
                 self.pinn_params.derived_input_field_eqn_dict,
                 self.pinn_params.derived_output_field_eqn_dict,
             )
-            data_loss_terms.append(data_loss_term)
 
-            # Add equations to sets
-            all_data_loss_input_eqns_needed.update(data_loss_term.input_eqns_needed)
-            all_data_loss_output_eqns_needed.update(data_loss_term.output_eqns_needed)
+            # Add to group
+            self.data_loss_terms.add(data_loss_term)
 
-        # Store
-        self.data_loss_terms = data_loss_terms
-        self.all_data_loss_input_eqns_needed = all_data_loss_input_eqns_needed
-        self.all_data_loss_output_eqns_needed = all_data_loss_output_eqns_needed
-
-        # init phsyics loss terms
-        physics_loss_terms = []
-        all_physics_loss_eqns_needed = set()
+        # Physics loss terms
         for term in physics_loss_terms_params:
             physics_loss_term = PhysicsLoss(
                 term,
@@ -157,14 +162,9 @@ class PINN:
                 self.pinn_params.derived_output_field_eqn_dict,
                 equations_params,
             )
-            physics_loss_terms.append(physics_loss_term)
 
-            # Add equations to sets
-            all_physics_loss_eqns_needed.update(physics_loss_term.eqns_needed)
-
-        # Store
-        self.physics_loss_terms = physics_loss_terms
-        self.all_physics_loss_eqns_needed = all_physics_loss_eqns_needed
+            # Add to group
+            self.physics_loss_terms.add(physics_loss_term)
 
     def _init_nn(self) -> None:
         # Extract params
@@ -202,7 +202,7 @@ class PINN:
         )
 
     def _init_learnt_parameters(self) -> None:
-        learnt_consts = {}
+        learnt_consts: dict[str, torch.Tensor] = {}
         for const_label in self.pinn_params.learnt_const_labels:
             learnt_consts[const_label] = nn.Parameter(
                 torch.zeros(1, dtype=torch.float32, device=self.device)
@@ -249,241 +249,31 @@ class PINN:
 
         return u, v, p
 
-    def compute_data_loss(
-        self, coords: dict[str, torch.Tensor], equations_params: EquationsParams
-    ) -> torch.Tensor:
-        # Define differential eqn operator objects for coords
-        operators = Operators(
-            self.coord_system,
-            coords,
-            self.pinn_params.geometric_axes_labels,
-            self.device,
-        )
-
-        # Make tensors for model inputs
-        coords_list = []
-
-        for i in range(len(coords)):
-            coord_label = self.index_to_coord_dict[i]
-            coords_list.append(coords[coord_label])
-
-        # Make tensor
-        coords_tensor = torch.stack(coords_list, dim=1)
-
-        # Get model output
-        output_fields_tuple = self.model(coords_tensor)
-
-        # Make dict of model output consistently assigning output value to sorted label
-        sorted_output_field_labels = sorted(self.pinn_params.output_field_labels)
-        output_fields = {}
-        for i, label in enumerate(sorted_output_field_labels):
-            output_fields[label] = output_fields_tuple[:, i]
-
-        # Apply any equations needed to get data loss
-        all_data_loss_input_eqns_needed = self.all_data_loss_input_eqns_needed
-        all_data_loss_output_eqns_needed = self.all_data_loss_output_eqns_needed
-        equations_by_label = {eq["label"]: eq for eq in equations_params.equations}
-
-        # Get derived input fields
-        derived_input_fields: dict[str, torch.Tensor] = {}
-        eqns_to_calculate = all_data_loss_input_eqns_needed.copy()
-
-        # Loop until all equations have been evaluated
-        while len(eqns_to_calculate) > 0:
-            evaluated_new = set()
-            for eqn in list(eqns_to_calculate):
-                eqn_input_labels = equations_by_label[eqn]["input_args"]
-                eqn_output_labels = equations_by_label[eqn]["output_args"]
-                eqn_inputs = []
-
-                # Check whether we have access to all input args of eqn
-                can_evaluate = True
-                for label in eqn_input_labels:
-                    if label in self.pinn_params.input_field_labels:
-                        eqn_inputs.append(self.input_fields[label])
-                    elif label in self.pinn_params.input_const_labels:
-                        eqn_inputs.append(self.input_consts[label])
-                    elif label in self.pinn_params.coord_axes_labels:
-                        eqn_inputs.append(coords[label])
-                    elif label in derived_input_fields:
-                        eqn_inputs.append(derived_input_fields[label])
-                    else:
-                        can_evaluate = False
-                        break
-
-                if can_evaluate:
-                    # Evaluate eqn and store all output values
-                    eqn_outputs = EQUATION_REGISTRY[eqn](*eqn_inputs, operators)
-                    for i, eqn_output in enumerate(eqn_outputs):
-                        derived_input_fields[eqn_output_labels[i]] = eqn_output
-
-                    evaluated_new.add(eqn)
-
-            # Remove any evaluated eqns from the set of eqns left to evaluate
-            eqns_to_calculate -= evaluated_new
-
-            # Raise error if we loop through all equations and didn't evaluate a new
-            # equation
-            if not evaluated_new:
-                raise KeyError(
-                    f"Unable to evaluate equations {eqns_to_calculate} for calculation "
-                    "of target component of data loss."
-                )
-
-        # Get derived output fields
-        derived_output_fields: dict[str, torch.Tensor] = {}
-        eqns_to_calculate = all_data_loss_output_eqns_needed.copy()
-
-        # Loop until all equations have been evaluated
-        while len(eqns_to_calculate) > 0:
-            evaluated_new = set()
-            for eqn in list(eqns_to_calculate):
-                eqn_input_labels = equations_by_label[eqn]["input_args"]
-                eqn_output_labels = equations_by_label[eqn]["output_args"]
-                eqn_inputs = []
-
-                # Check whether we have access to all input args of eqn
-                can_evaluate = True
-                for label in eqn_input_labels:
-                    if label in self.pinn_params.output_field_labels:
-                        eqn_inputs.append(output_fields[label])
-                    elif label in self.pinn_params.input_const_labels:
-                        eqn_inputs.append(self.input_consts[label])
-                    elif label in self.pinn_params.learnt_const_labels:
-                        eqn_inputs.append(self.learnt_consts[label])
-                    elif label in self.pinn_params.coord_axes_labels:
-                        eqn_inputs.append(coords[label])
-                    elif label in derived_output_fields:
-                        eqn_inputs.append(derived_output_fields[label])
-                    else:
-                        can_evaluate = False
-                        break
-
-                if can_evaluate:
-                    # Evaluate eqn and store all output values
-                    eqn_outputs = EQUATION_REGISTRY[eqn](*eqn_inputs, operators)
-                    for i, eqn_output in enumerate(eqn_outputs):
-                        derived_output_fields[eqn_output_labels[i]] = eqn_output
-
-                    evaluated_new.add(eqn)
-
-            # Remove any evaluated eqns from the set of eqns left to evaluate
-            eqns_to_calculate -= evaluated_new
-
-            # Raise error if we loop through all equations and didn't evaluate a new
-            # equation
-            if not evaluated_new:
-                raise KeyError(
-                    f"Unable to evaluate equations {eqns_to_calculate} for calculation "
-                    "of predicted component of data loss."
-                )
-
-        data_loss = torch.tensor(0.0, device=self.device)
-        for loss_term in self.data_loss_terms:
-            data_loss += loss_term.compute_loss(
-                self.input_fields,
-                output_fields,
-                derived_input_fields,
-                derived_output_fields,
-            )
-
-        return data_loss
-
-    def compute_physics_loss(
-        self, coords: dict[str, torch.Tensor], equations_params: EquationsParams
-    ) -> torch.Tensor:
-        # Define differential eqn operator objects for coords
-        operators = Operators(
-            self.coord_system,
-            coords,
-            self.pinn_params.geometric_axes_labels,
-            self.device,
-        )
-
-        # Make tensors for model inputs
-        coords_list = []
-
-        for i in range(len(coords)):
-            coord_label = self.index_to_coord_dict[i]
-            coords_list.append(coords[coord_label])
-
-        # Make tensor
-        coords_tensor = torch.stack(coords_list, dim=1)
-
-        # Get model output
-        output_fields_tuple = self.model(coords_tensor)
-
-        # Make dict of model output consistently assigning output value to sorted label
-        sorted_output_field_labels = sorted(self.pinn_params.output_field_labels)
-        output_fields = {}
-        for i, label in enumerate(sorted_output_field_labels):
-            output_fields[label] = output_fields_tuple[:, i]
-
-        # Apply any equations needed to get physics loss
-        all_physics_loss_eqns_needed = self.all_physics_loss_eqns_needed
-        equations_by_label = {eq["label"]: eq for eq in equations_params.equations}
-
-        # Get derived output fields
-        derived_output_fields: dict[str, torch.Tensor] = {}
-        eqns_to_calculate = all_physics_loss_eqns_needed.copy()
-
-        # Loop until all equations have been evaluated
-        while len(eqns_to_calculate) > 0:
-            evaluated_new = set()
-            for eqn in list(eqns_to_calculate):
-                eqn_input_labels = equations_by_label[eqn]["input_args"]
-                eqn_output_labels = equations_by_label[eqn]["output_args"]
-                eqn_inputs = []
-
-                # Check whether we have access to all input args of eqn
-                can_evaluate = True
-                for label in eqn_input_labels:
-                    if label in self.pinn_params.output_field_labels:
-                        eqn_inputs.append(output_fields[label])
-                    elif label in self.pinn_params.input_const_labels:
-                        eqn_inputs.append(self.input_consts[label])
-                    elif label in self.pinn_params.learnt_const_labels:
-                        eqn_inputs.append(self.learnt_consts[label])
-                    elif label in self.pinn_params.coord_axes_labels:
-                        eqn_inputs.append(coords[label])
-                    elif label in derived_output_fields:
-                        eqn_inputs.append(derived_output_fields[label])
-                    else:
-                        can_evaluate = False
-                        break
-
-                if can_evaluate:
-                    # Evaluate eqn and store all output values
-                    eqn_outputs = EQUATION_REGISTRY[eqn](*eqn_inputs, operators)
-                    for i, eqn_output in enumerate(eqn_outputs):
-                        derived_output_fields[eqn_output_labels[i]] = eqn_output
-
-                    evaluated_new.add(eqn)
-
-            # Remove any evaluated eqns from the set of eqns left to evaluate
-            eqns_to_calculate -= evaluated_new
-
-            # Raise error if we loop through all equations and didn't evaluate a new
-            # equation
-            if not evaluated_new:
-                raise KeyError(
-                    f"Unable to evaluate equations {eqns_to_calculate} for calculation "
-                    "of physics loss."
-                )
-
-        physics_loss = torch.tensor(0.0, device=self.device)
-        for loss_term in self.physics_loss_terms:
-            physics_loss += loss_term.compute_loss(output_fields, derived_output_fields)
-
-        return physics_loss
-
     def compute_loss(self) -> torch.Tensor:
-        loss_data = self.compute_data_loss(
-            self.input_coords, self.pinn_params.equations_params
+        # Apply models at coords of loss term groups
+        equations_by_label = {
+            eq["label"]: eq for eq in self.pinn_params.equations_params.equations
+        }
+        self.data_loss_terms.apply_model(
+            self.model,
+            equations_by_label,
+            self.pinn_params.output_field_labels,
+            self.input_fields,
+            self.input_consts,
+            self.learnt_consts,
         )
-        loss_phys = self.compute_physics_loss(
-            self.collocation_coords, self.pinn_params.equations_params
+        self.physics_loss_terms.apply_model(
+            self.model,
+            equations_by_label,
+            self.pinn_params.output_field_labels,
+            self.input_fields,
+            self.input_consts,
+            self.learnt_consts,
         )
+
+        # Compute loss for each group
+        loss_data = self.data_loss_terms.compute_loss()
+        loss_phys = self.physics_loss_terms.compute_loss()
 
         # Total loss
         loss = loss_data + loss_phys
