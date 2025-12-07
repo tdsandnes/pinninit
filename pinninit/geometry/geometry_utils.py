@@ -5,13 +5,13 @@ import torch
 
 def select_coord_system_axes(
     axes_labels: tuple[str, ...],
-    axes_bounds: tuple[tuple[float | None, float | None], ...],
-    axes_bounds_inclusive: tuple[tuple[bool | None, bool | None], ...],
+    axes_bounds: tuple[tuple[float, float], ...],
+    axes_periodic: tuple[bool, ...],
     input_labels: tuple[str, ...],
 ) -> tuple[
     tuple[str, ...],
-    tuple[tuple[float | None, float | None], ...],
-    tuple[tuple[bool | None, bool | None], ...],
+    tuple[tuple[float, float], ...],
+    tuple[bool, ...],
     tuple[int, ...],
 ]:
     """
@@ -21,10 +21,10 @@ def select_coord_system_axes(
     ----------
     axes_labels : tuple of str
         All axis labels in the coordinate system.
-    axes_bounds : tuple of float or None
+    axes_bounds : tuple of tuples containing floats
         Bounds associated with each axis label.
-    axes_bounds_inclusive : tuple of float or None
-        Inclusive conditions associated with each axis label.
+    axes_periodic : tuple of bools
+        Is coord system periodic in given axis.
     input_labels : tuple of str
         Labels to select.
 
@@ -34,10 +34,10 @@ def select_coord_system_axes(
         A tuple containing:
         - axes_labels_selected : tuple of str
             Selected labels in the order they appear in axes_labels.
-        - axes_bounds_selected : tuple of tuples of float or None
+        - axes_bounds_selected :  tuple of tuples containing floats
             Bounds corresponding to axes_labels_selected.
-        - axes_bounds_inclusive_selected : tuple of tuples of bool or None
-            Inclusive conditions corresponding to axes_labels_selected.
+        - axes_periodic_selected : tuple of bools
+            Periodic conditions corresponding to axes_labels_selected.
         - indices_selected : tuple of int
             The indices of elements in axes_labels also in input_labels.
 
@@ -47,11 +47,9 @@ def select_coord_system_axes(
         If input lengths differ, input_labels contains duplicates, or invalid label.
     """
     # Validate lengths
-    if len(axes_labels) != len(axes_bounds) or len(axes_labels) != len(
-        axes_bounds_inclusive
-    ):
+    if len(axes_labels) != len(axes_bounds) or len(axes_labels) != len(axes_periodic):
         raise ValueError(
-            "axes_bounds, axes_labels, and axes_bounds_inclusive must all "
+            "axes_bounds, axes_labels, and axes_periodic must all "
             "have the same length."
         )
 
@@ -71,14 +69,12 @@ def select_coord_system_axes(
     )
     axes_labels_selected = tuple(axes_labels[i] for i in indices_selected)
     axes_bounds_selected = tuple(axes_bounds[i] for i in indices_selected)
-    axes_bounds_inclusive_selected = tuple(
-        axes_bounds_inclusive[i] for i in indices_selected
-    )
+    axes_periodic_selected = tuple(axes_periodic[i] for i in indices_selected)
 
     return (
         axes_labels_selected,
         axes_bounds_selected,
-        axes_bounds_inclusive_selected,
+        axes_periodic_selected,
         indices_selected,
     )
 

@@ -33,8 +33,8 @@ class CoordSystemMetadata:
     required_or_fixed_axes: tuple[str, ...]
     required_fields: tuple[str, ...]
     required_consts: tuple[str, ...]
-    axes_bounds: tuple[tuple[float | None, float | None], ...]
-    axes_bounds_inclusive: tuple[tuple[bool | None, bool | None], ...]
+    axes_bounds: tuple[tuple[float, float], ...]
+    axes_periodic: tuple[bool, ...]
     max_dim_geometry: int
     coord_redirections: dict[tuple[int, tuple[str, ...]], CoordSystemLabels] | None
 
@@ -69,22 +69,22 @@ class CoordSystem(ABC):
         (
             self.axes_labels_selected,
             self.axes_bounds_selected,
-            self.axes_bounds_inclusive_selected,
+            self.axes_periodic_selected,
             self.indices_selected,
         ) = select_coord_system_axes(
             self.metadata.axes_labels,
             self.metadata.axes_bounds,
-            self.metadata.axes_bounds_inclusive,
+            self.metadata.axes_periodic,
             coord_axes,
         )
         self.fixed_axes = fixed_axes
         self.fixed_axes_values = fixed_axes_values
 
         # Ensure coordinate system is valid
-        self._validate_dimensions()
+        self._validate_selected_dimensions()
         self._validate_selected_axes()
         self._validate_required_or_fixed_axes()
-        self._validate_bounds()
+        self._validate_selected_bounds()
 
     @abstractmethod
     def metric_tensor(
@@ -324,7 +324,7 @@ class CoordSystem(ABC):
 
         return laplacian_f
 
-    def _validate_dimensions(self) -> None:
+    def _validate_selected_dimensions(self) -> None:
         """
         Validate that the coordinate system supports the given number of dimensions.
 
@@ -377,7 +377,6 @@ class CoordSystem(ABC):
         coord_redirections = self.metadata.coord_redirections
 
         # Coordinate system dimensions
-        self._validate_dimensions()
         dim_geometry = self.dim_geometry
         axes_labels_selected = self.axes_labels_selected
 
@@ -429,86 +428,61 @@ class CoordSystem(ABC):
             ):
                 raise ValueError(f"Missing required axis: {axis_label}")
 
-    def _validate_bounds(self) -> None:
+    def _validate_selected_bounds(self) -> None:
         """
         Validate the bounds of axes in the coordinate system.
 
         Raises
         ------
         ValueError
-            If axes bounds and their inclusivity are inconsistent.
+            If axes bounds and their periodic conditions are inconsistent.
         """
         # Extract metadata
-        max_dim_geometry = self.metadata.max_dim_geometry
-        axes_bounds = np.array(self.metadata.axes_bounds)
-        axes_bounds_inclusive = np.array(self.metadata.axes_bounds_inclusive)
+        dim_geometry = self.dim_geometry
+        axes_labels = self.axes_labels_selected
+        axes_bounds = self.axes_bounds_selected
+        axes_periodic = self.axes_periodic_selected
 
-        # Coordinate system dimensions
-        self._validate_dimensions()
-
-        # Check that axes_bounds and axes_bounds_inclusive have correct shape
-        if (np.shape(axes_bounds) != (max_dim_geometry, 2)) or (
-            np.shape(axes_bounds_inclusive) != (max_dim_geometry, 2)
+        # Check that axes_bounds and axes_periodic have correct shape
+        if (np.shape(axes_bounds) != (dim_geometry, 2)) or (
+            np.shape(axes_periodic) != (dim_geometry,)
         ):
             raise ValueError(
-                f"axes_bounds and axes_bounds_inclusive must be of shape "
-                f"({max_dim_geometry}, 2), got {np.shape(axes_bounds)} and "
-                f"{np.shape(axes_bounds_inclusive)}."
+                f"axes_bounds and axes_periodic must be of shape "
+                f"({dim_geometry}, 2) and ({dim_geometry},), got "
+                f"{np.shape(axes_bounds)} and {np.shape(axes_periodic)}."
             )
 
-        # Separate lower and upper bounds and their inclusivity
-        lower_bounds = axes_bounds[:, 0]
-        upper_bounds = axes_bounds[:, 1]
-        lower_bounds_inclusive = axes_bounds_inclusive[:, 0]
-        upper_bounds_inclusive = axes_bounds_inclusive[:, 1]
+        # Separate lower and upper bounds
+        lower_bounds, upper_bounds = zip(*axes_bounds, strict=True)
 
-        # Find which elements are None
-        lower_bound_is_none = np.array([x is None for x in lower_bounds])
-        upper_bound_is_none = np.array([x is None for x in upper_bounds])
-        lower_bound_inclusive_is_none = np.array(
-            [x is None for x in lower_bounds_inclusive]
-        )
-        upper_bound_inclusive_is_none = np.array(
-            [x is None for x in upper_bounds_inclusive]
-        )
+        for i in range(dim_geometry):
+            axis_label = axes_labels[i]
+            lb = lower_bounds[i]
+            ub = upper_bounds[i]
+            is_periodic = axes_periodic[i]
 
-        # Validate the lower bounds inclusivity are either True, False, or None
-        if not np.all(
-            np.logical_or(
-                lower_bound_is_none, np.isin(lower_bounds_inclusive, [True, False])
-            )
-        ):
-            raise ValueError("Lower bound inclusivity must be True, False, or None")
+            # Check that lower bound is less than upper bound
+            if lower_bounds[i] >= upper_bounds[i]:
+                raise ValueError(
+                    f"Coordinate system lower bound must be lower than upper bound, "
+                    f"got {lb = } and {ub = } for {axis_label}."
+                )
 
-        # Validate that upper bounds inclusivity are either True, False, or None
-        if not np.all(
-            np.logical_or(
-                upper_bound_is_none, np.isin(upper_bounds_inclusive, [True, False])
-            )
-        ):
-            raise ValueError("Upper bound inclusivity must be True, False, or None")
-
-        # Condition A: None only if both bounds and inclusives are None
-        lower_a = np.logical_and(lower_bound_is_none, lower_bound_inclusive_is_none)
-        upper_a = np.logical_and(upper_bound_is_none, upper_bound_inclusive_is_none)
-
-        # Condition B: Both are NOT None (Bound is Value AND Inclusive is True/False)
-        lower_b = np.logical_and(~lower_bound_is_none, ~lower_bound_inclusive_is_none)
-        upper_b = np.logical_and(~upper_bound_is_none, ~upper_bound_inclusive_is_none)
-
-        # Check if all elements satisfy (Condition A OR Condition B)
-        lower_ab = np.logical_or(lower_a, lower_b)
-        upper_ab = np.logical_or(upper_a, upper_b)
-
-        # Both lower and upper bounds must be consistent, otherwise raise error
-        if not np.all(np.logical_and(lower_ab, upper_ab)):
-            raise ValueError("Inconsistent axes bounds.")
+            # Check that axes aren't periodic if bounds are inf
+            if is_periodic and (
+                np.isinf(lb) or np.isneginf(lb) or np.isinf(ub) or np.isneginf(ub)
+            ):
+                raise ValueError(
+                    f"Bounds of periodic coordinate system axis {axis_label} cannot "
+                    "be inf."
+                )
 
     def _validate_coordinates(
         self, coords_geometry: list[torch.Tensor], n_points: int | None = None
     ) -> None:
         """
-        Validate that a set of provided geometriccoordinates are in the right form.
+        Validate that a set of provided geometric coordinates are in the right form.
 
         Parameters
         ----------
@@ -523,11 +497,7 @@ class CoordSystem(ABC):
             If coordinates have incorrect form.
         """
         # Coordinate system dimensions
-        self._validate_dimensions()
         dim_geometry = self.dim_geometry
-
-        # Extract metadata
-        self._validate_bounds()
 
         # Validate coords_geometry tensor type and shape
         if len(coords_geometry) != dim_geometry:
@@ -552,8 +522,8 @@ class CartesianCoords(CoordSystem):
         required_or_fixed_axes=(),
         required_fields=(),
         required_consts=(),
-        axes_bounds=((None, None), (None, None), (None, None)),
-        axes_bounds_inclusive=((None, None), (None, None), (None, None)),
+        axes_bounds=((-np.inf, np.inf), (-np.inf, np.inf), (-np.inf, np.inf)),
+        axes_periodic=(False, False, False),
         max_dim_geometry=3,
         coord_redirections=None,
     )
@@ -647,8 +617,8 @@ class CylindricalCoords(CoordSystem):
         required_or_fixed_axes=("r",),
         required_fields=(),
         required_consts=(),
-        axes_bounds=((0, None), (0, 2 * np.pi), (None, None)),
-        axes_bounds_inclusive=((True, None), (True, False), (None, None)),
+        axes_bounds=((0, np.inf), (0, 2 * np.pi), (-np.inf, np.inf)),
+        axes_periodic=(False, True, False),
         max_dim_geometry=3,
         coord_redirections={
             (1, ("r",)): CoordSystemLabels.CARTESIAN,
@@ -730,8 +700,8 @@ class SphericalCoords(CoordSystem):
         required_or_fixed_axes=("r", "theta"),
         required_fields=(),
         required_consts=(),
-        axes_bounds=((0, None), (0, np.pi), (0, 2 * np.pi)),
-        axes_bounds_inclusive=((True, None), (True, True), (True, False)),
+        axes_bounds=((0, np.inf), (0, np.pi), (0, 2 * np.pi)),
+        axes_periodic=(False, False, True),
         max_dim_geometry=3,
         coord_redirections={
             (1, ("r",)): CoordSystemLabels.CARTESIAN,
