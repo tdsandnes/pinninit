@@ -9,7 +9,7 @@ import numpy as np
 import torch
 
 from ..checks.validate_data import validate_pytorch_tensor
-from .geometry_utils import get_required_or_fixed_coord, select_coord_system_axes
+from .geometry_utils import select_coord_system_axes
 
 if TYPE_CHECKING:
     pass
@@ -34,7 +34,7 @@ class CoordSystemMetadata:
     required_fields: tuple[str, ...]
     required_consts: tuple[str, ...]
     axes_bounds: tuple[tuple[float, float], ...]
-    axes_periodic: tuple[bool, ...]
+    internal_coords: CoordSystemLabels
     max_dim_geometry: int
     coord_redirections: dict[tuple[int, tuple[str, ...]], CoordSystemLabels] | None
 
@@ -69,12 +69,10 @@ class CoordSystem(ABC):
         (
             self.axes_labels_selected,
             self.axes_bounds_selected,
-            self.axes_periodic_selected,
             self.indices_selected,
         ) = select_coord_system_axes(
             self.metadata.axes_labels,
             self.metadata.axes_bounds,
-            self.metadata.axes_periodic,
             coord_axes,
         )
         self.fixed_axes = fixed_axes
@@ -94,6 +92,14 @@ class CoordSystem(ABC):
         device: torch.device | None = None,
     ) -> torch.Tensor:
         """Subclasses must implement this method to return the metric tensor(s)."""
+        pass
+
+    @abstractmethod
+    def map_coord_dict_to_internal_coords(
+        self, coords: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
+        """Subclasses must implement this method to map coords to internal coords
+        used for a given coordinate system."""
         pass
 
     def contravariant_grad(
@@ -324,6 +330,27 @@ class CoordSystem(ABC):
 
         return laplacian_f
 
+    def _get_coord(
+        self,
+        axis_label: str,
+        coords_geometry: list[torch.Tensor],
+        default: float | None = None,
+    ) -> torch.Tensor:
+        if axis_label in self.axes_labels_selected:
+            idx = self.axes_labels_selected.index(axis_label)
+            return coords_geometry[idx]
+        elif (
+            self.fixed_axes is not None
+            and self.fixed_axes_values is not None
+            and axis_label in self.fixed_axes
+        ):
+            idx = self.fixed_axes.index(axis_label)
+            return torch.tensor(self.fixed_axes_values[idx]).float()
+        elif default is not None:
+            return torch.tensor(default).float()
+        else:
+            raise ValueError(f"Missing required axis: {axis_label}")
+
     def _validate_selected_dimensions(self) -> None:
         """
         Validate that the coordinate system supports the given number of dimensions.
@@ -435,22 +462,18 @@ class CoordSystem(ABC):
         Raises
         ------
         ValueError
-            If axes bounds and their periodic conditions are inconsistent.
+            If axes bounds are inconsistent.
         """
         # Extract metadata
         dim_geometry = self.dim_geometry
         axes_labels = self.axes_labels_selected
         axes_bounds = self.axes_bounds_selected
-        axes_periodic = self.axes_periodic_selected
 
-        # Check that axes_bounds and axes_periodic have correct shape
-        if (np.shape(axes_bounds) != (dim_geometry, 2)) or (
-            np.shape(axes_periodic) != (dim_geometry,)
-        ):
+        # Check that axes_bounds has correct shape
+        if np.shape(axes_bounds) != (dim_geometry, 2):
             raise ValueError(
-                f"axes_bounds and axes_periodic must be of shape "
-                f"({dim_geometry}, 2) and ({dim_geometry},), got "
-                f"{np.shape(axes_bounds)} and {np.shape(axes_periodic)}."
+                f"axes_bounds must be of shape ({dim_geometry}, 2) , got "
+                f"{np.shape(axes_bounds)}."
             )
 
         # Separate lower and upper bounds
@@ -460,22 +483,12 @@ class CoordSystem(ABC):
             axis_label = axes_labels[i]
             lb = lower_bounds[i]
             ub = upper_bounds[i]
-            is_periodic = axes_periodic[i]
 
             # Check that lower bound is less than upper bound
             if lower_bounds[i] >= upper_bounds[i]:
                 raise ValueError(
                     f"Coordinate system lower bound must be lower than upper bound, "
                     f"got {lb = } and {ub = } for {axis_label}."
-                )
-
-            # Check that axes aren't periodic if bounds are inf
-            if is_periodic and (
-                np.isinf(lb) or np.isneginf(lb) or np.isinf(ub) or np.isneginf(ub)
-            ):
-                raise ValueError(
-                    f"Bounds of periodic coordinate system axis {axis_label} cannot "
-                    "be inf."
                 )
 
     def _validate_coordinates(
@@ -523,7 +536,7 @@ class CartesianCoords(CoordSystem):
         required_fields=(),
         required_consts=(),
         axes_bounds=((-np.inf, np.inf), (-np.inf, np.inf), (-np.inf, np.inf)),
-        axes_periodic=(False, False, False),
+        internal_coords=CoordSystemLabels.CARTESIAN,
         max_dim_geometry=3,
         coord_redirections=None,
     )
@@ -577,6 +590,11 @@ class CartesianCoords(CoordSystem):
 
         return G
 
+    def map_coord_dict_to_internal_coords(
+        self, coords: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
+        return coords
+
     def _cartesian_validate_selected_axes(self) -> None:
         """
         Validate that the selected axes are compatible coordinate system.
@@ -618,7 +636,7 @@ class CylindricalCoords(CoordSystem):
         required_fields=(),
         required_consts=(),
         axes_bounds=((0, np.inf), (0, 2 * np.pi), (-np.inf, np.inf)),
-        axes_periodic=(False, True, False),
+        internal_coords=CoordSystemLabels.CARTESIAN,
         max_dim_geometry=3,
         coord_redirections={
             (1, ("r",)): CoordSystemLabels.CARTESIAN,
@@ -661,12 +679,9 @@ class CylindricalCoords(CoordSystem):
         self._validate_coordinates(coords_geometry)
 
         # Get quantities needed in metric tensor
-        r = get_required_or_fixed_coord(
+        r = self._get_coord(
             "r",
             coords_geometry,
-            self.axes_labels_selected,
-            self.fixed_axes,
-            self.fixed_axes_values,
         )
 
         g = torch.eye(self.metadata.max_dim_geometry).to(device)
@@ -688,6 +703,43 @@ class CylindricalCoords(CoordSystem):
 
         return G
 
+    def map_coord_dict_to_internal_coords(
+        self, coords: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
+        # dict of internal coords
+        internal_coords = coords.copy()
+
+        # Get geometric coordinates in coord system basis
+        coords_geometry = []
+        for coord_label in self.axes_labels_selected:
+            coords_geometry.append(coords[coord_label])
+
+            # Delete geometric coords from dict
+            del internal_coords[coord_label]
+
+        # r must always be available in cylindrical polars
+        r = self._get_coord(
+            "r",
+            coords_geometry,
+        )
+
+        # theta
+        if "theta" in self.axes_labels_selected:
+            theta = self._get_coord("theta", coords_geometry)
+            internal_coords["x"] = r * torch.cos(theta)
+            internal_coords["y"] = r * torch.sin(theta)
+        else:
+            # If no theta is given
+            internal_coords["x"] = r
+
+        # z
+        if "z" in self.axes_labels_selected:
+            z = self._get_coord("z", coords_geometry)
+
+            internal_coords["z"] = z
+
+        return internal_coords
+
 
 class SphericalCoords(CoordSystem):
     """Spherical polar coordinate system: r, theta, phi."""
@@ -701,7 +753,7 @@ class SphericalCoords(CoordSystem):
         required_fields=(),
         required_consts=(),
         axes_bounds=((0, np.inf), (0, np.pi), (0, 2 * np.pi)),
-        axes_periodic=(False, False, True),
+        internal_coords=CoordSystemLabels.CARTESIAN,
         max_dim_geometry=3,
         coord_redirections={
             (1, ("r",)): CoordSystemLabels.CARTESIAN,
@@ -743,19 +795,13 @@ class SphericalCoords(CoordSystem):
         self._validate_coordinates(coords_geometry)
 
         # Get quantities needed in metric tensor
-        r = get_required_or_fixed_coord(
+        r = self._get_coord(
             "r",
             coords_geometry,
-            self.axes_labels_selected,
-            self.fixed_axes,
-            self.fixed_axes_values,
         )
-        theta = get_required_or_fixed_coord(
+        theta = self._get_coord(
             "theta",
             coords_geometry,
-            self.axes_labels_selected,
-            self.fixed_axes,
-            self.fixed_axes_values,
         )
 
         g = torch.eye(self.metadata.max_dim_geometry).to(device)
@@ -777,6 +823,47 @@ class SphericalCoords(CoordSystem):
         validate_pytorch_tensor(G, (n_points, self.dim_geometry, self.dim_geometry))
 
         return G
+
+    def map_coord_dict_to_internal_coords(
+        self, coords: dict[str, torch.Tensor]
+    ) -> dict[str, torch.Tensor]:
+        # dict of internal coords
+        internal_coords = coords.copy()
+
+        # Get geometric coordinates in coord system basis
+        coords_geometry = []
+        for coord_label in self.axes_labels_selected:
+            coords_geometry.append(coords[coord_label])
+
+            # Delete geometric coords from dict
+            del internal_coords[coord_label]
+
+        # r must always be available in spherical polars
+        r = self._get_coord(
+            "r",
+            coords_geometry,
+        )
+
+        # theta must always be available in spherical polars
+        theta = self._get_coord(
+            "theta",
+            coords_geometry,
+        )
+
+        if "phi" in self.axes_labels_selected:
+            phi = self._get_coord(
+                "phi",
+                coords_geometry,
+            )
+            internal_coords["x"] = r * torch.sin(theta) * torch.cos(phi)
+            internal_coords["y"] = r * torch.sin(theta) * torch.sin(phi)
+            internal_coords["z"] = r * torch.cos(theta)
+
+        else:
+            internal_coords["x"] = r * torch.sin(theta)
+            internal_coords["z"] = r * torch.cos(theta)
+
+        return internal_coords
 
 
 # Mapping from coordinate system labels to classes

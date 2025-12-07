@@ -13,12 +13,10 @@ class Operators:
         self,
         coord_system: CoordSystem,
         coords: dict[str, torch.Tensor],
-        geometric_axes_labels: tuple[str, ...],
         device: torch.device,
     ):
         self.coord_system = coord_system
         self.coords = coords
-        self.geometric_axes_labels = geometric_axes_labels
         self.device = device
 
     def d_dcoord(
@@ -45,7 +43,9 @@ class Operators:
         f: torch.Tensor,
     ) -> torch.Tensor:
         # Get geometric coordinates
-        coords_geometric = [self.coords[label] for label in self.geometric_axes_labels]
+        coords_geometric = [
+            self.coords[label] for label in self.coord_system.axes_labels_selected
+        ]
 
         # Take transpose so that eqn. file uses indices like [0] rather than [:, 0]
         grad = self.coord_system.grad(f, coords_geometric, self.device).T
@@ -57,7 +57,9 @@ class Operators:
         f: torch.Tensor,
     ) -> torch.Tensor:
         # Get geometric coordinates
-        coords_geometric = [self.coords[label] for label in self.geometric_axes_labels]
+        coords_geometric = [
+            self.coords[label] for label in self.coord_system.axes_labels_selected
+        ]
 
         # Take transpose so that eqn. file uses indices like [0] rather than [:, 0]
         contra_grad = self.coord_system.contravariant_grad(
@@ -71,6 +73,8 @@ class Operators:
         f: torch.Tensor,
     ) -> torch.Tensor:
         # Get geometric coordinates
-        coords_geometric = [self.coords[label] for label in self.geometric_axes_labels]
+        coords_geometric = [
+            self.coords[label] for label in self.coord_system.axes_labels_selected
+        ]
 
         return self.coord_system.laplacian(f, coords_geometric, self.device)

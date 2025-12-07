@@ -22,8 +22,7 @@ class LossTermCoordGroup:
         self,
         coord_system: CoordSystem,
         coords: dict[str, torch.Tensor],
-        geometric_axes_labels: tuple[str, ...],
-        index_to_coord_dict: dict[int, str],
+        index_to_internal_coord_dict: dict[int, str],
         device: torch.device,
     ):
         # Init as empty group
@@ -35,16 +34,15 @@ class LossTermCoordGroup:
         self.operators = Operators(
             coord_system,
             coords,
-            geometric_axes_labels,
             device,
         )
 
         # Make tensors for model inputs
+        internal_coords = coord_system.map_coord_dict_to_internal_coords(coords)
         coords_list = []
-
-        for i in range(len(coords)):
-            coord_label = index_to_coord_dict[i]
-            coords_list.append(coords[coord_label])
+        for i in range(len(internal_coords)):
+            coord_label = index_to_internal_coord_dict[i]
+            coords_list.append(internal_coords[coord_label])
 
         # Make tensor
         self.coords_tensor = torch.stack(coords_list, dim=1)

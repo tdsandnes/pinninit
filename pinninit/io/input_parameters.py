@@ -8,7 +8,6 @@ import yaml
 from ..collocation.collocation_sampler import CollocationSamplerLabels
 from ..dataset.dataset_sampler import DataSetSamplerLabels
 from ..geometry.coordinate_system import (
-    COORD_SYSTEM_REGISTRY,
     CoordSystemLabels,
 )
 from ..nn.activation_function import ActivationFuncLabels
@@ -259,9 +258,6 @@ class PINNParameters:
         # Set lists of labels
         self._set_label_sets()
 
-        # Set attributes needed for consistent ordering
-        self._set_geometric_axes_labels()
-
         # Set attributes needed for directing to equations
         self._set_derived_field_dicts()
 
@@ -298,33 +294,6 @@ class PINNParameters:
         }
 
         ### Do check here to make sure that all values in these sets are unique
-
-    def _set_geometric_axes_labels(self) -> None:
-        """Set geometric axes in order required by the coordinate system"""
-        # Coord system label
-        coord_system_label = self.coordinates_params.coordinate_system
-
-        # Labels of geometric axes set in parameter file
-        geometric_axes_labels_unsorted = [
-            axis["label"]
-            for axis in self.coordinates_params.coordinates
-            if axis.get("is_geometric", 0) == 1
-        ]
-
-        # Get coord system axis labels
-        coord_system = COORD_SYSTEM_REGISTRY[coord_system_label]
-        axes_labels = coord_system.metadata.axes_labels
-
-        # Tuple of labels in order required for coord system
-        self.geometric_axes_labels = tuple(
-            [
-                label
-                for label in axes_labels
-                if label in (geometric_axes_labels_unsorted or [])
-            ]
-        )
-
-        self.dim_geometry = len(self.geometric_axes_labels)
 
     def _set_derived_field_dicts(self) -> None:
         # Input fields
