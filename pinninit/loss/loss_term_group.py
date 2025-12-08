@@ -34,7 +34,6 @@ class LossTermCoordGroup:
         self.operators = Operators(
             coord_system,
             coords,
-            device,
         )
 
         # Make tensors for model inputs

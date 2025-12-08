@@ -9,15 +9,9 @@ if TYPE_CHECKING:
 
 
 class Operators:
-    def __init__(
-        self,
-        coord_system: CoordSystem,
-        coords: dict[str, torch.Tensor],
-        device: torch.device,
-    ):
+    def __init__(self, coord_system: CoordSystem, coords: dict[str, torch.Tensor]):
         self.coord_system = coord_system
         self.coords = coords
-        self.device = device
 
     def d_dcoord(
         self,
@@ -48,7 +42,7 @@ class Operators:
         ]
 
         # Take transpose so that eqn. file uses indices like [0] rather than [:, 0]
-        grad = self.coord_system.grad(f, coords_geometric, self.device).T
+        grad = self.coord_system.grad(f, coords_geometric).T
 
         return grad
 
@@ -62,11 +56,20 @@ class Operators:
         ]
 
         # Take transpose so that eqn. file uses indices like [0] rather than [:, 0]
-        contra_grad = self.coord_system.contravariant_grad(
-            f, coords_geometric, self.device
-        ).T
+        contra_grad = self.coord_system.contravariant_grad(f, coords_geometric).T
 
         return contra_grad
+
+    def div(
+        self,
+        v: torch.Tensor,
+    ) -> torch.Tensor:
+        # Get geometric coordinates
+        coords_geometric = [
+            self.coords[label] for label in self.coord_system.axes_labels_selected
+        ]
+
+        return self.coord_system.div(v, coords_geometric)
 
     def laplacian(
         self,
@@ -77,4 +80,4 @@ class Operators:
             self.coords[label] for label in self.coord_system.axes_labels_selected
         ]
 
-        return self.coord_system.laplacian(f, coords_geometric, self.device)
+        return self.coord_system.laplacian(f, coords_geometric)

@@ -49,10 +49,12 @@ class CoordSystem(ABC):
         self,
         dim_geometry: int,
         coord_axes: tuple[str, ...],
-        fixed_axes: tuple[str, ...] | None = None,
-        fixed_axes_values: tuple[float, ...] | None = None,
+        fixed_axes: tuple[str, ...],
+        fixed_axes_values: tuple[float, ...],
+        device: torch.device,
     ):
         self.dim_geometry = dim_geometry
+        self.device = device
 
         # Ensure coordinate system metadata exists and is of correct type
         metadata = getattr(self, "metadata", None)
@@ -89,7 +91,6 @@ class CoordSystem(ABC):
         self,
         n_points: int,
         coords_geometry: list[torch.Tensor],
-        device: torch.device | None = None,
     ) -> torch.Tensor:
         """Subclasses must implement this method to return the metric tensor(s)."""
         pass
@@ -106,7 +107,6 @@ class CoordSystem(ABC):
         self,
         f: torch.Tensor,
         coords_geometry: list[torch.Tensor],
-        device: torch.device | None = None,
     ) -> torch.Tensor:
         """
         Compute the contravarient gradient of a function in a given coordinate system.
@@ -132,11 +132,11 @@ class CoordSystem(ABC):
         # Validate input tensors
         n_points = f.shape[0]
         validate_pytorch_tensor(f, (n_points,))
-        self._validate_coordinates(coords_geometry)
+        self._validate_coord_shaped_vector(coords_geometry)
 
         # Tensor of metric tensors for each point
         G = self.metric_tensor(
-            n_points, coords_geometry, device
+            n_points, coords_geometry
         )  # Shape: (n_points, dim_geometry, dim_geometry)
         validate_pytorch_tensor(G, (n_points, dim_geometry, dim_geometry))
 
@@ -156,7 +156,7 @@ class CoordSystem(ABC):
             )[0]
 
             # Set derivatives to zero in None (Case where f is indep of coord)
-            if derivative_f is None:
+            if derivative_f_coord is None:
                 derivative_f_coord = torch.zeros_like(coord)
 
             # Append to list
@@ -178,7 +178,6 @@ class CoordSystem(ABC):
         self,
         coords_geometry: list[torch.Tensor],
         n_points: int,
-        device: torch.device | None = None,
     ) -> torch.Tensor:
         """
         Compute coordinate scale factors in an orthogonal coordinate system.
@@ -209,11 +208,11 @@ class CoordSystem(ABC):
         dim_geometry = self.dim_geometry
 
         # Validate input tensors
-        self._validate_coordinates(coords_geometry)
+        self._validate_coord_shaped_vector(coords_geometry)
 
         # Tensor of metric tensors for each point
         G = self.metric_tensor(
-            n_points, coords_geometry, device
+            n_points, coords_geometry
         )  # Shape: (n_points, dim_geometry, dim_geometry)
         validate_pytorch_tensor(G, (n_points, dim_geometry, dim_geometry))
 
@@ -227,10 +226,9 @@ class CoordSystem(ABC):
         self,
         f: torch.Tensor,
         coords_geometry: list[torch.Tensor],
-        device: torch.device | None = None,
     ) -> torch.Tensor:
         """
-        Compute the gradient of a function in a given coordinate system.
+        Compute the gradient of a function in a physical basis.
 
         Parameters
         ----------
@@ -246,20 +244,125 @@ class CoordSystem(ABC):
             Gradient of the function: (n_points, dim_geometry)
         """
 
-        # Get contravariant grad of f
-        contra_grad_f = self.contravariant_grad(f, coords_geometry, device)
-
         # Get scale factors (assumes the coordinate system is orthogonal)
         n_points = f.shape[0]
-        scale_factors = self.get_scale_factors(coords_geometry, n_points, device)
+        scale_factors = self.get_scale_factors(coords_geometry, n_points)
+
+        # Get contravariant grad of f
+        contra_grad_f = self.contravariant_grad(f, coords_geometry)
 
         return scale_factors * contra_grad_f
+
+    def contravariant_div(
+        self,
+        contra_v: torch.Tensor,
+        coords_geometry: list[torch.Tensor],
+    ) -> torch.Tensor:
+        """
+        Compute the divergence of a vector field in contravariant basis.
+
+        Parameters
+        ----------
+        contra_v : torch.Tensor
+            The vector field, given in contravariant basis.
+            Shape (n_points, dim_geometry)
+        coords_geometry : list[torch.Tensor]
+            A set of points and their geometric coordinates.
+            List length: dim_geometry, tensor lengths: n_points
+
+        Returns
+        -------
+        torch.Tensor
+            The divergence of the vector field v.
+            Shape (n_points,)
+        """
+        # Coordinate system dimensions
+        dim_geometry = self.dim_geometry
+        n_points = contra_v.shape[0]
+
+        # Validate inputs
+        validate_pytorch_tensor(contra_v, (n_points, dim_geometry))
+        self._validate_coord_shaped_vector(coords_geometry)
+
+        # Tensor of metric tensors for each point
+        G = self.metric_tensor(
+            n_points, coords_geometry
+        )  # Shape: (n_points, dim_geometry, dim_geometry)
+        validate_pytorch_tensor(G, (n_points, dim_geometry, dim_geometry))
+
+        # Metric determinant
+        det_G = torch.det(G)  # Shape: (n_points,)
+        sqrt_det_G = torch.sqrt(torch.abs(det_G))  # Shape: (n_points,)
+
+        # Initialise div_v
+        contra_div_v = torch.zeros(n_points, device=self.device)
+
+        # Sum of partial derivatives
+        for i, coord in enumerate(coords_geometry):
+            inner_term = sqrt_det_G * contra_v[:, i]  # Shape (n_points,)
+
+            # Differentiate the i-th component w.r.t the i-th coordinate
+            derivative_inner_coord = torch.autograd.grad(
+                inner_term,
+                coord,
+                grad_outputs=torch.ones_like(inner_term),
+                create_graph=True,
+                retain_graph=True,
+            )[0]
+
+            # Set derivatives to zero in None (Case where f is indep of coord)
+            if derivative_inner_coord is None:
+                derivative_inner_coord = torch.zeros_like(coord)
+
+            # Add to cumulative sum of partial derivatives
+            contra_div_v += derivative_inner_coord
+
+        # Divide by sqrt of det g to get divergence
+        contra_div_v /= sqrt_det_G
+        validate_pytorch_tensor(contra_div_v, (n_points,))
+
+        return contra_div_v
+
+    def div(
+        self,
+        v: torch.Tensor,
+        coords_geometry: list[torch.Tensor],
+    ) -> torch.Tensor:
+        """
+        Compute the divergence of a vector field in physical basis.
+
+        Parameters
+        ----------
+        v : torch.Tensor
+            The vector field, given in contravariant basis.
+            Shape (n_points, dim_geometry)
+        coords_geometry : list[torch.Tensor]
+            A set of points and their geometric coordinates.
+            List length: dim_geometry, tensor lengths: n_points
+
+        Returns
+        -------
+        torch.Tensor
+            The divergence of the vector field v.
+            Shape (n_points,)
+        """
+
+        # Get scale factors (assumes the coordinate system is orthogonal)
+        n_points = v.shape[0]
+        scale_factors = self.get_scale_factors(coords_geometry, n_points)
+
+        # Get v in contravariant basis
+        contra_v = v / scale_factors
+
+        # Get divergence (basis intep.)
+        div_v = self.contravariant_div(contra_v, coords_geometry)
+
+        return div_v
 
     def laplacian(
         self,
         f: torch.Tensor,
         coords_geometry: list[torch.Tensor],
-        device: torch.device | None = None,
     ) -> torch.Tensor:
         """
         Compute the laplacian operator of a function in a given coordinate system.
@@ -277,56 +380,15 @@ class CoordSystem(ABC):
         torch.Tensor
             Laplacian of the function: (n_points,)
         """
-        # Coordinate system dimensions
-        dim_geometry = self.dim_geometry
-
         # Validate input tensors
         n_points = f.shape[0]
         validate_pytorch_tensor(f, (n_points,))
-        self._validate_coordinates(coords_geometry)
-
-        # Tensor of metric tensors for each point
-        G = self.metric_tensor(
-            n_points, coords_geometry, device
-        )  # Shape: (n_points, dim_geometry, dim_geometry)
-        validate_pytorch_tensor(G, (n_points, dim_geometry, dim_geometry))
-
-        # Inverse metric tensor
-        G_inv = torch.linalg.inv(G)  # Shape: (n_points, dim_geometry, dim_geometry)
-        validate_pytorch_tensor(G_inv, (n_points, dim_geometry, dim_geometry))
-
-        # Metric determinant
-        det_G = torch.det(G)  # Shape: (n_points,)
-        sqrt_det_G = torch.sqrt(torch.abs(det_G))  # Shape: (n_points,)
+        self._validate_coord_shaped_vector(coords_geometry)
 
         # Get contravariant grad of f
-        contra_grad_f = self.contravariant_grad(f, coords_geometry, device)
-        inner_terms = sqrt_det_G.unsqueeze(1) * contra_grad_f
+        contra_grad_f = self.contravariant_grad(f, coords_geometry)
 
-        # Now take divergence
-        divergence_accum = torch.zeros(n_points, device=device)
-        for i, coord in enumerate(coords_geometry):
-            inner_term = inner_terms[:, i]  # Shape (n_points,)
-
-            # Differentiate this component w.r.t each coordinate
-            derivative_inner_coord = torch.autograd.grad(
-                inner_term,
-                coord,
-                grad_outputs=torch.ones_like(inner_term),
-                create_graph=True,
-                retain_graph=True,
-            )[0]
-
-            # Set derivatives to zero in None (Case where f is indep of coord)
-            if derivative_inner_coord is None:
-                derivative_inner_coord = torch.zeros_like(coord)
-
-            # Add to cumulative sum
-            divergence_accum += derivative_inner_coord
-
-        # Divide by sqrt of det G
-        laplacian_f = divergence_accum / (sqrt_det_G)
-        validate_pytorch_tensor(laplacian_f, (n_points,))
+        laplacian_f = self.contravariant_div(contra_grad_f, coords_geometry)
 
         return laplacian_f
 
@@ -491,11 +553,12 @@ class CoordSystem(ABC):
                     f"got {lb = } and {ub = } for {axis_label}."
                 )
 
-    def _validate_coordinates(
-        self, coords_geometry: list[torch.Tensor], n_points: int | None = None
+    def _validate_coord_shaped_vector(
+        self, v: list[torch.Tensor], n_points: int | None = None
     ) -> None:
         """
-        Validate that a set of provided geometric coordinates are in the right form.
+        Validate that a set of provided vector (list[torch.Tensor] in the form of the
+        geometric coordinates) is in the right form.
 
         Parameters
         ----------
@@ -513,15 +576,14 @@ class CoordSystem(ABC):
         dim_geometry = self.dim_geometry
 
         # Validate coords_geometry tensor type and shape
-        if len(coords_geometry) != dim_geometry:
+        if len(v) != dim_geometry:
             raise ValueError(
-                f"Expected coords_geometry to have length {dim_geometry}, "
-                f"got {len(coords_geometry)}"
+                f"Expected vector to have length {dim_geometry}, " f"got {len(v)}"
             )
 
         if n_points is not None:
             for i in range(dim_geometry):
-                validate_pytorch_tensor(coords_geometry[i], (n_points,))
+                validate_pytorch_tensor(v[i], (n_points,))
 
 
 class CartesianCoords(CoordSystem):
@@ -545,17 +607,19 @@ class CartesianCoords(CoordSystem):
         self,
         dim_geometry: int,
         coord_axes: tuple[str, ...],
-        fixed_axes: tuple[str, ...] | None = None,
-        fixed_axes_values: tuple[float, ...] | None = None,
+        fixed_axes: tuple[str, ...],
+        fixed_axes_values: tuple[float, ...],
+        device: torch.device,
     ):
-        super().__init__(dim_geometry, coord_axes, fixed_axes, fixed_axes_values)
+        super().__init__(
+            dim_geometry, coord_axes, fixed_axes, fixed_axes_values, device
+        )
         self._cartesian_validate_selected_axes()
 
     def metric_tensor(
         self,
         n_points: int,
         coords_geometry: list[torch.Tensor] | None = None,
-        device: torch.device | None = None,
     ) -> torch.Tensor:
         """
          Return the metric tensor(s) for Cartesian coordinates.
@@ -572,7 +636,7 @@ class CartesianCoords(CoordSystem):
          torch.Tensor
              Metric tensors of shape (n_points, dim_geometry, dim_geometry).
         """
-        g = torch.eye(self.metadata.max_dim_geometry).to(device)
+        g = torch.eye(self.metadata.max_dim_geometry).to(self.device)
         G = g.unsqueeze(0).repeat(
             n_points, 1, 1
         )  # Shape: (n_points, dim_geometry, dim_geometry)
@@ -649,16 +713,18 @@ class CylindricalCoords(CoordSystem):
         self,
         dim_geometry: int,
         coord_axes: tuple[str, ...],
-        fixed_axes: tuple[str, ...] | None = None,
-        fixed_axes_values: tuple[float, ...] | None = None,
+        fixed_axes: tuple[str, ...],
+        fixed_axes_values: tuple[float, ...],
+        device: torch.device,
     ):
-        super().__init__(dim_geometry, coord_axes, fixed_axes, fixed_axes_values)
+        super().__init__(
+            dim_geometry, coord_axes, fixed_axes, fixed_axes_values, device
+        )
 
     def metric_tensor(
         self,
         n_points: int,
         coords_geometry: list[torch.Tensor],
-        device: torch.device | None = None,
     ) -> torch.Tensor:
         """
          Return the metric tensor(s) for cylindrical polar coordinates.
@@ -676,7 +742,7 @@ class CylindricalCoords(CoordSystem):
              Metric tensors of shape (n_points, dim_geometry, dim_geometry).
         """
         # Validate coords_geometry
-        self._validate_coordinates(coords_geometry)
+        self._validate_coord_shaped_vector(coords_geometry)
 
         # Get quantities needed in metric tensor
         r = self._get_coord(
@@ -684,7 +750,7 @@ class CylindricalCoords(CoordSystem):
             coords_geometry,
         )
 
-        g = torch.eye(self.metadata.max_dim_geometry).to(device)
+        g = torch.eye(self.metadata.max_dim_geometry).to(self.device)
         G = g.unsqueeze(0).repeat(
             n_points, 1, 1
         )  # Shape: (n_points, dim_geometry, dim_geometry)
@@ -765,16 +831,18 @@ class SphericalCoords(CoordSystem):
         self,
         dim_geometry: int,
         coord_axes: tuple[str, ...],
-        fixed_axes: tuple[str, ...] | None = None,
-        fixed_axes_values: tuple[float, ...] | None = None,
+        fixed_axes: tuple[str, ...],
+        fixed_axes_values: tuple[float, ...],
+        device: torch.device,
     ):
-        super().__init__(dim_geometry, coord_axes, fixed_axes, fixed_axes_values)
+        super().__init__(
+            dim_geometry, coord_axes, fixed_axes, fixed_axes_values, device
+        )
 
     def metric_tensor(
         self,
         n_points: int,
         coords_geometry: list[torch.Tensor],
-        device: torch.device | None = None,
     ) -> torch.Tensor:
         """
          Return the metric tensor(s) for spherical polar coordinates.
@@ -792,7 +860,7 @@ class SphericalCoords(CoordSystem):
              Metric tensors of shape (n_points, dim_geometry, dim_geometry).
         """
         # Validate coords_geometry
-        self._validate_coordinates(coords_geometry)
+        self._validate_coord_shaped_vector(coords_geometry)
 
         # Get quantities needed in metric tensor
         r = self._get_coord(
@@ -804,7 +872,7 @@ class SphericalCoords(CoordSystem):
             coords_geometry,
         )
 
-        g = torch.eye(self.metadata.max_dim_geometry).to(device)
+        g = torch.eye(self.metadata.max_dim_geometry).to(self.device)
         G = g.unsqueeze(0).repeat(
             n_points, 1, 1
         )  # Shape: (n_points, dim_geometry, dim_geometry)

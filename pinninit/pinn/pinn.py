@@ -75,6 +75,7 @@ class PINN:
             geometric_axes_labels,
             fixed_axes,
             fixed_axes_values,
+            self.device,
         )
 
         """ removed this file until coord treatment is finalised
@@ -262,7 +263,6 @@ class PINN:
         operators = Operators(
             self.coord_system,
             coords,
-            self.device,
         )
 
         u, v = EQUATION_REGISTRY["velocity_from_psi"](psi, operators)
