@@ -19,20 +19,17 @@ Equations:
       input_args:
         - psi
       output_args:
-        - u
         - v
     - label: navier_stokes
       function_name: NS_residual_2d
       file_path: ./testing_pinns/pinninit/examples/fluid_dynamics/cylinder_2d/cylinder_2d_equations.py
       input_args:
-        - u
         - v
         - p
         - l1
         - l2
       output_args:
-        - residual_u
-        - residual_v
+        - NS_residuals
 
 Coordinates:
   coordinate_system:  cartesian
@@ -57,7 +54,6 @@ Coordinates:
 
 Fields:
   input_fields:
-    - label: u
     - label: v
   output_fields:
     - label: psi
@@ -72,14 +68,11 @@ Constants:
 
 DataLoss:
   terms:
-    - field_label:    u
-      loss_function:  mse
-      weight_method:  constant
-      weight_value:   1.0
     - field_label:    v
-      loss_function:  mse
-      weight_method:  constant
-      weight_value:   1.0
+      components:     2
+      loss_function:  [mse, mse]
+      weight_method:  [constant, constant]
+      weight_value:   [1.0, 1.0]
     #- label: boundary_u ### e.g. if we want to enforce boundary more strongly
     #  field: u
     #  weight_method: constant
@@ -87,18 +80,13 @@ DataLoss:
 
 PhysicsLoss:
   terms:
-    - label:          NS_u
+    - label:          NS
       equation_label: navier_stokes
-      residual:       residual_u
-      loss_function:  mse
-      weight_method:  constant
-      weight_value:   1.0
-    - label:          NS_v
-      equation_label: navier_stokes
-      residual:       residual_v
-      loss_function:  mse
-      weight_method:  constant
-      weight_value:   1.0
+      residual_label: NS_residuals
+      components:     2
+      loss_function:  [mse, mse]
+      weight_method:  [constant, constant]
+      weight_value:   [1.0, 1.0]
 
 Optimizer:
   optimizer:      adam

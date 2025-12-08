@@ -4,8 +4,6 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from ..checks.validate_data import validate_pytorch_tensor
-
 if TYPE_CHECKING:
     from ..geometry.coordinate_system import CoordSystem
 
@@ -20,66 +18,51 @@ class Operators:
             self.coords[label] for label in self.coord_system.axes_labels_selected
         ]
 
-    def df_dcoord(
+    def d_dcoord(
         self,
         f: torch.Tensor,
         coord_label: str,
     ) -> torch.Tensor:
-        # Validate that f is scalar field
-        n_points = f.shape[0]
-        validate_pytorch_tensor(f, (n_points,))
-
-        # Get coordinate from label
         coord = self.coords[coord_label]
 
-        # Calculate derivatives using autograd
-        derivative_f = torch.autograd.grad(
-            f,
-            coord,
-            grad_outputs=torch.ones_like(f),
-            create_graph=True,
-            retain_graph=True,
-        )[0]
-
-        return derivative_f
-
-    def dv_dcoord(
-        self,
-        v: torch.Tensor,
-        coord_label: str,
-    ) -> torch.Tensor:
-        # Validate that v is vector field
-        n_points = v.shape[0]
-        dim = v.shape[1]
-        validate_pytorch_tensor(v, (n_points, dim))
-
-        # Get coordinate from label
-        coord = self.coords[coord_label]
-
-        # Calculate derivatives using autograd
-        derivative_v_list = []
-        for i in range(dim):
-            derivative_v_i = torch.autograd.grad(
-                v[i],
+        # Scalar field: shape (num_points,)
+        if f.dim() == 1:
+            derivative_f = torch.autograd.grad(
+                f,
                 coord,
-                grad_outputs=torch.ones_like(v[i]),
+                grad_outputs=torch.ones_like(f),
                 create_graph=True,
                 retain_graph=True,
             )[0]
+            return derivative_f
 
-            derivative_v_list.append(derivative_v_i)
+        # Vector field: shape (num_points, dim)
+        elif f.dim() == 2:
+            dim = f.shape[1]
+            derivative_vector_f = []
+            for i in range(dim):
+                derivative_f_i = torch.autograd.grad(
+                    f[:, i],
+                    coord,
+                    grad_outputs=torch.ones_like(f[:, i]),
+                    create_graph=True,
+                    retain_graph=True,
+                )[0]
+                derivative_vector_f.append(derivative_f_i)
 
-        # Stack back to tensor with shape (n_points, dim)
-        derivative_v = torch.stack(derivative_v_list, dim=1)
+            return torch.stack(derivative_vector_f, dim=1)
 
-        return derivative_v
+        else:
+            raise ValueError(
+                "d_dcoord only supports scalar fields (n_points,) or vector fields "
+                f"(n_points, dim). Got shape {f.shape}"
+            )
 
     def grad(
         self,
         f: torch.Tensor,
     ) -> torch.Tensor:
-        # Take transpose so that eqn. file uses indices like [0] rather than [:, 0]
-        return self.coord_system.grad(f, self.coords_geometric).T
+        return self.coord_system.grad(f, self.coords_geometric)
 
     def v_dot_grad(
         self,

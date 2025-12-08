@@ -10,8 +10,6 @@ from .loss_function import LOSS_FUNCTION_REGISTRY, LossFunctionLabels
 from .loss_utils import is_loss_input_residual
 
 if TYPE_CHECKING:
-    from typing import Any
-
     from ..io.input_parameters import EquationsParams
 
 
@@ -145,20 +143,21 @@ class DataLoss(LossTerm):
 
     def __init__(
         self,
-        data_loss_term: dict[str, Any],
+        field_label: str,
+        field_index: int,
+        loss_function: LossFunctionLabels,
+        weight_method: str,
+        weight_value: str,
         input_field_labels: set[str],
         output_field_labels: set[str],
         derived_input_field_eqn_dict: dict[str, set[str]],
         derived_output_field_eqn_dict: dict[str, set[str]],
     ):
-        super().__init__(
-            data_loss_term["loss_function"],
-            data_loss_term["weight_method"],
-            data_loss_term["weight_value"],
-        )
+        super().__init__(loss_function, weight_method, weight_value)
 
         # Extract loss term params
-        self.label = data_loss_term["field_label"]
+        self.field_label = field_label
+        self.field_index = field_index
 
         # Work out what equations are needed to evaluate the loss term
         self._set_equations_needed(
@@ -180,7 +179,7 @@ class DataLoss(LossTerm):
         # input_field_labels or derived_input_field_eqn_dict; (2) either
         # output_field_labels or derived_output_field_eqn_dict
 
-        field_label = self.label
+        field_label = self.field_label
         derived_input_labels = derived_input_field_eqn_dict.keys()
         derived_output_labels = derived_output_field_eqn_dict.keys()
 
@@ -218,14 +217,24 @@ class DataLoss(LossTerm):
         input_fields: dict[str, torch.Tensor],
         derived_input_fields: dict[str, torch.Tensor],
     ) -> torch.Tensor:
-        if self.label in input_fields:
-            return input_fields[self.label]
-        elif self.label in derived_input_fields:
-            return derived_input_fields[self.label]
+        if self.field_label in input_fields:
+            field = input_fields[self.field_label]
+        elif self.field_label in derived_input_fields:
+            field = derived_input_fields[self.field_label]
         else:
             raise KeyError(
-                f"Field label '{self.label}' not found in dictionaries of input or "
-                "derived input fields."
+                f"Field label '{self.field_label}' not found in dictionaries of input "
+                "or derived input fields."
+            )
+
+        if field.dim() == 1:
+            return field
+        elif field.dim() == 2:
+            return field[:, self.field_index]
+        else:
+            raise ValueError(
+                "Current implimentation is only compatible with scalar and vector "
+                " fields."
             )
 
     def compute_predicted_value(
@@ -233,14 +242,24 @@ class DataLoss(LossTerm):
         output_fields: dict[str, torch.Tensor],
         derived_output_fields: dict[str, torch.Tensor],
     ) -> torch.Tensor:
-        if self.label in output_fields:
-            return output_fields[self.label]
-        elif self.label in derived_output_fields:
-            return derived_output_fields[self.label]
+        if self.field_label in output_fields:
+            field = output_fields[self.field_label]
+        elif self.field_label in derived_output_fields:
+            field = derived_output_fields[self.field_label]
         else:
             raise KeyError(
-                f"Field label '{self.label}' not found in dictionaries of output or "
-                "derived output fields."
+                f"Field label '{self.field_label}' not found in dictionaries of output "
+                "or derived output fields."
+            )
+
+        if field.dim() == 1:
+            return field
+        elif field.dim() == 2:
+            return field[:, self.field_index]
+        else:
+            raise ValueError(
+                "Current implimentation is only compatible with scalar and vector "
+                " fields."
             )
 
     def compute_residual(
@@ -271,7 +290,12 @@ class PhysicsLoss(LossTerm):
 
     def __init__(
         self,
-        physics_loss_term: dict[str, Any],
+        equation_label: str,
+        residual_label: str,
+        residual_index: int,
+        loss_function: LossFunctionLabels,
+        weight_method: str,
+        weight_value: str,
         output_field_labels: set[str],
         input_const_labels: set[str],
         learnt_const_labels: set[str],
@@ -279,16 +303,12 @@ class PhysicsLoss(LossTerm):
         derived_output_field_eqn_dict: dict[str, set[str]],
         equations_params: EquationsParams,
     ):
-        super().__init__(
-            physics_loss_term["loss_function"],
-            physics_loss_term["weight_method"],
-            physics_loss_term["weight_value"],
-        )
+        super().__init__(loss_function, weight_method, weight_value)
 
         # Extract loss term params
-        self.label = physics_loss_term["label"]
-        self.equation_label = physics_loss_term["equation_label"]
-        self.residual_label = physics_loss_term["residual"]
+        self.equation_label = equation_label
+        self.residual_label = residual_label
+        self.residual_index = residual_index
 
         # Extract equation parameters for loss term equation
         equations_by_label = {eq["label"]: eq for eq in equations_params.equations}
@@ -342,13 +362,23 @@ class PhysicsLoss(LossTerm):
         derived_output_fields: dict[str, torch.Tensor],
     ) -> torch.Tensor:
         if self.residual_label in output_fields:
-            return output_fields[self.residual_label]
+            field = output_fields[self.residual_label]
         elif self.residual_label in derived_output_fields:
-            return derived_output_fields[self.residual_label]
+            field = derived_output_fields[self.residual_label]
         else:
             raise KeyError(
-                f"Residual label '{self.residual_label}' not found in dictionaries of "
-                "output or derived output fields."
+                f"Residual label '{self.residual_label}' not found in dictionaries "
+                "of output or derived output fields."
+            )
+
+        if field.dim() == 1:
+            return field
+        elif field.dim() == 2:
+            return field[:, self.residual_index]
+        else:
+            raise ValueError(
+                "Current implimentation is only compatible with scalar and vector "
+                " fields."
             )
 
     def compute_loss(

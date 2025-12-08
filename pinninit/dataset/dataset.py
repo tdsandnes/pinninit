@@ -58,12 +58,11 @@ def load_dataset(
     t_sampled = t[mask]
     x_sampled = x[mask]
     y_sampled = y[mask]
-    u_sampled = u[mask]
-    v_sampled = v[mask]
+    v_sampled = np.stack([u[mask], v[mask]], axis=1)
 
     ### TEMPORARY to give an idea of what it will look like from hdf5
     all_input_coord_dict = {"t": t_sampled, "x": x_sampled, "y": y_sampled}
-    all_input_field_dict = {"u": u_sampled, "v": v_sampled}
+    all_input_field_dict = {"v": v_sampled}
 
     # coords included in input file
     coord_params = pinn_params.coordinates_params

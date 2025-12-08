@@ -11,6 +11,8 @@ from ..differential_equations.operators import Operators
 from ..geometry.coordinate_system import COORD_SYSTEM_REGISTRY
 from ..io.input_equations import EQUATION_REGISTRY, load_functions_from_file_to_registry
 from ..io.input_parameters import PINNParameters
+from ..io.io_utils import get_enum_label_from_value
+from ..loss.loss_function import LossFunctionLabels
 from ..loss.loss_term import DataLoss, PhysicsLoss
 from ..loss.loss_term_group import LossTermCoordGroup
 from ..nn.layers import LAYER_TYPE_REGISTRY
@@ -162,31 +164,62 @@ class PINN:
 
         # Data loss terms
         for term in data_loss_terms_params:
-            data_loss_term = DataLoss(
-                term,
-                self.pinn_params.input_field_labels,
-                self.pinn_params.output_field_labels,
-                self.pinn_params.derived_input_field_eqn_dict,
-                self.pinn_params.derived_output_field_eqn_dict,
-            )
+            field_label = term["field_label"]
+            components = term.get("components", 1)
+            for idx in range(components):
+                loss_function = get_enum_label_from_value(
+                    term["loss_function"][idx], LossFunctionLabels
+                )
+                weight_method = term["weight_method"][idx]
+                weight_value = term["weight_value"][idx]
 
-            # Add to group
-            self.data_loss_terms.add(data_loss_term)
+                data_loss_term = DataLoss(
+                    field_label,
+                    idx,
+                    loss_function,
+                    weight_method,
+                    weight_value,
+                    self.pinn_params.input_field_labels,
+                    self.pinn_params.output_field_labels,
+                    self.pinn_params.derived_input_field_eqn_dict,
+                    self.pinn_params.derived_output_field_eqn_dict,
+                )
+
+                # Add to group
+                self.data_loss_terms.add(data_loss_term)
 
         # Physics loss terms
         for term in physics_loss_terms_params:
-            physics_loss_term = PhysicsLoss(
-                term,
-                self.pinn_params.output_field_labels,
-                self.pinn_params.input_const_labels,
-                self.pinn_params.learnt_const_labels,
-                self.pinn_params.coord_axes_labels,
-                self.pinn_params.derived_output_field_eqn_dict,
-                equations_params,
-            )
+            equation_label = term["equation_label"]
+            residual_label = term["residual_label"]
+            components = term.get("components", 1)
+            weight_method = term["weight_method"]
+            weight_value = term["weight_value"]
 
-            # Add to group
-            self.physics_loss_terms.add(physics_loss_term)
+            for idx in range(components):
+                loss_function = get_enum_label_from_value(
+                    term["loss_function"][idx], LossFunctionLabels
+                )
+                weight_method = term["weight_method"][idx]
+                weight_value = term["weight_value"][idx]
+
+                physics_loss_term = PhysicsLoss(
+                    equation_label,
+                    residual_label,
+                    idx,
+                    loss_function,
+                    weight_method,
+                    weight_value,
+                    self.pinn_params.output_field_labels,
+                    self.pinn_params.input_const_labels,
+                    self.pinn_params.learnt_const_labels,
+                    self.pinn_params.coord_axes_labels,
+                    self.pinn_params.derived_output_field_eqn_dict,
+                    equations_params,
+                )
+
+                # Add to group
+                self.physics_loss_terms.add(physics_loss_term)
 
     def _init_nn(self) -> None:
         # Extract params

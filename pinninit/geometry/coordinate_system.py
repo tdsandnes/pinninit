@@ -294,9 +294,7 @@ class CoordSystem(ABC):
         for i in range(dim_geometry):
             grad_v2_i = self.grad(v2[:, i], coords_geometry)
             validate_pytorch_tensor(grad_v2_i, (n_points, dim_geometry))
-            v1_dot_grad_v2_i = torch.zeros(n_points, device=self.device)
-            for j in range(dim_geometry):
-                v1_dot_grad_v2_i += v1[:, j] * grad_v2_i[:, j]
+            v1_dot_grad_v2_i = (v1 * grad_v2_i).sum(dim=1)
             v1_dot_grad_v2.append(v1_dot_grad_v2_i)
 
         v1_dot_grad_v2_tensor = torch.stack(
@@ -397,7 +395,7 @@ class CoordSystem(ABC):
         -------
         torch.Tensor
             The divergence of the vector field v.
-            Shape (n_points,)
+            Shape (n_points, dim_geometry)
         """
         # Coordinate system dimensions
         dim_geometry = self.dim_geometry

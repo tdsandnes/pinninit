@@ -112,8 +112,11 @@ class LossTermCoordGroup:
                 if can_evaluate:
                     # Evaluate eqn and store all output values
                     eqn_outputs = EQUATION_REGISTRY[eqn](*eqn_inputs, self.operators)
-                    for i, eqn_output in enumerate(eqn_outputs):
-                        derived_fields[eqn_output_labels[i]] = eqn_output
+                    if len(eqn_output_labels) == 1:
+                        derived_fields[eqn_output_labels[0]] = eqn_outputs
+                    else:
+                        for i, eqn_output in enumerate(eqn_outputs):
+                            derived_fields[eqn_output_labels[i]] = eqn_output
                     evaluated_new.add(eqn)
 
             # Remove any evaluated eqns from the set of eqns left to evaluate
