@@ -13,6 +13,11 @@ class Operators:
         self.coord_system = coord_system
         self.coords = coords
 
+        # Get geometric coordinates
+        self.coords_geometric = [
+            self.coords[label] for label in self.coord_system.axes_labels_selected
+        ]
+
     def d_dcoord(
         self,
         f: torch.Tensor,
@@ -36,48 +41,30 @@ class Operators:
         self,
         f: torch.Tensor,
     ) -> torch.Tensor:
-        # Get geometric coordinates
-        coords_geometric = [
-            self.coords[label] for label in self.coord_system.axes_labels_selected
-        ]
-
         # Take transpose so that eqn. file uses indices like [0] rather than [:, 0]
-        grad = self.coord_system.grad(f, coords_geometric).T
-
-        return grad
+        return self.coord_system.grad(f, self.coords_geometric).T
 
     def contravariant_grad(
         self,
         f: torch.Tensor,
     ) -> torch.Tensor:
-        # Get geometric coordinates
-        coords_geometric = [
-            self.coords[label] for label in self.coord_system.axes_labels_selected
-        ]
-
         # Take transpose so that eqn. file uses indices like [0] rather than [:, 0]
-        contra_grad = self.coord_system.contravariant_grad(f, coords_geometric).T
-
-        return contra_grad
+        return self.coord_system.contravariant_grad(f, self.coords_geometric).T
 
     def div(
         self,
         v: torch.Tensor,
     ) -> torch.Tensor:
-        # Get geometric coordinates
-        coords_geometric = [
-            self.coords[label] for label in self.coord_system.axes_labels_selected
-        ]
-
-        return self.coord_system.div(v, coords_geometric)
+        return self.coord_system.div(v, self.coords_geometric)
 
     def laplacian(
         self,
         f: torch.Tensor,
     ) -> torch.Tensor:
-        # Get geometric coordinates
-        coords_geometric = [
-            self.coords[label] for label in self.coord_system.axes_labels_selected
-        ]
+        return self.coord_system.laplacian(f, self.coords_geometric)
 
-        return self.coord_system.laplacian(f, coords_geometric)
+    def vector_laplacian(
+        self,
+        v: torch.Tensor,
+    ) -> torch.Tensor:
+        return self.coord_system.vector_laplacian(v, self.coords_geometric)

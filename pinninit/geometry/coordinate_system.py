@@ -348,8 +348,10 @@ class CoordSystem(ABC):
         """
 
         # Get scale factors (assumes the coordinate system is orthogonal)
+        dim_geometry = self.dim_geometry
         n_points = v.shape[0]
         scale_factors = self.get_scale_factors(coords_geometry, n_points)
+        validate_pytorch_tensor(v, (n_points, dim_geometry))
 
         # Get v in contravariant basis
         contra_v = v / scale_factors
@@ -378,7 +380,7 @@ class CoordSystem(ABC):
         Returns
         -------
         torch.Tensor
-            Laplacian of the function: (n_points,)
+            Laplacian of the function. Shape (n_points,)
         """
         # Validate input tensors
         n_points = f.shape[0]
@@ -391,6 +393,42 @@ class CoordSystem(ABC):
         laplacian_f = self.contravariant_div(contra_grad_f, coords_geometry)
 
         return laplacian_f
+
+    def vector_laplacian(
+        self,
+        v: torch.Tensor,
+        coords_geometry: list[torch.Tensor],
+    ) -> torch.Tensor:
+        """
+        Compute the laplacian operator of a function in a given coordinate system.
+
+        Parameters
+        ----------
+        v : torch.Tensor
+            The vector field.
+            Shape (n_points, dim_geometry)
+        coords_geometry : list[torch.Tensor]
+            A set of points and their geometric coordinates.
+            List length: dim_geometry, tensor lengths: n_points
+
+        Returns
+        -------
+        torch.Tensor
+            Vector laplacian of the function and same basis as input vector
+            field (n_points,)
+        """
+        # Get scale factors (assumes the coordinate system is orthogonal)
+        dim_geometry = self.dim_geometry
+        n_points = v.shape[0]
+        validate_pytorch_tensor(v, (n_points, dim_geometry))
+
+        # Compute Laplacian component-wise
+        laplacian_v = torch.stack(
+            [self.laplacian(v[:, i], coords_geometry) for i in range(dim_geometry)],
+            dim=1,
+        )  # shape: (n_points, dim_geometry)
+
+        return laplacian_v
 
     def _get_coord(
         self,
