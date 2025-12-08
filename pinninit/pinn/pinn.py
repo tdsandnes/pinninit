@@ -299,7 +299,9 @@ class PINN:
         loss = loss_data + loss_phys
         return loss
 
-    def train(self, nIter: int) -> None:
+    def train(self) -> None:
+        nIter = self.pinn_params.training_params.epochs
+
         self.loss_values = []
         self.l1_values = []
         self.l2_values = []

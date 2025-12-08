@@ -38,6 +38,9 @@ class LossTerm(ABC):
         self.loss_function_label = loss_function_label
         # Look up the loss function in registry
         self.loss_func = LOSS_FUNCTION_REGISTRY[loss_function_label]
+        self.weight_method_label = weight_method_label
+        ### Temp until better way of handling different methods
+        self.weight_value_label = weight_value_label
 
         # Init the sets of equations needed for loss term group
         self.input_eqns_needed = set()
@@ -96,10 +99,12 @@ class LossTerm(ABC):
         """
         Computes the weight of the loss term.
 
-        ### Temp: currently just return scalar tensor 1. Ideally want this to go to a
-        ### loss_weights.py file where we can add various constant and adaptive methods.
+        ### Temp: currently just return scalar self.weight_value_label. Ideally want
+        ### this to go to a loss_weights.py file where we can add various constant
+        and adaptive methods.
         """
-        return torch.tensor(1)
+        ### Temp until better way of handling different methods
+        return torch.tensor(self.weight_value_label)
 
     def _compute_weighted_loss(
         self,

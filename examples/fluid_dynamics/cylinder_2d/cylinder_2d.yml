@@ -112,4 +112,4 @@ Layers:
   init_biases:          all_zeros
 
 Training:
-  epochs: 500
+  epochs: 20000
