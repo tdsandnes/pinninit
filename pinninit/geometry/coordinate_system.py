@@ -253,6 +253,59 @@ class CoordSystem(ABC):
 
         return scale_factors * contra_grad_f
 
+    def v_dot_grad(
+        self,
+        v1: torch.Tensor,
+        v2: torch.Tensor,
+        coords_geometry: list[torch.Tensor],
+    ) -> torch.Tensor:
+        """
+        Compute the operation (v1 dot grad)(v2) in physical basis.
+
+        Parameters
+        ----------
+        v1 : torch.Tensor
+            The vector field used in dot product with grad.
+            Shape (n_points, dim_geometry)
+        v2 : torch.Tensor
+            The vector field that the operator (v1 dot grad) acts on.
+            Shape (n_points, dim_geometry)
+        coords_geometry : list[torch.Tensor]
+            A set of points and their geometric coordinates.
+            List length: dim_geometry, tensor lengths: n_points
+
+        Returns
+        -------
+        torch.Tensor
+            The vector computed from (v1 dot grad)(v2).
+            Shape (n_points, dim_geometry)
+        """
+        # Coordinate system dimensions
+        dim_geometry = self.dim_geometry
+        n_points = v1.shape[0]
+
+        # Validate inputs
+        validate_pytorch_tensor(v1, (n_points, dim_geometry))
+        validate_pytorch_tensor(v2, (n_points, dim_geometry))
+        self._validate_coord_shaped_vector(coords_geometry)
+
+        # Calculate components
+        v1_dot_grad_v2 = []
+        for i in range(dim_geometry):
+            grad_v2_i = self.grad(v2[:, i], coords_geometry)
+            validate_pytorch_tensor(grad_v2_i, (n_points, dim_geometry))
+            v1_dot_grad_v2_i = torch.zeros(n_points, device=self.device)
+            for j in range(dim_geometry):
+                v1_dot_grad_v2_i += v1[:, j] * grad_v2_i[:, j]
+            v1_dot_grad_v2.append(v1_dot_grad_v2_i)
+
+        v1_dot_grad_v2_tensor = torch.stack(
+            v1_dot_grad_v2, dim=1
+        )  # shape: (n_points, dim_geometry)
+        validate_pytorch_tensor(v1_dot_grad_v2_tensor, (n_points, dim_geometry))
+
+        return v1_dot_grad_v2_tensor
+
     def contravariant_div(
         self,
         contra_v: torch.Tensor,
@@ -346,12 +399,16 @@ class CoordSystem(ABC):
             The divergence of the vector field v.
             Shape (n_points,)
         """
-
-        # Get scale factors (assumes the coordinate system is orthogonal)
+        # Coordinate system dimensions
         dim_geometry = self.dim_geometry
         n_points = v.shape[0]
-        scale_factors = self.get_scale_factors(coords_geometry, n_points)
+
+        # Validate inputs
         validate_pytorch_tensor(v, (n_points, dim_geometry))
+        self._validate_coord_shaped_vector(coords_geometry)
+
+        # Get scale factors (assumes the coordinate system is orthogonal)
+        scale_factors = self.get_scale_factors(coords_geometry, n_points)
 
         # Get v in contravariant basis
         contra_v = v / scale_factors
@@ -417,10 +474,11 @@ class CoordSystem(ABC):
             Vector laplacian of the function and same basis as input vector
             field (n_points,)
         """
-        # Get scale factors (assumes the coordinate system is orthogonal)
+        # Validate input tensors
         dim_geometry = self.dim_geometry
         n_points = v.shape[0]
         validate_pytorch_tensor(v, (n_points, dim_geometry))
+        self._validate_coord_shaped_vector(coords_geometry)
 
         # Compute Laplacian component-wise
         laplacian_v = torch.stack(

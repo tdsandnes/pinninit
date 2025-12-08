@@ -29,8 +29,8 @@ def NS_residual_2d(
     """Calculate residual if Navier-Stokes Eqn. in 2D with two learnable params"""
 
     # Apply operators
-    du_dt = operators.d_dcoord(u, "t")
-    dv_dt = operators.d_dcoord(v, "t")
+    du_dt = operators.df_dcoord(u, "t")
+    dv_dt = operators.df_dcoord(v, "t")
     grad_u = operators.grad(u)
     grad_v = operators.grad(v)
     grad_p = operators.grad(p)
