@@ -198,7 +198,7 @@ class PINN:
         output_fields = self.pinn_params.fields_params.output_fields
 
         ### Currently hard code this. Only works for feed forward NN
-        in_features = [self.coord_dim] + hidden_layer_widths
+        in_features = [self.internal_coord_dim] + hidden_layer_widths
         out_features = hidden_layer_widths + [len(output_fields)]
 
         self.layers = [
