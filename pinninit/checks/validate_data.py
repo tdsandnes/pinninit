@@ -70,3 +70,35 @@ def validate_pytorch_tensor(tensor: torch.Tensor, shape: tuple[int, ...]) -> Non
             f"[validate_pytorch_tensor] Expected input to have shape {shape}, "
             f"got {tensor.shape}"
         )
+
+
+def validate_list_of_tensors(
+    vector: list[torch.Tensor], list_length: int, tensor_shape: tuple[int, ...]
+) -> None:
+    """
+    Validate that a set of provided vector (list[torch.Tensor] in the form of the
+    geometric coordinates) is in the right form.
+
+    Parameters
+    ----------
+    vector : list[torch.Tensor]
+        Vector to validate. List length: dim_geometry, tensor lengths: n_points
+    list_length : int
+        Length of list of tensors
+    tensor_shape : tuple
+        Expected shape of all tensors in list.
+
+    Raises
+    ------
+    ValueError
+        If vector has incorrect form.
+    """
+
+    # Validate coords_geometry tensor type and shape
+    if len(vector) != list_length:
+        raise ValueError(
+            f"Expected vector to have length {list_length}, " f"got {len(vector)}"
+        )
+
+    for i in range(list_length):
+        validate_pytorch_tensor(vector[i], tensor_shape)
