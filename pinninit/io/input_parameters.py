@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 import yaml
 
 from ..collocation.collocation_sampler import CollocationSamplerLabels
-from ..dataset.dataset_sampler import DataSetSamplerLabels
 from ..geometry.coordinate_system import (
     CoordSystemLabels,
 )
@@ -15,6 +14,7 @@ from ..nn.initialise_biases import BiasInitLabels
 from ..nn.initialise_weights import WeightInitLabels
 from ..nn.layers import LayerTypeLabels
 from ..optimizer.optimizer import OptimizerLabels
+from .data_sampler import DataSetSamplerLabels
 from .io_utils import (
     expand_if_alias,
     get_enum_label_from_value,

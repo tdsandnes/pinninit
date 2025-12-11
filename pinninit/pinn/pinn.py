@@ -6,9 +6,9 @@ import torch
 import torch.nn as nn
 
 from ..collocation.collocation import load_collocation
-from ..dataset.dataset import load_dataset
 from ..differential_equations.operators import Operators
 from ..geometry.coordinate_system import COORD_SYSTEM_REGISTRY
+from ..io.input_data import load_dataset
 from ..io.input_equations import EQUATION_REGISTRY, load_functions_from_file_to_registry
 from ..io.input_parameters import PINNParameters
 from ..io.io_utils import get_enum_label_from_value

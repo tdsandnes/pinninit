@@ -6,7 +6,7 @@ import h5py
 import numpy as np
 import torch
 
-from .dataset_sampler import DATA_SET_SAMPLER_REGISTRY
+from .data_sampler import DATA_SET_SAMPLER_REGISTRY
 
 if TYPE_CHECKING:
     from ..io.input_parameters import PINNParameters
