@@ -14,7 +14,13 @@ if TYPE_CHECKING:
 class DataSetSamplerLabels(str, Enum):
     """Enumeration of data set sampler method labels."""
 
+    NONE = "none"
     RANDOM = "random"
+
+
+def mask_no_sampler(length: int, pinn_params: PINNParameters) -> np.ndarray:
+    """Returns mask with all True"""
+    return np.ones(length, dtype=bool)
 
 
 def mask_random_array_sampler(length: int, pinn_params: PINNParameters) -> np.ndarray:
@@ -47,5 +53,6 @@ def mask_random_array_sampler(length: int, pinn_params: PINNParameters) -> np.nd
 DATA_SET_SAMPLER_REGISTRY: dict[
     DataSetSamplerLabels, Callable[[int, PINNParameters], np.ndarray]
 ] = {
+    DataSetSamplerLabels.NONE: mask_no_sampler,
     DataSetSamplerLabels.RANDOM: mask_random_array_sampler,
 }

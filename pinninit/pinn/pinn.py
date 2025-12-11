@@ -167,11 +167,18 @@ class PINN:
             field_label = term["field_label"]
             components = term.get("components", 1)
             for idx in range(components):
-                loss_function = get_enum_label_from_value(
-                    term["loss_function"][idx], LossFunctionLabels
-                )
-                weight_method = term["weight_method"][idx]
-                weight_value = term["weight_value"][idx]
+                if components > 1:
+                    loss_function = get_enum_label_from_value(
+                        term["loss_function"][idx], LossFunctionLabels
+                    )
+                    weight_method = term["weight_method"][idx]
+                    weight_value = term["weight_value"][idx]
+                else:
+                    loss_function = get_enum_label_from_value(
+                        term["loss_function"], LossFunctionLabels
+                    )
+                    weight_method = term["weight_method"]
+                    weight_value = term["weight_value"]
 
                 data_loss_term = DataLoss(
                     field_label,
@@ -197,11 +204,18 @@ class PINN:
             weight_value = term["weight_value"]
 
             for idx in range(components):
-                loss_function = get_enum_label_from_value(
-                    term["loss_function"][idx], LossFunctionLabels
-                )
-                weight_method = term["weight_method"][idx]
-                weight_value = term["weight_value"][idx]
+                if components > 1:
+                    loss_function = get_enum_label_from_value(
+                        term["loss_function"][idx], LossFunctionLabels
+                    )
+                    weight_method = term["weight_method"][idx]
+                    weight_value = term["weight_value"][idx]
+                else:
+                    loss_function = get_enum_label_from_value(
+                        term["loss_function"], LossFunctionLabels
+                    )
+                    weight_method = term["weight_method"]
+                    weight_value = term["weight_value"]
 
                 physics_loss_term = PhysicsLoss(
                     equation_label,
@@ -325,19 +339,19 @@ class PINN:
         )
 
         # Compute loss for each group
-        loss_data = self.data_loss_terms.compute_loss()
-        loss_phys = self.physics_loss_terms.compute_loss()
+        self.loss_data = self.data_loss_terms.compute_loss()
+        self.loss_phys = self.physics_loss_terms.compute_loss()
 
         # Total loss
-        loss = loss_data + loss_phys
+        loss = self.loss_data + self.loss_phys
         return loss
 
     def train(self) -> None:
         nIter = self.pinn_params.training_params.epochs
 
         self.loss_values = []
-        self.l1_values = []
-        self.l2_values = []
+        # self.l1_values = []
+        # self.l2_values = []
         for it in range(nIter):
             # Zero the gradients
             self.optimizer.zero_grad()
@@ -349,22 +363,26 @@ class PINN:
             self.optimizer.step()
             # Print the training progress every 500 iterations
             if it % 500 == 0:
-                l1 = self.learnt_consts["l1"]
-                l2 = self.learnt_consts["l2"]
                 print(
-                    f"Iter: {it}, Loss: {loss.item():.3e}, Lambda1: "
-                    f"{l1}, Lambda2: {l2}"
+                    f"Iter: {it}, Loss: {loss.item():.3e}, Data Loss: "
+                    f"{self.loss_data:.3e}, Physics Loss: {self.loss_phys:.3e}"
                 )
+            #  l1 = self.learnt_consts["l1"]
+            #  l2 = self.learnt_consts["l2"]
+            #  print(
+            #      f"Iter: {it}, Loss: {loss.item():.3e}, Lambda1: "
+            #      f"{l1}, Lambda2: {l2}"
+            #  )
             self.loss_values.append(loss.item())
-            self.l1_values.append(self.learnt_consts["l1"])
-            self.l2_values.append(self.learnt_consts["l2"])
+        #   self.l1_values.append(self.learnt_consts["l1"])
+        #   self.l2_values.append(self.learnt_consts["l2"])
 
     def save(self, path: str) -> None:
         torch.save(
             {
                 "model_state_dict": self.model.state_dict(),
-                "lambda_1": self.learnt_consts["l1"],
-                "lambda_2": self.learnt_consts["l2"],
+                #   "lambda_1": self.learnt_consts["l1"],
+                #   "lambda_2": self.learnt_consts["l2"],
             },
             path,
         )
@@ -375,9 +393,10 @@ class PINN:
 
         checkpoint = torch.load(path, map_location=self.device)
         self.model.load_state_dict(checkpoint["model_state_dict"])
-        self.lambda_1 = torch.tensor(
-            checkpoint["lambda_1"], requires_grad=True, dtype=torch.float32
-        )
-        self.lambda_2 = torch.tensor(
-            checkpoint["lambda_2"], requires_grad=True, dtype=torch.float32
-        )
+
+    # self.lambda_1 = torch.tensor(
+    #     checkpoint["lambda_1"], requires_grad=True, dtype=torch.float32
+    # )
+    # self.lambda_2 = torch.tensor(
+    #     checkpoint["lambda_2"], requires_grad=True, dtype=torch.float32
+    # )

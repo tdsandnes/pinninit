@@ -84,7 +84,7 @@ def load_optional(
     ValueError
         If conversion to the specified data type fails.
     """
-    if field in input_params[section]:
+    if input_params[section] is not None and field in input_params[section]:
         # Read value from input params
         read_value = input_params[section][field]
         # Check data type

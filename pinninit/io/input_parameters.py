@@ -33,11 +33,13 @@ class DataParams:
             "file_path", "Data", input_params, data_type=str
         )
         # train_sampling_strategy
-        ###train_sampling_strategy_raw = load_compulsory(
-        ###    "train_sampling_strategy", "Data", input_params, data_type=str
-        ###)
-        self.train_sampling_strategy = DataSetSamplerLabels.RANDOM  ###This should be:
-        ###get_enum_label_from_value(train_sampling_strategy_raw, ...)### Add registry
+        train_sampling_strategy_raw = load_compulsory(
+            "train_sampling_strategy", "Data", input_params, data_type=str
+        )
+
+        self.train_sampling_strategy = get_enum_label_from_value(
+            train_sampling_strategy_raw, DataSetSamplerLabels
+        )
 
         if self.train_sampling_strategy == DataSetSamplerLabels.RANDOM:
             # num_train_samples

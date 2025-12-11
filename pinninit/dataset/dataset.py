@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import h5py
 import numpy as np
-import scipy
 import torch
 
 from .dataset_sampler import DATA_SET_SAMPLER_REGISTRY
@@ -19,58 +19,108 @@ def load_dataset(
     file_path = pinn_params.data_params.file_path
     train_sampling_strategy = pinn_params.data_params.train_sampling_strategy
 
-    ### THIS IS ALL TEMP. SHOULD BE LOADING STANDARDISED HDF5 FILE
-    ### Should compare HDF5 headings with param labels in param file
+    # Dicts of all data contained in data file
+    all_input_coords_dict = {}
+    all_input_fields_dict = {}
+    with h5py.File(file_path, "r") as f:
+        # Check that required groups exist
+        if "Metadata" not in f:
+            raise KeyError(f"File {file_path} must contain 'Metadata' group")
 
-    # Load and reformat the data.
-    data = scipy.io.loadmat(file_path)
+        if "Coords" not in f:
+            raise KeyError(f"File {file_path} must contain 'Coords' group")
 
-    U_star = data["U_star"]  # velocity coordinates (N x 2 x T)
-    t_star = data["t"]  # temporal coordinates  (T x 1)
-    X_star = data["X_star"]  # Spatial coordinates (N x 2)
+        if "Fields" not in f:
+            raise KeyError(f"File {file_path} must contain 'Fields' group")
 
-    N = X_star.shape[0]
-    T = t_star.shape[0]
+        # Read Metadata
+        num_points = f["Metadata/num_points"][()]
+        dataset_type = f["Metadata/dataset_type"][()]
+        # Convert to str
+        dataset_type = (
+            dataset_type.decode("utf-8")
+            if isinstance(dataset_type, bytes)
+            else str(dataset_type)
+        )
 
-    # Rearrange Data
-    XX = np.tile(X_star[:, 0:1], (1, T))  # N x T
-    YY = np.tile(X_star[:, 1:2], (1, T))  # N x T
-    TT = np.tile(t_star, (1, N)).T  # N x T
+        if dataset_type != "training":
+            raise ValueError(f"Data set type much be 'training', not {dataset_type}")
 
-    UU = U_star[:, 0, :]  # N x T
-    VV = U_star[:, 1, :]  # N x T
+        # Read Coords
+        coords_group = f["Coords"]
+        for coord in coords_group:
+            all_input_coords_dict[coord] = coords_group[coord][()]
 
-    # Flatten data
-    t = TT.flatten()
-    x = XX.flatten()
-    y = YY.flatten()
-    u = UU.flatten()
-    v = VV.flatten()
+        # Check that all coordinate arrays have length matching num_points
+        for name, array in all_input_coords_dict.items():
+            if len(array) != num_points:
+                raise ValueError(
+                    f"Coordinate '{name}' length {len(array)} does not match "
+                    f"num_points {num_points}"
+                )
+
+        # Read Fields
+        fields_group = f["Fields"]
+        for field in fields_group:
+            item = fields_group[field]
+            # If scalar field
+            if isinstance(item, h5py.Dataset):
+                all_input_fields_dict[field] = item[()]
+
+            # If vector field
+            elif isinstance(item, h5py.Group):
+                field_dict = {}
+                for component in item:
+                    if component in all_input_coords_dict:
+                        field_dict[component] = item[component][()]
+
+                all_input_fields_dict[field] = field_dict
+            else:
+                raise TypeError(f"Unknown HDF5 object type for fields/{field}")
+
+        # Check that all field arrays have length matching num_points
+    #   for name, array in all_input_fields_dict.items():
+    #       if len(array) != num_points:
+    #           raise ValueError(
+    #               f"Field '{name}' length {len(array)} does not match num_points "
+    #               f"{num_points}"
+    #           )
+
+    ### temp below
+    new_order = ["r", "theta", "phi"]
+    all_input_coords_dict_2 = {
+        k: all_input_coords_dict[k] for k in new_order if k in all_input_coords_dict
+    }
+    B_dict = all_input_fields_dict["B"]
+    B_list = [B_dict[k] for k in new_order if k in B_dict]
+    B_array = np.stack(B_list, axis=1)
+
+    all_input_coords_dict = all_input_coords_dict_2
+    all_input_fields_dict = {"B": B_array}
+    ### temp above
 
     # Get mask for sampling
-    data_length = len(t)
-    mask = DATA_SET_SAMPLER_REGISTRY[train_sampling_strategy](
-        data_length,
+    sample_mask = DATA_SET_SAMPLER_REGISTRY[train_sampling_strategy](
+        num_points,
         pinn_params,
     )
 
     # Sample data
-    t_sampled = t[mask]
-    x_sampled = x[mask]
-    y_sampled = y[mask]
-    v_sampled = np.stack([u[mask], v[mask]], axis=1)
+    sampled_input_coords_dict = {}
+    sampled_input_fields_dict = {}
+    for coord, array in all_input_coords_dict.items():
+        sampled_input_coords_dict[coord] = array[sample_mask]
 
-    ### TEMPORARY to give an idea of what it will look like from hdf5
-    all_input_coord_dict = {"t": t_sampled, "x": x_sampled, "y": y_sampled}
-    all_input_field_dict = {"v": v_sampled}
+    for field, array in all_input_fields_dict.items():
+        sampled_input_fields_dict[field] = array[sample_mask]
 
     # coords included in input file
     coord_params = pinn_params.coordinates_params
     param_coord_labels = [coord["label"] for coord in coord_params.coordinates]
 
-    # Set up coords in dict
+    # Set up dict of coords specified in yaml file
     input_coords = {}
-    for coord_label, input_array in all_input_coord_dict.items():
+    for coord_label, input_array in sampled_input_coords_dict.items():
         if coord_label in param_coord_labels:
             coord_values = torch.tensor(input_array)
             coord_values = coord_values.float().to(device)
@@ -88,7 +138,7 @@ def load_dataset(
 
     # Set up fields in dict
     input_fields = {}
-    for field_label, input_array in all_input_field_dict.items():
+    for field_label, input_array in sampled_input_fields_dict.items():
         if field_label in param_field_labels:
             field_values = torch.tensor(input_array)
             field_values = field_values.float().to(device)
