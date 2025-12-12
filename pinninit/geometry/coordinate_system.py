@@ -3,16 +3,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 
-from ..checks.validate_data import validate_list_of_tensors, validate_pytorch_tensor
+from ..checks.validate_data import validate_pytorch_tensor
 from .geometry_utils import select_coord_system_axes
-
-if TYPE_CHECKING:
-    pass
 
 
 class CoordSystemLabels(str, Enum):
@@ -90,14 +86,14 @@ class CoordSystem(ABC):
     def metric_tensor(
         self,
         n_points: int,
-        coords_geometry: list[torch.Tensor],
+        geometric_coords: torch.Tensor,
     ) -> torch.Tensor:
         """Subclasses must implement this method to return the metric tensor(s)."""
         pass
 
     @abstractmethod
-    def map_coord_dict_to_internal_coords(
-        self, coords: dict[str, torch.Tensor]
+    def map_coords_to_internal_coords(
+        self, geometric_coords: torch.Tensor
     ) -> dict[str, torch.Tensor]:
         """Subclasses must implement this method to map coords to internal coords
         used for a given coordinate system."""
@@ -105,7 +101,7 @@ class CoordSystem(ABC):
 
     def get_scale_factors(
         self,
-        coords_geometry: list[torch.Tensor],
+        geometric_coords: torch.Tensor,
         n_points: int,
     ) -> torch.Tensor:
         """
@@ -115,9 +111,9 @@ class CoordSystem(ABC):
 
         Parameters
         ----------
-        coords_geometry : list[torch.Tensor]
+        geometric_coords : torch.Tensor
             A set of points and their geometric coordinates.
-            List length: dim_geometry, tensor lengths: n_points
+            Shape: (n_points, dim_geometry)
         n_points : int
             Number of points that each tensor should have elements for.
 
@@ -136,12 +132,12 @@ class CoordSystem(ABC):
         # Coordinate system dimensions
         dim_geometry = self.dim_geometry
 
-        # Validate input tensors
-        validate_list_of_tensors(coords_geometry, dim_geometry, (n_points,))
+        # Validate input tensor
+        validate_pytorch_tensor(geometric_coords, (n_points, dim_geometry))
 
         # Tensor of metric tensors for each point
         G = self.metric_tensor(
-            n_points, coords_geometry
+            n_points, geometric_coords
         )  # Shape: (n_points, dim_geometry, dim_geometry)
         validate_pytorch_tensor(G, (n_points, dim_geometry, dim_geometry))
 
@@ -154,12 +150,12 @@ class CoordSystem(ABC):
     def _get_coord(
         self,
         axis_label: str,
-        coords_geometry: list[torch.Tensor],
+        geometric_coords: torch.Tensor,
         default: float | None = None,
     ) -> torch.Tensor:
         if axis_label in self.axes_labels_selected:
             idx = self.axes_labels_selected.index(axis_label)
-            return coords_geometry[idx]
+            return geometric_coords[:, idx]
         elif (
             self.fixed_axes is not None
             and self.fixed_axes_values is not None
@@ -346,29 +342,33 @@ class CartesianCoords(CoordSystem):
     def metric_tensor(
         self,
         n_points: int,
-        coords_geometry: list[torch.Tensor] | None = None,
+        geometric_coords: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """
-         Return the metric tensor(s) for Cartesian coordinates.
+        Return the metric tensor(s) for Cartesian coordinates.
 
         Parameters
-         ----------
-         n_points : int
-             Number of points for which to generate metric tensors.
-         coords_geometry : list[torch.Tensor]
-             Coordinates of the points. Unused for Cartesian coordinates.
+        ----------
+        n_points : int
+            Number of points for which to generate metric tensors.
+        geometric_coords : torch.Tensor
+            Coordinates of the points. Unused for Cartesian coordinates.
 
-         Returns
-         -------
-         torch.Tensor
-             Metric tensors of shape (n_points, dim_geometry, dim_geometry).
+        Returns
+        -------
+        torch.Tensor
+            Metric tensors of shape (n_points, dim_geometry, dim_geometry).
         """
+        # Validate geometric_coords
+        if geometric_coords is not None:
+            validate_pytorch_tensor(geometric_coords, (n_points, self.dim_geometry))
+
         g = torch.eye(self.metadata.max_dim_geometry).to(self.device)
         G = g.unsqueeze(0).repeat(
             n_points, 1, 1
         )  # Shape: (n_points, dim_geometry, dim_geometry)
 
-        # Only use rows and columns of axes included in coords_geometry
+        # Only use rows and columns of axes included in geometric_coords
         mask_keep = [
             i
             for i in range(self.metadata.max_dim_geometry)
@@ -381,16 +381,20 @@ class CartesianCoords(CoordSystem):
 
         return G
 
-    def map_coord_dict_to_internal_coords(
-        self, coords: dict[str, torch.Tensor]
+    def map_coords_to_internal_coords(
+        self, geometric_coords: torch.Tensor
     ) -> dict[str, torch.Tensor]:
-        return coords
+        # For Cartesian, internal coords are the same as geometric coords
+        return {
+            label: geometric_coords[:, i]
+            for i, label in enumerate(self.axes_labels_selected)
+        }
 
     def _cartesian_validate_selected_axes(self) -> None:
         """
         Validate that the selected axes are compatible coordinate system.
 
-        In cases where two combinations of selected coords_geometry behave the same, we
+        In cases where two combinations of selected geometric_coords behave the same, we
         raise an error in one of them to enforce consistent coordinate system labelling
         i.e. (x, y) and (y, z).
 
@@ -451,39 +455,39 @@ class CylindricalCoords(CoordSystem):
     def metric_tensor(
         self,
         n_points: int,
-        coords_geometry: list[torch.Tensor],
+        geometric_coords: torch.Tensor,
     ) -> torch.Tensor:
         """
-         Return the metric tensor(s) for cylindrical polar coordinates.
+        Return the metric tensor(s) for cylindrical polar coordinates.
 
         Parameters
-         ----------
-         n_points : int
-             Number of points for which to generate metric tensors.
-         coords_geometry : list[torch.Tensor]
-             Coordinates of the points. Shape: (n_points, dim_geometry).
+        ----------
+        n_points : int
+            Number of points for which to generate metric tensors.
+        geometric_coords : torch.Tensor
+            Coordinates of the points. Shape: (n_points, dim_geometry).
 
-         Returns
-         -------
-         torch.Tensor
-             Metric tensors of shape (n_points, dim_geometry, dim_geometry).
+        Returns
+        -------
+        torch.Tensor
+            Metric tensors of shape (n_points, dim_geometry, dim_geometry).
         """
-        # Validate coords_geometry
-        validate_list_of_tensors(coords_geometry, self.dim_geometry, (n_points,))
+        # Validate geometric_coords
+        validate_pytorch_tensor(geometric_coords, (n_points, self.dim_geometry))
 
         # Get quantities needed in metric tensor
         r = self._get_coord(
             "r",
-            coords_geometry,
+            geometric_coords,
         )
 
         g = torch.eye(self.metadata.max_dim_geometry).to(self.device)
         G = g.unsqueeze(0).repeat(
             n_points, 1, 1
         )  # Shape: (n_points, dim_geometry, dim_geometry)
-        G[:, 1, 1] = r  # theta theta components
+        G[:, 1, 1] = r**2  # theta theta components
 
-        # Only use rows and columns of axes included in coords_geometry
+        # Only use rows and columns of axes included in geometric_coords
         mask_keep = [
             i
             for i in range(self.metadata.max_dim_geometry)
@@ -496,42 +500,34 @@ class CylindricalCoords(CoordSystem):
 
         return G
 
-    def map_coord_dict_to_internal_coords(
-        self, coords: dict[str, torch.Tensor]
+    def map_coords_to_internal_coords(
+        self, geometric_coords: torch.Tensor
     ) -> dict[str, torch.Tensor]:
-        # dict of internal coords
-        internal_coords = coords.copy()
-
-        # Get geometric coordinates in coord system basis
-        coords_geometry = []
-        for coord_label in self.axes_labels_selected:
-            coords_geometry.append(coords[coord_label])
-
-            # Delete geometric coords from dict
-            del internal_coords[coord_label]
-
         # r must always be available in cylindrical polars
         r = self._get_coord(
             "r",
-            coords_geometry,
+            geometric_coords,
         )
+
+        # Transform
+        internal_geometric_coords: dict[str, torch.Tensor] = {}
 
         # theta
         if "theta" in self.axes_labels_selected:
-            theta = self._get_coord("theta", coords_geometry)
-            internal_coords["x"] = r * torch.cos(theta)
-            internal_coords["y"] = r * torch.sin(theta)
+            theta = self._get_coord("theta", geometric_coords)
+            internal_geometric_coords["x"] = r * torch.cos(theta)
+            internal_geometric_coords["y"] = r * torch.sin(theta)
         else:
             # If no theta is given
-            internal_coords["x"] = r
+            internal_geometric_coords["x"] = r
 
         # z
         if "z" in self.axes_labels_selected:
-            z = self._get_coord("z", coords_geometry)
+            z = self._get_coord("z", geometric_coords)
 
-            internal_coords["z"] = z
+            internal_geometric_coords["z"] = z
 
-        return internal_coords
+        return internal_geometric_coords
 
 
 class SphericalCoords(CoordSystem):
@@ -569,34 +565,34 @@ class SphericalCoords(CoordSystem):
     def metric_tensor(
         self,
         n_points: int,
-        coords_geometry: list[torch.Tensor],
+        geometric_coords: torch.Tensor,
     ) -> torch.Tensor:
         """
-         Return the metric tensor(s) for spherical polar coordinates.
+        Return the metric tensor(s) for spherical polar coordinates.
 
         Parameters
-         ----------
-         n_points : int
-             Number of points for which to generate metric tensors.
-         coords_geometry : list[torch.Tensor]
-             Coordinates of the points. Shape: (n_points, dim_geometry).
+        ----------
+        n_points : int
+            Number of points for which to generate metric tensors.
+        geometric_coords : torch.Tensor
+            Coordinates of the points. Shape: (n_points, dim_geometry).
 
-         Returns
-         -------
-         torch.Tensor
-             Metric tensors of shape (n_points, dim_geometry, dim_geometry).
+        Returns
+        -------
+        torch.Tensor
+            Metric tensors of shape (n_points, dim_geometry, dim_geometry).
         """
-        # Validate coords_geometry
-        validate_list_of_tensors(coords_geometry, self.dim_geometry, (n_points,))
+        # Validate geometric_coords
+        validate_pytorch_tensor(geometric_coords, (n_points, self.dim_geometry))
 
         # Get quantities needed in metric tensor
         r = self._get_coord(
             "r",
-            coords_geometry,
+            geometric_coords,
         )
         theta = self._get_coord(
             "theta",
-            coords_geometry,
+            geometric_coords,
         )
 
         g = torch.eye(self.metadata.max_dim_geometry).to(self.device)
@@ -606,7 +602,7 @@ class SphericalCoords(CoordSystem):
         G[:, 1, 1] = r**2  # theta theta components
         G[:, 2, 2] = r**2 * torch.sin(theta) ** 2  # phi phi components
 
-        # Only use rows and columns of axes included in coords_geometry
+        # Only use rows and columns of axes included in geometric_coords
         mask_keep = [
             i
             for i in range(self.metadata.max_dim_geometry)
@@ -619,46 +615,37 @@ class SphericalCoords(CoordSystem):
 
         return G
 
-    def map_coord_dict_to_internal_coords(
-        self, coords: dict[str, torch.Tensor]
+    def map_coords_to_internal_coords(
+        self, geometric_coords: torch.Tensor
     ) -> dict[str, torch.Tensor]:
-        # dict of internal coords
-        internal_coords = coords.copy()
-
-        # Get geometric coordinates in coord system basis
-        coords_geometry = []
-        for coord_label in self.axes_labels_selected:
-            coords_geometry.append(coords[coord_label])
-
-            # Delete geometric coords from dict
-            del internal_coords[coord_label]
-
         # r must always be available in spherical polars
         r = self._get_coord(
             "r",
-            coords_geometry,
+            geometric_coords,
         )
 
         # theta must always be available in spherical polars
         theta = self._get_coord(
             "theta",
-            coords_geometry,
+            geometric_coords,
         )
 
+        # Transform
+        internal_geometric_coords: dict[str, torch.Tensor] = {}
         if "phi" in self.axes_labels_selected:
             phi = self._get_coord(
                 "phi",
-                coords_geometry,
+                geometric_coords,
             )
-            internal_coords["x"] = r * torch.sin(theta) * torch.cos(phi)
-            internal_coords["y"] = r * torch.sin(theta) * torch.sin(phi)
-            internal_coords["z"] = r * torch.cos(theta)
+            internal_geometric_coords["x"] = r * torch.sin(theta) * torch.cos(phi)
+            internal_geometric_coords["y"] = r * torch.sin(theta) * torch.sin(phi)
+            internal_geometric_coords["z"] = r * torch.cos(theta)
 
         else:
-            internal_coords["x"] = r * torch.sin(theta)
-            internal_coords["z"] = r * torch.cos(theta)
+            internal_geometric_coords["x"] = r * torch.sin(theta)
+            internal_geometric_coords["z"] = r * torch.cos(theta)
 
-        return internal_coords
+        return internal_geometric_coords
 
 
 # Mapping from coordinate system labels to classes

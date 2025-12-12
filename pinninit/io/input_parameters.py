@@ -260,9 +260,6 @@ class PINNParameters:
         # Set lists of labels
         self._set_label_sets()
 
-        # Set attributes needed for directing to equations
-        self._set_derived_field_dicts()
-
     def _extract_parameters(self) -> None:
         """Extract parameters as objects of individual classes"""
         self.data_params = DataParams(self.input_params)
@@ -296,97 +293,3 @@ class PINNParameters:
         }
 
         ### Do check here to make sure that all values in these sets are unique
-
-    def _set_derived_field_dicts(self) -> None:
-        # Input fields
-
-        # Add to dict if there are equations that can be used to calculate
-        # new input fields from only: (1) other input fields, (2) input consts,
-        # (3) coordinates
-
-        # Labels that can be matched to satisfy any of conditions 1-3 above
-        condition_labels = (
-            self.input_field_labels | self.input_const_labels | self.coord_axes_labels
-        )
-
-        # Get dict of derived input fields and the equations needed to calculate them
-        self.derived_input_field_eqn_dict = self._get_derived_dict(condition_labels)
-        self.derived_input_field_labels = self.derived_input_field_eqn_dict.keys()
-
-        # Output fields
-
-        # Add to dict if there are equations that can be used to calculate
-        # new output fields from only: (1) other output fields, (2) input consts,
-        # (3) learnt consts (4) coordinates
-
-        # Labels that can be matched to satisfy any of conditions 1-4 above
-        condition_labels = (
-            self.output_field_labels
-            | self.input_const_labels
-            | self.learnt_const_labels
-            | self.coord_axes_labels
-        )
-
-        # Get dict of derived output fields and the equations needed to calculate them
-        self.derived_output_field_eqn_dict = self._get_derived_dict(condition_labels)
-        self.derived_output_field_labels = self.derived_output_field_eqn_dict.keys()
-
-    def _get_derived_dict(self, param_labels: set[str]) -> dict[str, set[str]]:
-        """From the param file equations gets all new parameters that can be calculated
-        from a list of other parameters (based on their labels), or quantities that can
-        be calculated from them, through other equations. Returns dict of {derived
-        param label: set of equation labelsneeded to calculate the param}"""
-
-        # Start from empty dict
-        derived_dict: dict[str, set[str]] = {}
-        equations_needed: set[str]
-
-        # Loop through all equations and see if any satisfy conditions.
-        # If new params have been added, it's possible that other equations are
-        # now available. Therefore keep looping until no new params are added.
-        added_new = True
-        while added_new:
-            added_new = False
-            # Loop through all equations and see if any satisfy conditions
-            for equation in self.equations_params.equations:
-                passes_condition = False
-
-                # If all input args satisfy conditions
-                if all(arg in param_labels for arg in equation["input_args"]):
-                    equations_needed = set()
-                    passes_condition = True
-
-                # If it doesn't satisfy the original condition, but it does satisfy it
-                # when also considering considering newly derived params
-                elif all(
-                    arg in param_labels or arg in derived_dict
-                    for arg in equation["input_args"]
-                ):
-                    # what equations are needed to get the derived inputs needed?
-                    equations_needed = set()
-                    for arg in equation["input_args"]:
-                        if arg in derived_dict:
-                            # Each value is a set, so iterate through its elements
-                            for eq in derived_dict[arg]:
-                                equations_needed.add(eq)
-
-                    passes_condition = True
-
-                if passes_condition:
-                    # Add all output args to derived_dict...
-                    for output_arg in equation["output_args"]:
-                        # ... if they're not already in param_labels or derived_dict
-                        if (
-                            output_arg not in param_labels
-                            and output_arg not in derived_dict
-                        ):
-                            # Add entry to dict to store equation needed to derive it
-                            eqs = set(equations_needed)
-                            eqs.add(equation["label"])
-                            derived_dict[output_arg] = eqs
-
-                            # Added at least one new value, so pass through outer
-                            # for loop at least one more time
-                            added_new = True
-
-        return derived_dict

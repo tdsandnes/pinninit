@@ -86,19 +86,6 @@ def load_dataset(
     #               f"{num_points}"
     #           )
 
-    ### temp below
-    new_order = ["r", "theta", "phi"]
-    all_input_coords_dict_2 = {
-        k: all_input_coords_dict[k] for k in new_order if k in all_input_coords_dict
-    }
-    B_dict = all_input_fields_dict["B"]
-    B_list = [B_dict[k] for k in new_order if k in B_dict]
-    B_array = np.stack(B_list, axis=1)
-
-    all_input_coords_dict = all_input_coords_dict_2
-    all_input_fields_dict = {"B": B_array}
-    ### temp above
-
     # Get mask for sampling
     sample_mask = DATA_SET_SAMPLER_REGISTRY[train_sampling_strategy](
         num_points,
@@ -111,9 +98,15 @@ def load_dataset(
     for coord, array in all_input_coords_dict.items():
         sampled_input_coords_dict[coord] = array[sample_mask]
 
-    for field, array in all_input_fields_dict.items():
-        sampled_input_fields_dict[field] = array[sample_mask]
-
+    for field, item in all_input_fields_dict.items():
+        if isinstance(item, np.ndarray):
+            sampled_input_fields_dict[field] = item[sample_mask]
+        elif isinstance(item, dict):
+            sampled_input_fields_dict[field] = {}
+            for component, array in item.items():
+                sampled_input_fields_dict[field][component] = array[sample_mask]
+    """
+    ### Add these checks later
     # coords included in input file
     coord_params = pinn_params.coordinates_params
     param_coord_labels = [coord["label"] for coord in coord_params.coordinates]
@@ -149,8 +142,12 @@ def load_dataset(
                 "Data file must contain data for all input fields specified in the "
                 f"parameter file. Missing input field: {field_label}"
             )
-
+    """
     ### Adding this here as a placeholder for future
     input_consts = {"": torch.tensor([]).to(device)}
 
-    return input_coords, input_fields, input_consts
+    return (
+        sampled_input_coords_dict,
+        sampled_input_fields_dict,
+        input_consts,
+    )  ###input_coords, input_fields, input_consts

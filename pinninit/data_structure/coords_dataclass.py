@@ -1,27 +1,33 @@
 from __future__ import annotations
 
 from dataclasses import field, make_dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import Any, Protocol
 
 import torch
 
+from ..differential_equations.operators import Operators
 from ..geometry.coordinate_system import CoordSystem
 from .data_structure_utils import convert_to_tensor
-
-if TYPE_CHECKING:
-    from typing import Any
 
 
 class CoordsProtocol(Protocol):
     # Attributes
-    geometric_labels: tuple[str, ...]
-    coord_system: CoordSystem
+    # Input fields
     coord_labels: tuple[str, ...]
-    label_to_index: dict[str, int]
+    coord_system: CoordSystem
+    device: torch.device
+
+    # Derived fields
     n_points: int
+    geometric_labels: tuple[str, ...]
+    internal_labels: tuple[str, ...]
+    label_to_index: dict[str, int]
+    internal_label_to_index: dict[str, int]
+    internal_coord_dim: int
     tensor: torch.Tensor
     geometric: torch.Tensor
-    device: torch.device
+    internal: torch.Tensor
+    operators: Operators
 
     # Methods
     def __post_init__(self) -> None: ...
@@ -29,7 +35,7 @@ class CoordsProtocol(Protocol):
 
 
 def _coords_post_init(self: CoordsProtocol) -> None:
-    # Sort labels and tore dict for coord label ordering
+    # Sort labels and store dict for coord label ordering
     self.coord_labels = tuple(sorted(self.coord_labels))
     self.label_to_index = {label: i for i, label in enumerate(self.coord_labels)}
 
@@ -52,6 +58,34 @@ def _coords_post_init(self: CoordsProtocol) -> None:
     self.geometric = torch.stack(
         [getattr(self, label) for label in self.geometric_labels], dim=1
     )
+
+    # Get internal geometric coords
+    internal_geometric_coords_dict = self.coord_system.map_coords_to_internal_coords(
+        self.geometric
+    )
+
+    # Replace geometric coords with internal geometric coords
+    internal_coords_dict = {
+        label: getattr(self, label)
+        for label in self.coord_labels
+        if label not in self.geometric_labels
+    }
+    internal_coords_dict.update(
+        internal_geometric_coords_dict
+    )  # Add new geometric coordinates
+    # sort alphabetically and stack into tensor
+    internal_labels = sorted(internal_coords_dict)
+    self.internal = torch.stack(
+        [internal_coords_dict[label] for label in internal_labels], dim=1
+    )
+    self.internal_labels = tuple(internal_labels)
+    self.internal_label_to_index = {label: i for i, label in enumerate(internal_labels)}
+    for label in internal_geometric_coords_dict:
+        setattr(self, label, internal_geometric_coords_dict[label])
+    self.internal_coord_dim = len(self.internal_labels)
+
+    # Set operators
+    self.operators = Operators(self)
 
 
 def _coords_validate_input(self: Any) -> None:
@@ -86,20 +120,37 @@ def _coords_validate_input(self: Any) -> None:
 
 
 def make_coords_dataclass(
-    coord_labels: tuple[str, ...], device: torch.device
+    coord_labels: set[str], device: torch.device
 ) -> type[CoordsProtocol]:
-    components: list[tuple[str, Any, Any | None]] = [
-        # Input fields
-        ("coord_system", CoordSystem, None),
-        ("coord_labels", tuple[str, ...], field(default=tuple(sorted(coord_labels)))),
-        ("device", torch.device, field(default=device)),
-        # Derived fields
-        ("geometric_labels", tuple[str, ...], field(init=False)),
-        ("label_to_index", dict[str, int], field(init=False)),
-        ("n_points", int, field(init=False)),
-        ("tensor", torch.Tensor, field(init=False)),
-        ("geometric", torch.Tensor, field(init=False)),
-    ]
+    components: list[tuple[str, Any, Any | None]] = []
+
+    # Each coordinate
+    for label in coord_labels:
+        components.append((label, Any, None))
+
+    # Input fields
+    components.extend(
+        [
+            (
+                "coord_labels",
+                tuple[str, ...],
+                field(default=tuple(sorted(coord_labels))),
+            ),
+            ("coord_system", CoordSystem, None),
+            ("device", torch.device, field(default=device)),
+            # Derived fields
+            ("n_points", int, field(init=False)),
+            ("geometric_labels", tuple[str, ...], field(init=False)),
+            ("internal_labels", tuple[str, ...], field(init=False)),
+            ("label_to_index", dict[str, int], field(init=False)),
+            ("internal_label_to_index", dict[str, int], field(init=False)),
+            ("internal_coord_dim", int, field(init=False)),
+            ("tensor", torch.Tensor, field(init=False)),
+            ("geometric", torch.Tensor, field(init=False)),
+            ("internal", torch.Tensor, field(init=False)),
+            ("operators", Operators, field(init=False)),
+        ]
+    )
 
     # Make dataclass instance
     Coords = make_dataclass(

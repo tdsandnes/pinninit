@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 import torch
 import torch.nn as nn
 
 from ..collocation.collocation import load_collocation
-from ..differential_equations.operators import Operators
+from ..data_structure.coords_dataclass import make_coords_dataclass
 from ..geometry.coordinate_system import COORD_SYSTEM_REGISTRY
 from ..io.input_data import load_dataset
-from ..io.input_equations import EQUATION_REGISTRY, load_functions_from_file_to_registry
+from ..io.input_equations import load_functions_from_file_to_registry
 from ..io.input_parameters import PINNParameters
 from ..io.io_utils import get_enum_label_from_value
 from ..loss.loss_function import LossFunctionLabels
@@ -27,6 +28,11 @@ class PINN:
 
         # Read PINN parameters from yaml file
         self.pinn_params = PINNParameters(param_file_path)
+
+        # Make dataclasses
+        self.Coords: type[Any] = make_coords_dataclass(
+            self.pinn_params.coord_axes_labels, device=self.device
+        )
 
         # Initialise modules
         self._init_geometry()  ### most general
@@ -92,51 +98,46 @@ class PINN:
     def _init_dataset(self) -> None:
         # Load datasets
         (
-            self.input_coords,
+            input_coords,
             self.input_fields,
             self.input_consts,
         ) = load_dataset(self.pinn_params, self.device)
 
-        # Convert input coords to the coords used internally within model
-        self.input_coords_internal = (
-            self.coord_system.map_coord_dict_to_internal_coords(self.input_coords)
+        # Initialise coord dataclass object
+        self.training_coords = self.Coords(
+            coord_system=self.coord_system, **input_coords
         )
-        self.internal_coord_dim = len(self.input_coords_internal)
 
         # Lower and upper bounds of coords ### this is after filtering. Is that right?
+        ### Make these attributes of coords
         self.input_coords_lb = {
-            label: torch.min(tensor) for label, tensor in self.input_coords.items()
+            label: torch.min(getattr(self.training_coords, label))
+            for label in self.training_coords.coord_labels
         }
         self.input_coords_ub = {
-            label: torch.max(tensor) for label, tensor in self.input_coords.items()
+            label: torch.max(getattr(self.training_coords, label))
+            for label in self.training_coords.coord_labels
         }
         self.input_coords_internal_lb = {
-            label: torch.min(tensor)
-            for label, tensor in self.input_coords_internal.items()
+            label: torch.min(getattr(self.training_coords, label))
+            for label in self.training_coords.internal_labels
         }
         self.input_coords_internal_ub = {
-            label: torch.max(tensor)
-            for label, tensor in self.input_coords_internal.items()
-        }
-
-        # Make dict based on order of alphabetically sorted internal coord labels
-        sorted_coord_labels = sorted(self.input_coords_internal)
-        internal_coord_to_index_dict = {}
-        for i, label in enumerate(sorted_coord_labels):
-            internal_coord_to_index_dict[label] = i
-
-        self.internal_coord_to_index_dict = internal_coord_to_index_dict
-        self.index_to_internal_coord_dict = {
-            v: k for k, v in internal_coord_to_index_dict.items()
+            label: torch.max(getattr(self.training_coords, label))
+            for label in self.training_coords.internal_labels
         }
 
     def _init_collocation(self) -> None:
         # Set coords of collocation points
-        self.collocation_coords = load_collocation(
+        collocation_coords = load_collocation(
             self.input_coords_lb,
             self.input_coords_ub,
             self.pinn_params,
             self.device,
+        )
+
+        self.collocation_coords = self.Coords(
+            coord_system=self.coord_system, **collocation_coords
         )
 
     def _init_equations(self) -> None:
@@ -146,20 +147,18 @@ class PINN:
     def _init_loss(self) -> None:
         data_loss_terms_params = self.pinn_params.dataloss_params.terms
         physics_loss_terms_params = self.pinn_params.physicsloss_params.terms
-        equations_params = self.pinn_params.equations_params
 
         # Init loss term groups
         self.data_loss_terms = LossTermCoordGroup(
-            self.coord_system,
-            self.input_coords,
-            self.index_to_internal_coord_dict,
-            self.device,
+            self.training_coords,
+            self.pinn_params.input_field_labels,
+            self.pinn_params.output_field_labels,
+            self.input_fields,
         )
         self.physics_loss_terms = LossTermCoordGroup(
-            self.coord_system,
             self.collocation_coords,
-            self.index_to_internal_coord_dict,
-            self.device,
+            self.pinn_params.input_field_labels,
+            self.pinn_params.output_field_labels,
         )
 
         # Data loss terms
@@ -186,10 +185,6 @@ class PINN:
                     loss_function,
                     weight_method,
                     weight_value,
-                    self.pinn_params.input_field_labels,
-                    self.pinn_params.output_field_labels,
-                    self.pinn_params.derived_input_field_eqn_dict,
-                    self.pinn_params.derived_output_field_eqn_dict,
                 )
 
                 # Add to group
@@ -224,12 +219,6 @@ class PINN:
                     loss_function,
                     weight_method,
                     weight_value,
-                    self.pinn_params.output_field_labels,
-                    self.pinn_params.input_const_labels,
-                    self.pinn_params.learnt_const_labels,
-                    self.pinn_params.coord_axes_labels,
-                    self.pinn_params.derived_output_field_eqn_dict,
-                    equations_params,
                 )
 
                 # Add to group
@@ -246,7 +235,7 @@ class PINN:
         output_fields = self.pinn_params.fields_params.output_fields
 
         ### Currently hard code this. Only works for feed forward NN
-        in_features = [self.internal_coord_dim] + hidden_layer_widths
+        in_features = [self.training_coords.internal_coord_dim] + hidden_layer_widths
         out_features = hidden_layer_widths + [len(output_fields)]
 
         self.layers = [
@@ -261,8 +250,7 @@ class PINN:
         lb_list = []
         ub_list = []
 
-        for i in range(self.internal_coord_dim):
-            coord_label = self.index_to_internal_coord_dict[i]
+        for coord_label in self.training_coords.internal_labels:
             lb_list.append(self.input_coords_internal_lb[coord_label])
             ub_list.append(self.input_coords_internal_ub[coord_label])
 
@@ -289,53 +277,21 @@ class PINN:
         )
 
     # Function to predict values
-    def predict(
-        self, coords: dict[str, torch.Tensor]
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        # Map to internal coords
-        internal_coords = self.coord_system.map_coord_dict_to_internal_coords(coords)
+    def predict(self, coords: dict[str, torch.Tensor]) -> Any:
+        # Initialise coord dataclass object
+        test_coords = self.Coords(coord_system=self.coord_system, **coords)
 
-        # Make tensor
-        coords_list = []
-        for i in range(self.internal_coord_dim):
-            coord_label = self.index_to_internal_coord_dict[i]
-            coords_list.append(internal_coords[coord_label])
+        output = self.model(test_coords.internal)
 
-        coords_tensor = torch.stack(coords_list, dim=1)
-
-        psi_and_p = self.model(coords_tensor)
-        psi = psi_and_p[:, 0]
-        p = psi_and_p[:, 1]
-
-        operators = Operators(
-            self.coord_system,
-            coords,
-        )
-
-        u, v = EQUATION_REGISTRY["velocity_from_psi"](psi, operators)
-
-        return u, v, p
+        return output
 
     def compute_loss(self) -> torch.Tensor:
         # Apply models at coords of loss term groups
-        equations_by_label = {
-            eq["label"]: eq for eq in self.pinn_params.equations_params.equations
-        }
         self.data_loss_terms.apply_model(
             self.model,
-            equations_by_label,
-            self.pinn_params.output_field_labels,
-            self.input_fields,
-            self.input_consts,
-            self.learnt_consts,
         )
         self.physics_loss_terms.apply_model(
             self.model,
-            equations_by_label,
-            self.pinn_params.output_field_labels,
-            self.input_fields,
-            self.input_consts,
-            self.learnt_consts,
         )
 
         # Compute loss for each group
