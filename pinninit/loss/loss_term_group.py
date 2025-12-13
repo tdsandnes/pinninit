@@ -5,7 +5,11 @@ from typing import TYPE_CHECKING
 import torch
 
 from ..data_structure.data_container import CoordDataContainer
-from .loss_term import LossTerm
+from ..geometry.coordinate_system import CoordSystem
+from ..io.input_parameters import EquationsParams, FieldsParams
+from ..io.io_utils import get_enum_label_from_value
+from .loss_function import LossFunctionLabels
+from .loss_term import LOSS_TERM_REGISTRY, LossTerm
 
 if TYPE_CHECKING:
     from typing import Any
@@ -19,13 +23,63 @@ class LossTermGroup:
 
     def __init__(
         self,
+        coord_system: CoordSystem,
     ) -> None:
+        self.coord_system = coord_system
+        self.dim_geometry = self.coord_system.dim_geometry
+
         # Init as empty group
         self.loss_terms: list[LossTerm] = []
 
     def add(self, loss_term: LossTerm) -> None:
         """Add a specific loss term to the group."""
         self.loss_terms.append(loss_term)
+
+    def init_terms_and_add(
+        self,
+        loss_terms: list[dict[str, Any]],
+        fields_params: FieldsParams,
+    ) -> None:
+        """Init multiple loss terms and add to group"""
+        # Field label to rank dict
+        fields = (
+            fields_params.input_fields
+            + fields_params.output_fields
+            + fields_params.derivable_fields
+        )
+        field_label_to_rank_dict = {f["label"]: f["rank"] for f in fields}
+
+        for term in loss_terms:
+            field_label = term["field_label"]
+            loss_type = term["loss_type"]
+            rank = field_label_to_rank_dict[field_label]
+            components = 1 if rank == 0 else self.dim_geometry**rank
+
+            ### Eventually tidy this up with aliases similar to activation function
+            loss_functions = (
+                term["loss_function"] if components > 1 else [term["loss_function"]]
+            )
+            weight_methods = (
+                term["weight_method"] if components > 1 else [term["weight_method"]]
+            )
+            weight_values = (
+                term["weight_value"] if components > 1 else [term["weight_value"]]
+            )
+
+            for idx in range(components):
+                loss_function = get_enum_label_from_value(
+                    loss_functions[idx], LossFunctionLabels
+                )
+                weight_method = weight_methods[idx]
+                weight_value = weight_values[idx]
+
+                # Init loss term
+                loss_term = LOSS_TERM_REGISTRY[loss_type](
+                    field_label, idx, loss_function, weight_method, weight_value
+                )
+
+                # Add loss term to group
+                self.add(loss_term)
 
     def remove(self, loss_term: LossTerm) -> None:
         """Remove a specific loss term from the group."""
@@ -35,29 +89,22 @@ class LossTermGroup:
         self,
         model: NeuralNetwork,
         coords: CoordsProtocol,
-        input_field_labels: set[str],
-        output_field_labels: set[str],
+        fields_params: FieldsParams,
+        equations_params: EquationsParams,
         input_fields: dict[str, Any] | None = None,
     ) -> None:
         """Applies NN model and evaluates all equations needed for loss term group"""
         self.coords = coords
         self.device = coords.device
 
-        ### Temp make this an input and in a form coming straight from pinns_params
-        equations_dict = {
-            "div_B": {"input_args": "B", "output_args": {"div_B": 0}},
-            "B_from_V": {"input_args": "V", "output_args": {"B": 1}},
-        }
-        ### Temp
-        self.input_field_labels = input_field_labels
-        self.output_field_labels = output_field_labels
-        input_field_labels_and_ranks = dict.fromkeys(input_field_labels, 1)
-        output_field_labels_and_ranks = dict.fromkeys(output_field_labels, 0)
+        # Init input_data container
         self.input_data = CoordDataContainer(
-            coords, input_field_labels_and_ranks, (), equations_dict
+            coords, fields_params.input_fields, (), fields_params, equations_params
         )
+
+        # Init output_data container
         self.output_data = CoordDataContainer(
-            coords, output_field_labels_and_ranks, (), equations_dict
+            coords, fields_params.output_fields, (), fields_params, equations_params
         )
 
         # Load fields and consts into container

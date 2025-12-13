@@ -9,6 +9,7 @@ from ..collocation.collocation_sampler import CollocationSamplerLabels
 from ..geometry.coordinate_system import (
     CoordSystemLabels,
 )
+from ..loss.loss_term import LossTermLabels
 from ..nn.activation_function import ActivationFuncLabels
 from ..nn.initialise_biases import BiasInitLabels
 from ..nn.initialise_weights import WeightInitLabels
@@ -95,14 +96,6 @@ class CollocationParams:
             )
 
 
-class EquationsParams:
-    def __init__(self, input_params: dict[str, Any]):
-        # equations
-        self.equations = load_optional(
-            "equations", "Equations", input_params, data_type=list
-        )
-
-
 class CoordinatesParams:
     def __init__(self, input_params: dict[str, Any]):
         # coordinate_system
@@ -128,6 +121,10 @@ class FieldsParams:
         self.output_fields = load_compulsory(
             "output_fields", "Fields", input_params, data_type=list
         )
+        # derivable_fields
+        self.derivable_fields = load_optional(
+            "derivable_fields", "Fields", input_params, data_type=list
+        )
 
 
 class ConstantsParams:
@@ -142,16 +139,22 @@ class ConstantsParams:
         )
 
 
-class DataLossParams:
+class EquationsParams:
     def __init__(self, input_params: dict[str, Any]):
-        # terms
-        self.terms = load_optional("terms", "DataLoss", input_params, data_type=list)
+        # equations
+        self.equations = load_optional(
+            "equations", "Equations", input_params, data_type=list
+        )
 
 
-class PhysicsLossParams:
+class LossTermsParams:
     def __init__(self, input_params: dict[str, Any]):
         # terms
-        self.terms = load_optional("terms", "PhysicsLoss", input_params, data_type=list)
+        self.terms = load_compulsory("terms", "LossTerms", input_params, data_type=list)
+        for term in self.terms:
+            term["loss_type"] = get_enum_label_from_value(
+                term["loss_type"], LossTermLabels
+            )
 
 
 class OptimizerParams:
@@ -264,12 +267,11 @@ class PINNParameters:
         """Extract parameters as objects of individual classes"""
         self.data_params = DataParams(self.input_params)
         self.collocation_params = CollocationParams(self.input_params)
-        self.equations_params = EquationsParams(self.input_params)
         self.coordinates_params = CoordinatesParams(self.input_params)
         self.fields_params = FieldsParams(self.input_params)
         self.constants_params = ConstantsParams(self.input_params)
-        self.dataloss_params = DataLossParams(self.input_params)
-        self.physicsloss_params = PhysicsLossParams(self.input_params)
+        self.equations_params = EquationsParams(self.input_params)
+        self.loss_terms_params = LossTermsParams(self.input_params)
         self.optimizer_params = OptimizerParams(self.input_params)
         self.layers_params = LayersParams(self.input_params)
         self.training_params = TrainingParams(self.input_params)

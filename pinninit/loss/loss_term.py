@@ -26,10 +26,14 @@ class LossTerm(ABC):
     ### str for now but make all these enum
     def __init__(
         self,
+        field_label: str,
+        component_index: int,
         loss_function_label: LossFunctionLabels,
         weight_method_label: str,
         weight_value_label: str,
     ):
+        self.field_label = field_label
+        self.component_index = component_index
         self.loss_function_label = loss_function_label
         # Look up the loss function in registry
         self.loss_func = LOSS_FUNCTION_REGISTRY[loss_function_label]
@@ -135,16 +139,14 @@ class DataLoss(LossTerm):
     def __init__(
         self,
         field_label: str,
-        field_index: int,
+        component_index: int,
         loss_function: LossFunctionLabels,
         weight_method: str,
         weight_value: str,
     ):
-        super().__init__(loss_function, weight_method, weight_value)
-
-        # Extract loss term params
-        self.field_label = field_label
-        self.field_index = field_index
+        super().__init__(
+            field_label, component_index, loss_function, weight_method, weight_value
+        )
 
     def compute_target_value(
         self,
@@ -163,7 +165,7 @@ class DataLoss(LossTerm):
         if field.dim() == 1:
             return field
         elif field.dim() == 2:
-            return field[:, self.field_index]
+            return field[:, self.component_index]
         else:
             raise ValueError(
                 "Current implimentation is only compatible with scalar and vector "
@@ -187,7 +189,7 @@ class DataLoss(LossTerm):
         if field.dim() == 1:
             return field
         elif field.dim() == 2:
-            return field[:, self.field_index]
+            return field[:, self.component_index]
         else:
             raise ValueError(
                 "Current implimentation is only compatible with scalar and vector "
@@ -218,38 +220,34 @@ class PhysicsLoss(LossTerm):
 
     def __init__(
         self,
-        equation_label: str,
-        residual_label: str,
-        residual_index: int,
+        field_label: str,
+        component_index: int,
         loss_function: LossFunctionLabels,
         weight_method: str,
         weight_value: str,
     ):
-        super().__init__(loss_function, weight_method, weight_value)
-
-        # Extract loss term params
-        self.equation_label = equation_label
-        self.residual_label = residual_label
-        self.residual_index = residual_index
+        super().__init__(
+            field_label, component_index, loss_function, weight_method, weight_value
+        )
 
     def compute_residual(
         self,
         output_data: CoordDataContainer,
     ) -> torch.Tensor:
-        if self.residual_label in output_data.fields:
-            field = output_data.fields[self.residual_label].tensor
-        elif self.residual_label in output_data.derivable_fields:
-            field = output_data.derivable_fields[self.residual_label]
+        if self.field_label in output_data.fields:
+            field = output_data.fields[self.field_label].tensor
+        elif self.field_label in output_data.derivable_fields:
+            field = output_data.derivable_fields[self.field_label]
         else:
             raise KeyError(
-                f"Residual label '{self.residual_label}' not found in dictionaries "
+                f"Residual label '{self.field_label}' not found in dictionaries "
                 "of output or derived output fields."
             )
 
         if field.dim() == 1:
             return field
         elif field.dim() == 2:
-            return field[:, self.residual_index]
+            return field[:, self.component_index]
         else:
             raise ValueError(
                 "Current implimentation is only compatible with scalar and vector "

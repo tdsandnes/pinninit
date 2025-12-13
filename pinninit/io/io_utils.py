@@ -84,6 +84,10 @@ def load_optional(
     ValueError
         If conversion to the specified data type fails.
     """
+    # If Group doesn't exit in file
+    if section not in input_params and data_type is not None:
+        return data_type()
+
     if input_params[section] is not None and field in input_params[section]:
         # Read value from input params
         read_value = input_params[section][field]
@@ -93,9 +97,10 @@ def load_optional(
     elif default is not None:
         # Return given default value
         return check_against_data_type(default, data_type)
-
+    elif data_type is not None:
+        # Return empty if no value in parameter file and no default value is given
+        return data_type()
     else:
-        # Return None if no value in parameter file and no default value is given
         return None
 
 
