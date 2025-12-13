@@ -34,6 +34,9 @@ class PINN:
             self.pinn_params.coord_axes_labels, device=self.device
         )
 
+        ### Set torch seed. Probably want more control over this
+        torch.manual_seed(12345)
+
         # Initialise modules
         self._init_geometry()  ### most general
         self._init_dataset()  ### depends on geometry
