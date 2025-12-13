@@ -6,19 +6,18 @@ import h5py
 import numpy as np
 import torch
 
-from .data_sampler import DATA_SET_SAMPLER_REGISTRY
+from .data_sampler import DataSetSamplerLabels
 
 if TYPE_CHECKING:
-    from ..io.input_parameters import PINNParameters
+    pass
 
 
 def load_dataset(
-    pinn_params: PINNParameters, device: torch.device
+    file_path: str,
+    train_sampling_strategy: DataSetSamplerLabels,
+    requested_dataset_type: str,
+    device: torch.device,
 ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor], dict[str, torch.Tensor]]:
-    # Extract DataParams
-    file_path = pinn_params.data_params.file_path
-    train_sampling_strategy = pinn_params.data_params.train_sampling_strategy
-
     # Dicts of all data contained in data file
     all_input_coords_dict = {}
     all_input_fields_dict = {}
@@ -43,8 +42,10 @@ def load_dataset(
             else str(dataset_type)
         )
 
-        if dataset_type != "training":
-            raise ValueError(f"Data set type much be 'training', not {dataset_type}")
+        if dataset_type != requested_dataset_type:
+            raise ValueError(
+                f"Data set type much be {requested_dataset_type}, not {dataset_type}"
+            )
 
         # Read Coords
         coords_group = f["Coords"]
@@ -87,10 +88,13 @@ def load_dataset(
     #           )
 
     # Get mask for sampling
-    sample_mask = DATA_SET_SAMPLER_REGISTRY[train_sampling_strategy](
-        num_points,
-        pinn_params,
-    )
+    #### Temp comment this
+    ###sample_mask = DATA_SET_SAMPLER_REGISTRY[train_sampling_strategy](
+    ###    num_points,
+    ###    pinn_params,
+    ###)
+    sample_mask = np.ones(num_points, dtype=bool)
+    ####^temp
 
     # Sample data
     sampled_input_coords_dict = {}

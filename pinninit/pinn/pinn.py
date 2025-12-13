@@ -15,7 +15,7 @@ from ..io.input_parameters import PINNParameters
 from ..io.io_utils import get_enum_label_from_value
 from ..loss.loss_function import LossFunctionLabels
 from ..loss.loss_term import DataLoss, PhysicsLoss
-from ..loss.loss_term_group import LossTermCoordGroup
+from ..loss.loss_term_group import LossTermGroup
 from ..nn.layers import LAYER_TYPE_REGISTRY
 from ..nn.neural_network import NeuralNetwork
 from ..optimizer.optimizer import OPTIMIZER_REGISTRY
@@ -43,6 +43,10 @@ class PINN:
         self._init_nn()
         self._init_learnt_parameters()
         self._init_optimizer()
+
+        ### Temp
+        self._init_validation_data()
+        self._init_test_data()
 
     def _init_geometry(self) -> None:
         # Extract params
@@ -97,11 +101,13 @@ class PINN:
 
     def _init_dataset(self) -> None:
         # Load datasets
+        file_path = self.pinn_params.data_params.file_path
+        train_sampling_strategy = self.pinn_params.data_params.train_sampling_strategy
         (
             input_coords,
             self.input_fields,
             self.input_consts,
-        ) = load_dataset(self.pinn_params, self.device)
+        ) = load_dataset(file_path, train_sampling_strategy, "training", self.device)
 
         # Initialise coord dataclass object
         self.training_coords = self.Coords(
@@ -127,6 +133,32 @@ class PINN:
             for label in self.training_coords.internal_labels
         }
 
+    def _init_validation_data(self) -> None:
+        #### temp
+        file_path = "../data/igrf_sampled_val.hdf5"
+        train_sampling_strategy = self.pinn_params.data_params.train_sampling_strategy
+        (
+            validation_coords,
+            self.validation_coords_fields,
+            self.validation_coords_consts,
+        ) = load_dataset(file_path, train_sampling_strategy, "validation", self.device)
+
+        self.validation_coords = self.Coords(
+            coord_system=self.coord_system, **validation_coords
+        )
+
+    def _init_test_data(self) -> None:
+        ####
+        file_path = "../data/igrf_sampled_test.hdf5"
+        train_sampling_strategy = self.pinn_params.data_params.train_sampling_strategy
+        (
+            test_coords,
+            self.test_fields,
+            self.test_consts,
+        ) = load_dataset(file_path, train_sampling_strategy, "test", self.device)
+
+        self.test_coords = self.Coords(coord_system=self.coord_system, **test_coords)
+
     def _init_collocation(self) -> None:
         # Set coords of collocation points
         collocation_coords = load_collocation(
@@ -149,17 +181,8 @@ class PINN:
         physics_loss_terms_params = self.pinn_params.physicsloss_params.terms
 
         # Init loss term groups
-        self.data_loss_terms = LossTermCoordGroup(
-            self.training_coords,
-            self.pinn_params.input_field_labels,
-            self.pinn_params.output_field_labels,
-            self.input_fields,
-        )
-        self.physics_loss_terms = LossTermCoordGroup(
-            self.collocation_coords,
-            self.pinn_params.input_field_labels,
-            self.pinn_params.output_field_labels,
-        )
+        self.data_loss_terms = LossTermGroup()
+        self.physics_loss_terms = LossTermGroup()
 
         # Data loss terms
         for term in data_loss_terms_params:
@@ -289,9 +312,16 @@ class PINN:
         # Apply models at coords of loss term groups
         self.data_loss_terms.apply_model(
             self.model,
+            self.training_coords,
+            self.pinn_params.input_field_labels,
+            self.pinn_params.output_field_labels,
+            self.input_fields,
         )
         self.physics_loss_terms.apply_model(
             self.model,
+            self.collocation_coords,
+            self.pinn_params.input_field_labels,
+            self.pinn_params.output_field_labels,
         )
 
         # Compute loss for each group
@@ -302,10 +332,38 @@ class PINN:
         loss = self.loss_data + self.loss_phys
         return loss
 
+    def compute_validation_loss(self) -> torch.Tensor:
+        # Apply models at coords of loss term groups
+        self.data_loss_terms.apply_model(
+            self.model,
+            self.validation_coords,
+            self.pinn_params.input_field_labels,
+            self.pinn_params.output_field_labels,
+            self.validation_coords_fields,
+        )
+
+        # Compute loss data loss group at validation_coords
+        return self.data_loss_terms.compute_loss()
+
+    def compute_test_loss(self) -> torch.Tensor:
+        # Apply models at coords of loss term groups
+        self.data_loss_terms.apply_model(
+            self.model,
+            self.test_coords,
+            self.pinn_params.input_field_labels,
+            self.pinn_params.output_field_labels,
+            self.test_fields,
+        )
+
+        # Compute loss data loss group at test_coords
+        return self.data_loss_terms.compute_loss()
+
     def train(self) -> None:
         nIter = self.pinn_params.training_params.epochs
 
         self.loss_values = []
+        self.val_loss_values = []
+        self.test_loss_values = []
         # self.l1_values = []
         # self.l2_values = []
         for it in range(nIter):
@@ -313,6 +371,8 @@ class PINN:
             self.optimizer.zero_grad()
             # Compute the loss
             loss = self.compute_loss()
+            val_loss = self.compute_validation_loss()
+            test_loss = self.compute_test_loss()
             # Backpropagation
             loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
             # Update the model parameters
@@ -321,7 +381,8 @@ class PINN:
             if it % 500 == 0:
                 print(
                     f"Iter: {it}, Loss: {loss.item():.3e}, Data Loss: "
-                    f"{self.loss_data:.3e}, Physics Loss: {self.loss_phys:.3e}"
+                    f"{self.loss_data:.3e}, Physics Loss: {self.loss_phys:.3e}, "
+                    f"Val Loss: {val_loss:.3e}, Test Loss: {test_loss:.3e}"
                 )
             #  l1 = self.learnt_consts["l1"]
             #  l2 = self.learnt_consts["l2"]
@@ -330,6 +391,8 @@ class PINN:
             #      f"{l1}, Lambda2: {l2}"
             #  )
             self.loss_values.append(loss.item())
+            self.val_loss_values.append(val_loss.item())
+            self.test_loss_values.append(test_loss.item())
         #   self.l1_values.append(self.learnt_consts["l1"])
         #   self.l2_values.append(self.learnt_consts["l2"])
 

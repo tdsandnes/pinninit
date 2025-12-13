@@ -14,16 +14,32 @@ if TYPE_CHECKING:
     from ..nn.neural_network import NeuralNetwork
 
 
-class LossTermCoordGroup:
-    """Grouping of loss terms based on the coords that they're evaluated at"""
+class LossTermGroup:
+    """Grouping of loss terms"""
 
     def __init__(
         self,
+    ) -> None:
+        # Init as empty group
+        self.loss_terms: list[LossTerm] = []
+
+    def add(self, loss_term: LossTerm) -> None:
+        """Add a specific loss term to the group."""
+        self.loss_terms.append(loss_term)
+
+    def remove(self, loss_term: LossTerm) -> None:
+        """Remove a specific loss term from the group."""
+        self.loss_terms.remove(loss_term)
+
+    def apply_model(
+        self,
+        model: NeuralNetwork,
         coords: CoordsProtocol,
         input_field_labels: set[str],
         output_field_labels: set[str],
         input_fields: dict[str, Any] | None = None,
-    ):
+    ) -> None:
+        """Applies NN model and evaluates all equations needed for loss term group"""
         self.coords = coords
         self.device = coords.device
 
@@ -52,22 +68,6 @@ class LossTermCoordGroup:
         ###for const, value in input_consts.items():
         ### self.input_data.update_const(const, value)
 
-        # Init as empty group
-        self.loss_terms: list[LossTerm] = []
-
-    def add(self, loss_term: LossTerm) -> None:
-        """Add a specific loss term to the group."""
-        self.loss_terms.append(loss_term)
-
-    def remove(self, loss_term: LossTerm) -> None:
-        """Remove a specific loss term from the group."""
-        self.loss_terms.remove(loss_term)
-
-    def apply_model(
-        self,
-        model: NeuralNetwork,
-    ) -> None:
-        """Applies NN model and evaluates all equations needed for loss term group"""
         # Get model output
         output_fields = model(self.coords.internal)
 
