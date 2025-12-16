@@ -135,3 +135,13 @@ class LossTermGroup:
             loss += loss_term.compute_loss(self.input_data, self.output_data)
 
         return loss
+
+    def compute_rms_residual_per_point(self) -> torch.Tensor:
+        """Compute RMS error per point for all loss terms in the group."""
+        n_points = self.coords.n_points
+        rms_error = torch.zeros(n_points, device=self.device)
+        for loss_term in self.loss_terms:
+            residual = loss_term.compute_residual(self.input_data, self.output_data)
+            rms_error += residual**2
+        rms_error = torch.sqrt(rms_error / len(self.loss_terms))
+        return rms_error

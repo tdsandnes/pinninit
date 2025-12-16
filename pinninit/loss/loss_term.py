@@ -50,6 +50,15 @@ class LossTerm(ABC):
         """Subclasses must implement this method to compute loss."""
         pass
 
+    @abstractmethod
+    def compute_residual(
+        self,
+        input_data: CoordDataContainer,
+        output_data: CoordDataContainer,
+    ) -> torch.Tensor:
+        """Subclasses must implement this method to compute residual."""
+        pass
+
     def _compute_loss(
         self,
         f_pred: torch.Tensor | None = None,
@@ -232,6 +241,7 @@ class PhysicsLoss(LossTerm):
 
     def compute_residual(
         self,
+        input_data: CoordDataContainer,
         output_data: CoordDataContainer,
     ) -> torch.Tensor:
         if self.field_label in output_data.fields:
@@ -259,7 +269,7 @@ class PhysicsLoss(LossTerm):
         input_data: CoordDataContainer,
         output_data: CoordDataContainer,
     ) -> torch.Tensor:
-        f_residual = self.compute_residual(output_data)
+        f_residual = self.compute_residual(input_data, output_data)
         return self._compute_weighted_loss(f_residual=f_residual)
 
 
