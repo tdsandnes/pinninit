@@ -33,15 +33,11 @@ class CoordDataContainer:
 
         # Empty dict of fields and field classes
         self.field_dataclasses: dict[int, type[FieldProtocol]] = {}
+
+        # Initialise fields, consts, and derivable fields
         self.fields = self._init_fields(self.fields_params)
-
-        # Empty dict of consts
         self.consts: dict[str, torch.Tensor] = {}
-
-        ### Comment this out. Temp for now jus treat derivable fields as tensors
-        ###self.derivable_fields =
-        # ###self._init_fields(self.derivable_field_labels_and_ranks)
-        self.derivable_fields: dict[str, torch.Tensor] = {}
+        self.derivable_fields, self.equations = self._init_derivable_fields()
 
     def _init_fields(
         self, fields_params: list[dict[str, Any]]
@@ -58,12 +54,12 @@ class CoordDataContainer:
             )
 
             # Components must correspond to those expected from rank and coords
-            expected_components = generate_tensor_component_labels(
+            labels, _ = generate_tensor_component_labels(
                 self.coords.geometric_labels, rank
             )
             init_field_dict = {
                 label: torch.zeros(self.coords.n_points, device=self.device)
-                for label in expected_components
+                for label in labels
             }
 
             # Init field and add to dict
@@ -71,17 +67,37 @@ class CoordDataContainer:
 
         return fields
 
-    def update_field(self, field_label: str, field_dict: dict[str, Any]) -> None:
-        # Field must be in available labels
-
+    def get_field(self, field_label: str) -> FieldProtocol:
         if field_label not in self.field_labels:
             raise ValueError(
                 f"Invalid field label {field_label} provided. "
                 f"Available options are {self.field_labels}."
             )
 
-        # Update field with input field dict=
-        self.fields[field_label].update(field_dict)
+        # Get field from fields or derivable fields
+        if field_label in self.fields:
+            return self.fields[field_label]
+        elif field_label in self.derivable_fields:
+            return self.derivable_fields[field_label]
+        else:
+            raise KeyError(
+                f"Field label '{field_label}' not found in fields or derivable fields."
+            )
+
+    def update_field_from_component_dict(
+        self, field_label: str, field_dict: dict[str, Any]
+    ) -> None:
+        self.get_field(field_label).update_from_component_dict(field_dict)
+
+    def update_field_from_component_tensor(
+        self, field_label: str, field_tensor: torch.Tensor
+    ) -> None:
+        self.get_field(field_label).update_from_component_tensor(field_tensor)
+
+    def update_field_from_tensor(
+        self, field_label: str, field_tensor: torch.Tensor
+    ) -> None:
+        self.get_field(field_label).update_from_tensor(field_tensor)
 
     def update_const(self, const_label: str, value: torch.Tensor) -> None:
         # Const must be in available labels
@@ -93,7 +109,9 @@ class CoordDataContainer:
 
         self.consts[const_label] = value
 
-    def _set_derivable_fields(self) -> None:
+    def _init_derivable_fields(
+        self,
+    ) -> tuple[dict[str, FieldProtocol], list[dict[str, Any]]]:
         """From the equations, gets all new parameters that can be calculated
         from a list of other parameters (based on their labels), or quantities that can
         be calculated from them, through other equations."""
@@ -134,43 +152,39 @@ class CoordDataContainer:
 
                 # Add all output args to derived_dict...
                 for output_arg in eqn_output_labels:
-                    # ... if they're not already in all_labels
-                    if output_arg in all_labels:
+                    # ... if not already in all_labels and are in available fields
+                    if output_arg in all_labels or output_arg not in fields_dict:
                         continue  # skip to next output arg
 
-                    # Add output arg to derivable fields if it's in the available fields
-                    if output_arg in fields_dict:
-                        field = fields_dict[output_arg]
-                        derivable_fields_params.append(field)
-                        output_arg_added = True
+                    # Add output arg to derivable fields
+                    field = fields_dict[output_arg]
+                    derivable_fields_params.append(field)
+                    output_arg_added = True
 
-                        # Update set of field labels
-                        self.field_labels.add(output_arg)
+                    # Update set of field labels
+                    self.field_labels.add(output_arg)
 
-                        # Update all_labels
-                        all_labels.add(output_arg)
+                    # Update all_labels
+                    all_labels.add(output_arg)
 
-                        # Added at least one new value, so pass through outer
-                        # for loop at least one more time
-                        added_new = True
-                    else:
-                        break  # skip to next equation
+                    # Added at least one new value, so pass through outer
+                    # for loop at least one more time
+                    added_new = True
 
                 if output_arg_added:
                     # Add equation to the list of equations needed, if any output
                     # args were new
                     equations.append(equation)
 
-        self.derivable_fields_params = derivable_fields_params
-        ### This would be the places to init derived fields as Fields
-        self.equations = equations
+        # Init derivable fields
+        derivable_fields = self._init_fields(derivable_fields_params)
+
+        return derivable_fields, equations
 
     def evaluate_equations(self) -> None:
         """
         Loop to evaluate equations until all outputs are computed.
         """
-        self._set_derivable_fields()
-
         # Labels of all coords, fields, and consts
         all_labels = (
             set(self.coords.coord_labels)
@@ -204,9 +218,8 @@ class CoordDataContainer:
                     elif label in self.consts:
                         eqn_inputs.append(self.consts[label])
                     elif label in self.derivable_fields:
-                        ###field = self.derivable_fields[label]
-                        ###eqn_inputs.append(field.tensor)
-                        eqn_inputs.append(self.derivable_fields[label])
+                        field = self.derivable_fields[label]
+                        eqn_inputs.append(field.tensor)
                     else:
                         raise KeyError(
                             "Not all params are available to evaluate equation."
@@ -217,29 +230,14 @@ class CoordDataContainer:
                     *eqn_inputs, self.coords.operators
                 )
 
-                ###if len(eqn_output_labels) == 1:
-                ####    label = eqn_output_labels[0]
-                ###    self.update_field(label, eqn_outputs)
-
-                # Update all_labels
-                ###    all_labels.add(label)
-
-                ###else:
-                ###    for i, eqn_output in enumerate(eqn_outputs):
-                ###        label = eqn_output_labels[i]
-                ###        self.update_field(label, eqn_output)
-
-                # Update all_labels
-                ###        all_labels.add(label)
-
-                ### Do this instead for now
                 if len(eqn_output_labels) == 1:
-                    self.derivable_fields[eqn_output_labels[0]] = eqn_outputs
-
+                    label = eqn_output_labels[0]
+                    self.update_field_from_tensor(label, eqn_outputs)
                     all_labels.add(eqn_output_labels[0])
                 else:
                     for i, eqn_output in enumerate(eqn_outputs):
-                        self.derivable_fields[eqn_output_labels[i]] = eqn_output
+                        label = eqn_output_labels[i]
+                        self.update_field_from_tensor(label, eqn_output)
                         all_labels.add(eqn_output_labels[i])
 
                 evaluated_new.add(eqn_label)

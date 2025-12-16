@@ -5,6 +5,7 @@ from typing import Any, Protocol
 
 import torch
 
+from ..checks.validate_data import validate_pytorch_tensor
 from .coords_dataclass import CoordsProtocol
 from .data_structure_utils import convert_to_tensor, generate_tensor_component_labels
 
@@ -18,21 +19,23 @@ class FieldProtocol(Protocol):
 
     # Derived fields
     tensor: torch.Tensor
+    component_tensor: torch.Tensor
     component_labels: tuple[str, ...]
+    index_to_component_label: dict[tuple[int, ...], str]
 
     # Methods
     def __post_init__(self) -> None: ...
     def _validate_input(self) -> None: ...
-    def _stack_tensor_field(
-        self, labels: tuple[str, ...], rank: int
-    ) -> torch.Tensor: ...
-    def update(self, new_components: dict[str, Any]) -> None: ...
+    def _set_tensors(self) -> None: ...
+    def update_from_component_dict(self, new_components: dict[str, Any]) -> None: ...
+    def update_from_component_tensor(self, new_tensor: torch.Tensor) -> None: ...
+    def update_from_tensor(self, new_tensor: torch.Tensor) -> None: ...
 
 
 def _field_post_init(self: FieldProtocol) -> None:
     # Generate component labels based on geometric coords and rank
-    self.component_labels = generate_tensor_component_labels(
-        self.coords.geometric_labels, self.rank
+    self.component_labels, self.index_to_component_label = (
+        generate_tensor_component_labels(self.coords.geometric_labels, self.rank)
     )
 
     # Convert inputs to tensors if not already
@@ -44,13 +47,8 @@ def _field_post_init(self: FieldProtocol) -> None:
     # Validate input
     self._validate_input()
 
-    # Set tensor
-    if self.rank == 0:
-        # Scalar field
-        self.tensor = getattr(self, self.component_labels[0])
-    else:
-        # Vector/tensor field, ordered by geometric coords
-        self.tensor = self._stack_tensor_field(self.component_labels, self.rank)
+    # Set tensors
+    self._set_tensors()
 
 
 def _validate_input(self: Any) -> None:
@@ -73,28 +71,28 @@ def _validate_input(self: Any) -> None:
             )
 
 
-def _stack_tensor_field(
-    self: FieldProtocol, labels: tuple[str, ...], rank: int
-) -> torch.Tensor:
-    # Recursively stack tensor
-    if rank == 1:
-        # Break recursion after rank 1 is reached
-        return torch.stack([getattr(self, label) for label in labels], dim=1)
-    else:
-        # Recursively group by first index
-        grouped = []
-        for coord in self.coords.geometric_labels:
-            # rest of label string for labels that start with coord
-            len_str = len(coord)
-            sub_labels = [
-                label[len_str:] for label in labels if label.startswith(coord)
-            ]
-            # recursively stack along remaining coords
-            grouped.append(self._stack_tensor_field(tuple(sub_labels), rank - 1))
-        return torch.stack(grouped, dim=1)
+def _set_tensors(self: FieldProtocol) -> None:
+    """Construct component tensor and tensor in shape that can be used for maths
+    operations."""
+
+    # Set component tensor
+    self.component_tensor = torch.stack(
+        [getattr(self, label) for label in self.component_labels],
+        dim=1,
+    )
+
+    # Get tensor shape
+    n_points = self.coords.n_points
+    n_geometric = len(self.coords.geometric_labels)
+    tensor_shape = (n_points,) + (n_geometric,) * self.rank
+
+    # Reshape component_tensor into structured tensor
+    self.tensor = self.component_tensor.reshape(tensor_shape)
 
 
-def update(self: FieldProtocol, new_components: dict[str, Any]) -> None:
+def update_from_component_dict(
+    self: FieldProtocol, new_components: dict[str, Any]
+) -> None:
     # Check that new labels are subset of field components
     if not set(new_components.keys()).issubset(set(self.component_labels)):
         raise KeyError(
@@ -102,7 +100,7 @@ def update(self: FieldProtocol, new_components: dict[str, Any]) -> None:
             "updating field"
         )
 
-    # Update labels
+    # Update components
     for label in new_components:
         value_tensor = convert_to_tensor(
             new_components[label], self.device, requires_grad=True
@@ -112,13 +110,44 @@ def update(self: FieldProtocol, new_components: dict[str, Any]) -> None:
     # Validate input
     self._validate_input()
 
-    # Set tensor
-    if self.rank == 0:
-        # Scalar field
-        self.tensor = getattr(self, self.component_labels[0])
-    else:
-        # Vector/tensor field, ordered by geometric coords
-        self.tensor = self._stack_tensor_field(self.component_labels, self.rank)
+    # Set tensors
+    self._set_tensors()
+
+
+def update_from_component_tensor(self: FieldProtocol, new_tensor: torch.Tensor) -> None:
+    """Update the field from a component tensor of shape (n_points, n_components)"""
+
+    # Validate input tensor
+    validate_pytorch_tensor(
+        new_tensor, (self.coords.n_points, len(self.component_labels))
+    )
+
+    # Update components from tensor
+    for i, label in enumerate(self.component_labels):
+        setattr(self, label, new_tensor[:, i])
+
+    # Validate input
+    self._validate_input()
+
+    # Set tensors
+    self._set_tensors()
+
+
+def update_from_tensor(self: FieldProtocol, new_tensor: torch.Tensor) -> None:
+    """
+    Update the field from a structured tensor of shape
+    (n_points, n_geometric, ..., n_geometric)"""
+
+    # Validate input tensor
+    n_points = self.coords.n_points
+    n_geometric = len(self.coords.geometric_labels)
+    expected_shape = (n_points,) + (n_geometric,) * self.rank
+    validate_pytorch_tensor(new_tensor, expected_shape)
+
+    # Flatten the tensor along the component axes to match component_tensor shape
+    component_tensor = new_tensor.reshape(n_points, -1)
+
+    self.update_from_component_tensor(component_tensor)
 
 
 def make_field_dataclass(
@@ -127,7 +156,9 @@ def make_field_dataclass(
     components: list[tuple[str, Any, Any | None]] = []
 
     # Each field component
-    component_labels = generate_tensor_component_labels(coords.geometric_labels, rank)
+    component_labels, _ = generate_tensor_component_labels(
+        coords.geometric_labels, rank
+    )
     for label in component_labels:
         components.append((label, Any, None))
 
@@ -138,7 +169,9 @@ def make_field_dataclass(
             ("device", torch.device, field(default=device)),
             # Derived fields
             ("component_labels", tuple[str, ...], field(init=False)),
+            ("index_to_component_label", dict[tuple[int, ...], str], field(init=False)),
             ("tensor", torch.Tensor, field(init=False)),
+            ("component_tensor", torch.Tensor, field(init=False)),
         ]
     )
 
@@ -150,8 +183,10 @@ def make_field_dataclass(
             "coords": coords,
             "__post_init__": _field_post_init,
             "_validate_input": _validate_input,
-            "_stack_tensor_field": _stack_tensor_field,
-            "update": update,
+            "_set_tensors": _set_tensors,
+            "update_from_component_dict": update_from_component_dict,
+            "update_from_component_tensor": update_from_component_tensor,
+            "update_from_tensor": update_from_tensor,
         },
     )
 

@@ -110,7 +110,7 @@ class LossTermGroup:
         # Load fields and consts into container
         if input_fields is not None:
             for field, value in input_fields.items():
-                self.input_data.update_field(field, value)
+                self.input_data.update_field_from_component_dict(field, value)
 
         ###for const, value in input_consts.items():
         ### self.input_data.update_const(const, value)
@@ -118,12 +118,13 @@ class LossTermGroup:
         # Get model output
         output_fields = model(self.coords.internal)
 
-        ### Temp ####
-        label = "V"
-        output_fields_dict = {"value": output_fields.squeeze(1)}
-
         # Add output fields
-        self.output_data.update_field(label, output_fields_dict)
+        for field in fields_params.output_fields:
+            ### temp until fields_params is a  mreo structured dataclass
+            assert isinstance(field, dict)
+
+            label = field["label"]
+            self.output_data.update_field_from_component_tensor(label, output_fields)
 
         # Evaluate equations
         self.input_data.evaluate_equations()

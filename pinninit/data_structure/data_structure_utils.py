@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 def generate_tensor_component_labels(
     geometric_labels: tuple[str, ...], rank: int
-) -> tuple[str, ...]:
+) -> tuple[tuple[str, ...], dict[tuple[int, ...], str]]:
     """
     Generate labels for each component of a rank-n tensor field.
 
@@ -27,15 +27,23 @@ def generate_tensor_component_labels(
     -------
     tuple[str]
         Tuple for tensor components.
+    dict[tuple[int, ...], str]
+        Mapping from index tuples to component labels.
+        e.g.    (0,0): "x_x",
+                (0,1): "x_y",
+                (1,0): "y_x",
+                (1,1): "y_y"
     """
+    if rank < 0:
+        raise ValueError("rank must be >= 0")
     if rank == 0:
-        # Scalar field
-        return ("value",)
-    elif rank > 0:
-        # product gives all combinations, and .join makes them each a single str
-        return tuple("".join(p) for p in product(geometric_labels, repeat=rank))
-    else:
-        raise ValueError(f"Tensor rank must be greater than or equal to 0, got {rank}")
+        return ("value",), {(): "value"}
+
+    # product gives all combinations, and .join makes them each a single string
+    indices = tuple(product(range(len(geometric_labels)), repeat=rank))
+    index_to_name = {idx: "_".join(geometric_labels[i] for i in idx) for idx in indices}
+    labels = tuple(index_to_name[idx] for idx in indices)
+    return labels, index_to_name
 
 
 def convert_to_tensor(

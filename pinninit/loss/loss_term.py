@@ -161,49 +161,17 @@ class DataLoss(LossTerm):
         self,
         input_data: CoordDataContainer,
     ) -> torch.Tensor:
-        if self.field_label in input_data.fields:
-            field = input_data.fields[self.field_label].tensor
-        elif self.field_label in input_data.derivable_fields:
-            field = input_data.derivable_fields[self.field_label]
-        else:
-            raise KeyError(
-                f"Field label '{self.field_label}' not found in dictionaries of input "
-                "or derived input fields."
-            )
-
-        if field.dim() == 1:
-            return field
-        elif field.dim() == 2:
-            return field[:, self.component_index]
-        else:
-            raise ValueError(
-                "Current implimentation is only compatible with scalar and vector "
-                " fields."
-            )
+        return input_data.get_field(self.field_label).component_tensor[
+            :, self.component_index
+        ]
 
     def compute_predicted_value(
         self,
         output_data: CoordDataContainer,
     ) -> torch.Tensor:
-        if self.field_label in output_data.fields:
-            field = output_data.fields[self.field_label].tensor
-        elif self.field_label in output_data.derivable_fields:
-            field = output_data.derivable_fields[self.field_label]
-        else:
-            raise KeyError(
-                f"Field label '{self.field_label}' not found in dictionaries of output "
-                "or derived output fields."
-            )
-
-        if field.dim() == 1:
-            return field
-        elif field.dim() == 2:
-            return field[:, self.component_index]
-        else:
-            raise ValueError(
-                "Current implimentation is only compatible with scalar and vector "
-                " fields."
-            )
+        return output_data.get_field(self.field_label).component_tensor[
+            :, self.component_index
+        ]
 
     def compute_residual(
         self,
@@ -244,25 +212,9 @@ class PhysicsLoss(LossTerm):
         input_data: CoordDataContainer,
         output_data: CoordDataContainer,
     ) -> torch.Tensor:
-        if self.field_label in output_data.fields:
-            field = output_data.fields[self.field_label].tensor
-        elif self.field_label in output_data.derivable_fields:
-            field = output_data.derivable_fields[self.field_label]
-        else:
-            raise KeyError(
-                f"Residual label '{self.field_label}' not found in dictionaries "
-                "of output or derived output fields."
-            )
-
-        if field.dim() == 1:
-            return field
-        elif field.dim() == 2:
-            return field[:, self.component_index]
-        else:
-            raise ValueError(
-                "Current implimentation is only compatible with scalar and vector "
-                " fields."
-            )
+        return output_data.get_field(self.field_label).component_tensor[
+            :, self.component_index
+        ]
 
     def compute_loss(
         self,
