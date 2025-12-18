@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 import torch
 
 from ..data_structure.data_container import CoordDataContainer
-from ..geometry.coordinate_system import CoordSystem
 from ..io.input_parameters import EquationsParams, FieldsParams
 from ..io.io_utils import get_enum_label_from_value
 from .loss_function import LossFunctionLabels
@@ -18,15 +17,39 @@ if TYPE_CHECKING:
     from ..nn.neural_network import NeuralNetwork
 
 
-class LossTermGroup:
+class LossTermCoordGroup:
     """Grouping of loss terms"""
 
     def __init__(
         self,
-        coord_system: CoordSystem,
+        coords: CoordsProtocol,
+        available_fields_params: FieldsParams,
+        available_equations_params: EquationsParams,
+        input_fields: dict[str, Any] | None = None,
+        input_consts: dict[str, Any] | None = None,
     ) -> None:
-        self.coord_system = coord_system
-        self.dim_geometry = self.coord_system.dim_geometry
+        # Set coords and corresponding data containers
+        self.coords = coords
+        self.device = coords.device
+        self.dim_geometry = coords.coord_system.dim_geometry
+        self.input_data = CoordDataContainer(
+            self.coords, available_fields_params, available_equations_params
+        )
+        self.output_data = CoordDataContainer(
+            self.coords, available_fields_params, available_equations_params
+        )
+
+        # Load fields into containers
+        if input_fields is not None:
+            for field_label, value in input_fields.items():
+                self.input_data.set_field_from_component_dict(field_label, value)
+
+        # Load consts into containers
+        if input_consts is not None:
+            for const_label, value in input_consts.items():
+                self.input_data.set_const(const_label, value)
+                ### Maybe also add consts to output_data, but come back to this when
+                ### looking at learnable consts
 
         # Init as empty group
         self.loss_terms: list[LossTerm] = []
@@ -88,49 +111,33 @@ class LossTermGroup:
     def apply_model(
         self,
         model: NeuralNetwork,
-        coords: CoordsProtocol,
-        fields_params: FieldsParams,
-        equations_params: EquationsParams,
-        input_fields: dict[str, Any] | None = None,
+        output_fields_params: list[dict[str, Any]],
     ) -> None:
         """Applies NN model and evaluates all equations needed for loss term group"""
-        self.coords = coords
-        self.device = coords.device
-
-        # Init input_data container
-        self.input_data = CoordDataContainer(
-            coords, fields_params.input_fields, (), fields_params, equations_params
-        )
-
-        # Init output_data container
-        self.output_data = CoordDataContainer(
-            coords, fields_params.output_fields, (), fields_params, equations_params
-        )
-
-        # Load fields and consts into container
-        if input_fields is not None:
-            for field, value in input_fields.items():
-                self.input_data.update_field_from_component_dict(field, value)
-
-        ###for const, value in input_consts.items():
-        ### self.input_data.update_const(const, value)
 
         # Get model output
         output_fields = model(self.coords.internal)
 
         # Add output fields
-        for field in fields_params.output_fields:
-            ### temp until fields_params is a  mreo structured dataclass
-            assert isinstance(field, dict)
+        idx = 0
+        for field in output_fields_params:
+            # Get field info
+            field_label = field["label"]
+            rank = field["rank"]
 
-            label = field["label"]
-            self.output_data.update_field_from_component_tensor(label, output_fields)
+            # Extract field from model output and set in output data container
+            idx_end = idx + (1 if rank == 0 else rank * self.dim_geometry)
+            value = output_fields[:, idx:idx_end]
 
-        # Evaluate equations
-        self.input_data.evaluate_equations()
-        self.output_data.evaluate_equations()
+            # Set field in output data container
+            self.output_data.set_field_from_component_tensor(field_label, value)
 
-    def compute_loss(self) -> torch.Tensor:
+            # Update index for next field
+            idx = idx_end
+
+    def compute_loss(
+        self,
+    ) -> torch.Tensor:
         loss = torch.tensor(0.0, device=self.device)
         for loss_term in self.loss_terms:
             loss += loss_term.compute_loss(self.input_data, self.output_data)

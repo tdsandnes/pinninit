@@ -13,7 +13,7 @@ from ..io.input_data import load_dataset
 from ..io.input_equations import load_functions_from_file_to_registry
 from ..io.input_parameters import PINNParameters
 from ..loss.loss_term import LossTermLabels
-from ..loss.loss_term_group import LossTermGroup
+from ..loss.loss_term_group import LossTermCoordGroup
 from ..nn.layers import LAYER_TYPE_REGISTRY
 from ..nn.neural_network import NeuralNetwork
 from ..optimizer.optimizer import OPTIMIZER_REGISTRY
@@ -38,16 +38,14 @@ class PINN:
         # Initialise modules
         self._init_geometry()  ### most general
         self._init_dataset()  ### depends on geometry
+        self._init_validation_data()
+        self._init_test_data()
         self._init_collocation()  #### depends on geometry
         self._init_equations()
         self._init_loss()
         self._init_nn()
         self._init_learnt_parameters()
         self._init_optimizer()
-
-        ### Temp
-        self._init_validation_data()
-        self._init_test_data()
 
     def _init_geometry(self) -> None:
         # Extract params
@@ -101,6 +99,8 @@ class PINN:
         ### Do boundary conditions here
 
     def _init_dataset(self) -> None:
+        ### Note that eventually this should all be in pytorch Dataset class
+
         # Load datasets
         file_path = self.pinn_params.data_params.file_path
         train_sampling_strategy = self.pinn_params.data_params.train_sampling_strategy
@@ -113,6 +113,13 @@ class PINN:
         # Initialise coord dataclass object
         self.training_coords = self.Coords(
             coord_system=self.coord_system, **input_coords
+        )
+
+        # Init loss term group
+        fields_params = self.pinn_params.fields_params
+        equations_params = self.pinn_params.equations_params
+        self.train_point_loss_terms = LossTermCoordGroup(
+            self.training_coords, fields_params, equations_params, self.input_fields
         )
 
         # Lower and upper bounds of coords ### this is after filtering. Is that right?
@@ -148,6 +155,16 @@ class PINN:
             coord_system=self.coord_system, **validation_coords
         )
 
+        # Init loss term group
+        fields_params = self.pinn_params.fields_params
+        equations_params = self.pinn_params.equations_params
+        self.val_point_loss_terms = LossTermCoordGroup(
+            self.validation_coords,
+            fields_params,
+            equations_params,
+            self.validation_coords_fields,
+        )
+
     def _init_test_data(self) -> None:
         ####
         file_path = "../../data/igrf_sampled_test.hdf5"
@@ -160,6 +177,13 @@ class PINN:
 
         self.test_coords = self.Coords(coord_system=self.coord_system, **test_coords)
 
+        # Init loss term group
+        fields_params = self.pinn_params.fields_params
+        equations_params = self.pinn_params.equations_params
+        self.test_point_loss_terms = LossTermCoordGroup(
+            self.test_coords, fields_params, equations_params, self.test_fields
+        )
+
     def _init_collocation(self) -> None:
         # Set coords of collocation points
         collocation_coords = load_collocation(
@@ -171,6 +195,13 @@ class PINN:
 
         self.collocation_coords = self.Coords(
             coord_system=self.coord_system, **collocation_coords
+        )
+
+        # Init loss term group
+        fields_params = self.pinn_params.fields_params
+        equations_params = self.pinn_params.equations_params
+        self.col_point_loss_terms = LossTermCoordGroup(
+            self.collocation_coords, fields_params, equations_params, self.input_fields
         )
 
     def _init_equations(self) -> None:
@@ -190,16 +221,20 @@ class PINN:
             if term["loss_type"] == LossTermLabels.PHYSICS
         ]
 
-        # Init loss term groups
-        self.data_loss_terms = LossTermGroup(self.coord_system)
-        self.physics_loss_terms = LossTermGroup(self.coord_system)
-
         # Add loss terms to groups
-        self.data_loss_terms.init_terms_and_add(
+        self.train_point_loss_terms.init_terms_and_add(
             data_loss_terms_params, self.pinn_params.fields_params
         )
-        self.physics_loss_terms.init_terms_and_add(
+        self.col_point_loss_terms.init_terms_and_add(
             physics_loss_terms_params, self.pinn_params.fields_params
+        )
+
+        ### these are temp until better dataset handling
+        self.val_point_loss_terms.init_terms_and_add(
+            data_loss_terms_params, self.pinn_params.fields_params
+        )
+        self.test_point_loss_terms.init_terms_and_add(
+            data_loss_terms_params, self.pinn_params.fields_params
         )
 
     def _init_nn(self) -> None:
@@ -265,23 +300,18 @@ class PINN:
 
     def compute_loss(self) -> torch.Tensor:
         # Apply models at coords of loss term groups
-        self.data_loss_terms.apply_model(
+        self.train_point_loss_terms.apply_model(
             self.model,
-            self.training_coords,
-            self.pinn_params.fields_params,
-            self.pinn_params.equations_params,
-            self.input_fields,
+            self.pinn_params.fields_params.output_fields,
         )
-        self.physics_loss_terms.apply_model(
+        self.col_point_loss_terms.apply_model(
             self.model,
-            self.collocation_coords,
-            self.pinn_params.fields_params,
-            self.pinn_params.equations_params,
+            self.pinn_params.fields_params.output_fields,
         )
 
         # Compute loss for each group
-        self.loss_data = self.data_loss_terms.compute_loss()
-        self.loss_phys = self.physics_loss_terms.compute_loss()
+        self.loss_data = self.train_point_loss_terms.compute_loss()
+        self.loss_phys = self.col_point_loss_terms.compute_loss()
 
         # Total loss
         loss = self.loss_data + self.loss_phys
@@ -289,31 +319,25 @@ class PINN:
 
     def compute_validation_loss(self) -> torch.Tensor:
         # Apply models at coords of loss term groups
-        self.data_loss_terms.apply_model(
+        self.val_point_loss_terms.apply_model(
             self.model,
-            self.validation_coords,
-            self.pinn_params.fields_params,
-            self.pinn_params.equations_params,
-            self.validation_coords_fields,
+            self.pinn_params.fields_params.output_fields,
         )
 
         # Compute loss data loss group at validation_coords
-        return self.data_loss_terms.compute_loss()
+        return self.val_point_loss_terms.compute_loss()
 
     def compute_test_quantities(self) -> tuple[torch.Tensor, torch.Tensor]:
         # Apply models at coords of loss term groups
-        self.data_loss_terms.apply_model(
+        self.test_point_loss_terms.apply_model(
             self.model,
-            self.test_coords,
-            self.pinn_params.fields_params,
-            self.pinn_params.equations_params,
-            self.test_fields,
+            self.pinn_params.fields_params.output_fields,
         )
 
         rms_residual_per_test_point = (
-            self.data_loss_terms.compute_rms_residual_per_point()
+            self.test_point_loss_terms.compute_rms_residual_per_point()
         )
-        test_loss = self.data_loss_terms.compute_loss()
+        test_loss = self.test_point_loss_terms.compute_loss()
 
         # Compute loss data loss group at test_coords
         return test_loss, rms_residual_per_test_point
