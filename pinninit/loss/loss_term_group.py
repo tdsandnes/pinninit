@@ -111,7 +111,6 @@ class LossTermCoordGroup:
     def apply_model(
         self,
         model: NeuralNetwork,
-        output_fields_params: list[dict[str, Any]],
     ) -> None:
         """Applies NN model and evaluates all equations needed for loss term group"""
 
@@ -120,11 +119,7 @@ class LossTermCoordGroup:
 
         # Add output fields
         idx = 0
-        for field in output_fields_params:
-            # Get field info
-            field_label = field["label"]
-            rank = field["rank"]
-
+        for field_label, rank in model.output_field_label_to_rank.items():
             # Extract field from model output and set in output data container
             idx_end = idx + (1 if rank == 0 else rank * self.dim_geometry)
             value = output_fields[:, idx:idx_end]

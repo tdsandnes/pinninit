@@ -25,12 +25,14 @@ class NeuralNetwork(nn.Module):
 
     def __init__(
         self,
+        output_field_label_to_rank: dict[str, int],
         layers: list[nn.Module],
         layers_params: LayersParams,
         lb: list[torch.Tensor],
         ub: list[torch.Tensor],
     ):
         super().__init__()
+        self.output_field_label_to_rank = output_field_label_to_rank
         self.layers = nn.ModuleList(layers)  # registers layers as submodules
         activation_function_labels = layers_params.activation_functions
         init_weight_lables = layers_params.init_weights

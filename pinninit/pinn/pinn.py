@@ -17,6 +17,7 @@ from ..loss.loss_term_group import LossTermCoordGroup
 from ..nn.layers import LAYER_TYPE_REGISTRY
 from ..nn.neural_network import NeuralNetwork
 from ..optimizer.optimizer import OPTIMIZER_REGISTRY
+from ..training.trainer import Trainer
 
 
 class PINN:
@@ -267,9 +268,13 @@ class PINN:
             lb_list.append(self.input_coords_internal_lb[coord_label])
             ub_list.append(self.input_coords_internal_ub[coord_label])
 
-        self.model = NeuralNetwork(self.layers, layers_params, lb_list, ub_list).to(
-            self.device
-        )
+        output_fields_params = self.pinn_params.fields_params.output_fields
+        output_field_label_to_rank = {
+            f["label"]: f["rank"] for f in output_fields_params
+        }
+        self.model = NeuralNetwork(
+            output_field_label_to_rank, self.layers, layers_params, lb_list, ub_list
+        ).to(self.device)
 
     def _init_learnt_parameters(self) -> None:
         learnt_consts: dict[str, torch.Tensor] = {}
@@ -298,102 +303,34 @@ class PINN:
 
         return output
 
-    def compute_loss(self) -> torch.Tensor:
-        # Apply models at coords of loss term groups
-        self.train_point_loss_terms.apply_model(
-            self.model,
-            self.pinn_params.fields_params.output_fields,
-        )
-        self.col_point_loss_terms.apply_model(
-            self.model,
-            self.pinn_params.fields_params.output_fields,
-        )
-
-        # Compute loss for each group
-        self.loss_data = self.train_point_loss_terms.compute_loss()
-        self.loss_phys = self.col_point_loss_terms.compute_loss()
-
-        # Total loss
-        loss = self.loss_data + self.loss_phys
-        return loss
-
-    def compute_validation_loss(self) -> torch.Tensor:
-        # Apply models at coords of loss term groups
-        self.val_point_loss_terms.apply_model(
-            self.model,
-            self.pinn_params.fields_params.output_fields,
-        )
-
-        # Compute loss data loss group at validation_coords
-        return self.val_point_loss_terms.compute_loss()
-
-    def compute_test_quantities(self) -> tuple[torch.Tensor, torch.Tensor]:
-        # Apply models at coords of loss term groups
-        self.test_point_loss_terms.apply_model(
-            self.model,
-            self.pinn_params.fields_params.output_fields,
-        )
-
-        rms_residual_per_test_point = (
-            self.test_point_loss_terms.compute_rms_residual_per_point()
-        )
-        test_loss = self.test_point_loss_terms.compute_loss()
-
-        # Compute loss data loss group at test_coords
-        return test_loss, rms_residual_per_test_point
-
     def train(self) -> None:
-        nIter = self.pinn_params.training_params.epochs
+        # Init trainer
+        train_loss_groups = [self.train_point_loss_terms, self.col_point_loss_terms]
+        val_loss_groups = [self.val_point_loss_terms]
+        test_loss_groups = [self.test_point_loss_terms]
+        trainer = Trainer(
+            self.model,
+            self.optimizer,
+            train_loss_groups,
+            val_loss_groups,
+            test_loss_groups,
+            self.device,
+        )
 
-        self.loss_values = []
-        self.data_loss_values = []
-        self.phys_loss_values = []
-        self.val_loss_values = []
-        self.test_loss_values = []
-        # self.l1_values = []
-        # self.l2_values = []
-        for it in range(nIter):
-            # Zero the gradients
-            self.optimizer.zero_grad()
-            # Compute the loss
-            loss = self.compute_loss()
-            val_loss = self.compute_validation_loss()
-            test_loss, self.rms_residual_per_test_point = self.compute_test_quantities()
-            # Backpropagation
-            loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
-            # Update the model parameters
-            self.optimizer.step()
-            # Print the training progress every 500 iterations
-            if it % 500 == 0:
-                print(
-                    f"Iter: {it}, Loss: {loss.item():.3e}, Data Loss: "
-                    f"{self.loss_data:.3e}, Physics Loss: {self.loss_phys:.3e}, "
-                    f"Val Loss: {val_loss:.3e}, Test Loss: {test_loss:.3e}"
-                )
-            #  l1 = self.learnt_consts["l1"]
-            #  l2 = self.learnt_consts["l2"]
-            #  print(
-            #      f"Iter: {it}, Loss: {loss.item():.3e}, Lambda1: "
-            #      f"{l1}, Lambda2: {l2}"
-            #  )
-            self.loss_values.append(loss.item())
-            self.data_loss_values.append(self.loss_data.item())
-            self.phys_loss_values.append(self.loss_phys.item())
-            self.val_loss_values.append(val_loss.item())
-            self.test_loss_values.append(test_loss.item())
-        #   self.l1_values.append(self.learnt_consts["l1"])
-        #   self.l2_values.append(self.learnt_consts["l2"])
+        # Train model
+        N_iter = self.pinn_params.training_params.epochs
+        trainer.train(N_iter)
 
     def save(self, path: str) -> None:
         torch.save(
             {
                 "model_state_dict": self.model.state_dict(),
-                "loss_values": self.loss_values,
-                "data_loss_values": self.data_loss_values,
-                "phys_loss_values": self.phys_loss_values,
-                "val_loss_values": self.val_loss_values,
-                "test_loss_values": self.test_loss_values,
-                "rms_residual_per_test_point": self.rms_residual_per_test_point,
+                ###         "loss_values": self.loss_values,
+                ###         "data_loss_values": self.data_loss_values,
+                ###         "phys_loss_values": self.phys_loss_values,
+                ###        "val_loss_values": self.val_loss_values,
+                ###        "test_loss_values": self.test_loss_values,
+                ##  "rms_residual_per_test_point": self.rms_residual_per_test_point,
                 #   "lambda_1": self.learnt_consts["l1"],
                 #   "lambda_2": self.learnt_consts["l2"],
             },
@@ -408,14 +345,15 @@ class PINN:
         self.model.load_state_dict(checkpoint["model_state_dict"])
 
         # Restore the additional attributes
-        self.loss_values = checkpoint.get("loss_values", [])
-        self.data_loss_values = checkpoint.get("data_loss_values", [])
-        self.phys_loss_values = checkpoint.get("phys_loss_values", [])
-        self.val_loss_values = checkpoint.get("val_loss_values", [])
-        self.test_loss_values = checkpoint.get("test_loss_values", [])
-        self.rms_residual_per_test_point = checkpoint.get(
-            "rms_residual_per_test_point", []
-        )
+
+    ###  self.loss_values = checkpoint.get("loss_values", [])
+    ###  self.data_loss_values = checkpoint.get("data_loss_values", [])
+    ###  self.phys_loss_values = checkpoint.get("phys_loss_values", [])
+    ###  self.val_loss_values = checkpoint.get("val_loss_values", [])
+    ###  self.test_loss_values = checkpoint.get("test_loss_values", [])
+    ###  self.rms_residual_per_test_point = checkpoint.get(
+    ###      "rms_residual_per_test_point", []
+    ###  )
 
     # self.lambda_1 = torch.tensor(
     #     checkpoint["lambda_1"], requires_grad=True, dtype=torch.float32
