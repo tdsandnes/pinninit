@@ -17,7 +17,7 @@ def load_dataset(
     train_sampling_strategy: DataSetSamplerLabels,
     requested_dataset_type: str,
     device: torch.device,
-) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
     # Dicts of all data contained in data file
     all_input_coords_dict = {}
     all_input_fields_dict = {}
@@ -147,11 +147,8 @@ def load_dataset(
                 f"parameter file. Missing input field: {field_label}"
             )
     """
-    ### Adding this here as a placeholder for future
-    input_consts = {"": torch.tensor([]).to(device)}
 
     return (
         sampled_input_coords_dict,
         sampled_input_fields_dict,
-        input_consts,
-    )  ###input_coords, input_fields, input_consts
+    )
