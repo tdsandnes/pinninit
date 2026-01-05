@@ -16,8 +16,10 @@ from ..loss.loss_term import LossTermLabels
 from ..loss.loss_term_group import LossTermGroup
 from ..nn.layers import LAYER_TYPE_REGISTRY
 from ..nn.neural_network import NeuralNetwork
-from ..optimizer.optimizer import OPTIMIZER_REGISTRY
+from ..optimizer.optimizer import OPTIMIZER_REGISTRY, OptimizerLabels
+from ..training.early_stopping import EarlyStopping
 from ..training.trainer import Trainer
+from ..training.update_optimizer import UpdateOptimizer
 
 
 class PINN:
@@ -278,23 +280,33 @@ class PINN:
         return output
 
     def train(self) -> None:
+        ### Hardcode these for now
+        optimizer_label = OptimizerLabels.LBFGS
+        new_optimizer = OPTIMIZER_REGISTRY[optimizer_label](
+            list(self.model.parameters()) + list(self.learnt_consts.values()),
+            ### Currently just use defaults here
+        )
+        patience = 500
+        frac_tol = 1e-1
+        update_optimizer = UpdateOptimizer(new_optimizer, patience, frac_tol)
+        patience = 500
+        frac_tol = 0.0
+        early_stopping = EarlyStopping(patience, frac_tol)
+        trainer_hooks = [update_optimizer, early_stopping]
+
         # Init trainer
         loss_groups = [self.data_loss_term_group, self.phys_loss_term_group]
-        trainer = Trainer(
-            self.model,
-            self.optimizer,
-            loss_groups,
-            self.device,
-        )
+        self.trainer = Trainer(self.model, self.optimizer, loss_groups, trainer_hooks)
 
         # Train model
-        N_iter = self.pinn_params.training_params.epochs
-        trainer.train(N_iter)
+        self.trainer.train()
 
     def save(self, path: str) -> None:
         torch.save(
             {
                 "model_state_dict": self.model.state_dict(),
+                "train_loss_history": self.trainer.train_loss_history,
+                "val_loss_history": self.trainer.val_loss_history,
                 ###         "loss_values": self.loss_values,
                 ###         "data_loss_values": self.data_loss_values,
                 ###         "phys_loss_values": self.phys_loss_values,
@@ -315,6 +327,8 @@ class PINN:
         self.model.load_state_dict(checkpoint["model_state_dict"])
 
         # Restore the additional attributes
+        self.train_loss_history = checkpoint["train_loss_history"]
+        self.val_loss_history = checkpoint["val_loss_history"]
 
     ###  self.loss_values = checkpoint.get("loss_values", [])
     ###  self.data_loss_values = checkpoint.get("data_loss_values", [])

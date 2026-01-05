@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 import torch
@@ -7,48 +8,132 @@ import torch
 if TYPE_CHECKING:
     from ..loss.loss_term_group import LossTermGroup
     from ..nn.neural_network import NeuralNetwork
+    from ..optimizer.optimizer import Optimizer
+
+
+class TrainerModule(ABC):
+    @abstractmethod
+    def on_train_start(self, trainer: Trainer) -> None:
+        pass
+
+    @abstractmethod
+    def on_train_end(self, trainer: Trainer) -> None:
+        pass
+
+    @abstractmethod
+    def on_step_start(self, trainer: Trainer) -> None:
+        pass
+
+    @abstractmethod
+    def on_step_end(self, trainer: Trainer) -> None:
+        pass
+
+    @abstractmethod
+    def on_state_change(self, trainer: Trainer) -> None:
+        """Called when another module changes the trainer state
+        (e.g. optimizer updated)."""
+        pass
 
 
 class Trainer:
     def __init__(
         self,
         model: NeuralNetwork,
-        optimizer: torch.optim.Optimizer,
+        optimizer: Optimizer,
         loss_groups: list[LossTermGroup],
-        device: torch.device,
+        trainer_modules: list[TrainerModule],
+        max_iter: int | None = None,
     ) -> None:
         ### Note that e.g. train_loss_groups = [data_loss_group, col_loss_group]
         self.model = model
         self.optimizer = optimizer
         self.loss_groups = loss_groups
-        self.device = device
+        self.trainer_modules = trainer_modules
+        self.max_iter = max_iter
+
+        # Pass trainer to optimizer
+        self.optimizer.attach_trainer(self)
+
+        # Initialise training state
+        self.iter: int = 0
+        self.train_loss_history: list[float] = []
+        self.val_loss_history: list[float] = []
+        self.best_val_loss: float | None = None
+        self.best_model_state: dict[str, torch.Tensor] | None = None
+        self._stop_requested: bool = False
+        self._stop_barriers: dict[str, bool] = {}
+        self._state_updated = False
+
+    def ready_to_stop(
+        self,
+    ) -> bool:
+        """Checks if all stop barriers have been met."""
+        return all(self._stop_barriers.values()) and self._stop_requested
+
+    def _init_stop_barrier(self, name: str) -> None:
+        """Adds a stop barrier with the given name."""
+        self._stop_barriers[name] = False
+
+    def _update_stop_barrier(self, name: str, status: bool) -> None:
+        """Updates the status of the stop barrier with the given name."""
+        if name in self._stop_barriers:
+            self._stop_barriers[name] = status
+        else:
+            raise KeyError(f"Stop barrier '{name}' not found.")
 
     def step(
         self,
     ) -> None:
-        # Zero the gradients
-        self.optimizer.zero_grad()
-
-        # Compute the loss of loss groups
-        self.group_train_losses, self.group_val_losses = self.compute_group_losses(
-            self.loss_groups
-        )
-
-        # Get sum of each of training and validation losses
-        self.train_loss = torch.stack(self.group_train_losses).sum()
-        self.val_loss = torch.stack(self.group_val_losses).sum()
-
-        # Backpropagation
-        self.train_loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
+        # Execute all trainer modules at start of step
+        for module in self.trainer_modules:
+            module.on_step_start(self)
 
         # Update the model parameters
+        self.optimizer.prepare_for_step()
         self.optimizer.step()
 
-    def train(self, N_iter: int) -> None:
-        for iter in range(N_iter):
-            self.iter = iter
+        # Store loss values
+        self.train_loss_history.append(self.train_loss.item())
+        self.val_loss_history.append(self.val_loss.item())
+
+        # Update best model if needed
+        self.update_best_model()
+
+        # Execute all trainer modules at end of step
+        for module in self.trainer_modules:
+            module.on_step_end(self)
+
+        # Notify all modules of any state change
+        if self._state_updated:
+            for module in self.trainer_modules:
+                module.on_state_change(self)
+
+            # Reset _stop_requested
+            self._stop_requested = False
+
+            # Reset _state_updated
+            self._state_updated = False
+
+    def train(self) -> None:
+        # Execute all trainer modules at start of training
+        for module in self.trainer_modules:
+            module.on_train_start(self)
+
+        self.iter = 0
+        while not self.ready_to_stop():
+            # Step the trainer
             self.step()
+
             self.print_status()
+
+            # Update iteration count and check max iterations
+            self.iter += 1
+            if self.max_iter is not None and self.iter >= self.max_iter:
+                break
+
+        # Execute all trainer modules at end of training
+        for module in self.trainer_modules:
+            module.on_train_end(self)
 
     def compute_group_losses(
         self, loss_groups: list[LossTermGroup]
@@ -66,6 +151,42 @@ class Trainer:
             group_val_losses.append(val_loss)
 
         return group_train_losses, group_val_losses
+
+    def set_losses(self) -> None:
+        # Compute losses
+        group_train_losses, group_val_losses = self.compute_group_losses(
+            self.loss_groups
+        )
+
+        train_loss = torch.stack(group_train_losses).sum()
+        val_loss = torch.stack(group_val_losses).sum()
+
+        # Store them for consistency within trainer
+        self.group_train_losses = group_train_losses
+        self.group_val_losses = group_val_losses
+        self.train_loss = train_loss
+        self.val_loss = val_loss
+
+    def update_best_model(
+        self,
+    ) -> None:
+        """Updates best model state if validation loss is lower than previous best."""
+        current_val_loss = self.val_loss.item()
+
+        if self.best_val_loss is None or current_val_loss < self.best_val_loss:
+            self.best_val_loss = current_val_loss
+            self.best_model_state = {
+                k: v.detach().clone() for k, v in self.model.state_dict().items()
+            }
+
+    def load_best_model(
+        self,
+    ) -> None:
+        """Loads the best model state."""
+        if self.best_model_state is not None:
+            self.model.load_state_dict(self.best_model_state)
+        else:
+            raise ValueError("No best model state to load.")
 
     ###    def update_optimizer(self,):
     ### Directs to a polymorphic UpdateOptimizer class in a update_optimizer.py
