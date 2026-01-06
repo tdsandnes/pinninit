@@ -6,10 +6,9 @@ from typing import Any
 import torch
 import torch.nn as nn
 
-from ..collocation.collocation import load_collocation
 from ..data_structure.coords_dataclass import make_coords_dataclass
 from ..geometry.coordinate_system import COORD_SYSTEM_REGISTRY
-from ..io.input_data import load_dataset
+from ..io.input_data import load_coords, load_fields
 from ..io.input_equations import load_functions_from_file_to_registry
 from ..io.input_parameters import PINNParameters
 from ..loss.loss_term import LossTermLabels
@@ -40,10 +39,9 @@ class PINN:
 
         # Initialise modules
         self._init_geometry()  ### most general
-        self._init_dataset()  ### depends on geometry
-        self._init_collocation()  #### depends on geometry
+        self._init_datasets()  ### depends on geometry
         self._init_equations()
-        self._init_loss()
+        self._init_loss()  ### depends on data sets
         self._init_nn()
         self._init_learnt_parameters()
         self._init_optimizer()
@@ -99,120 +97,120 @@ class PINN:
 
         ### Do boundary conditions here
 
-    def _init_dataset(self) -> None:
+    def _init_datasets(self) -> None:
         ### Note that eventually this should all be in pytorch Dataset class
 
-        # Load datasets
-        file_path = self.pinn_params.data_params.file_path
-        train_sampling_strategy = self.pinn_params.data_params.train_sampling_strategy
-        (
-            training_coords,
-            training_fields,
-        ) = load_dataset(file_path, train_sampling_strategy, "training", self.device)
+        self.dataset_coords: dict[str, dict[str, dict[str, torch.Tensor]]] = {}
+        self.dataset_fields: dict[
+            str, dict[str, dict[str, torch.Tensor | dict[str, torch.Tensor]]]
+        ] = {}
 
-        ### temp
-        file_path = "../../data/igrf_sampled_val.hdf5"
-        train_sampling_strategy = self.pinn_params.data_params.train_sampling_strategy
-        (
-            validation_coords,
-            validation_coords_fields,
-        ) = load_dataset(file_path, train_sampling_strategy, "validation", self.device)
-
-        # Initialise coord dataclass object
-        self.train_coords = self.Coords(
-            coord_system=self.coord_system, **training_coords
-        )
-        self.val_coords = self.Coords(
-            coord_system=self.coord_system, **validation_coords
-        )
-
-        # Init loss term group
-        fields_params = self.pinn_params.fields_params
-        equations_params = self.pinn_params.equations_params
-        self.data_loss_term_group = LossTermGroup(
-            self.train_coords,
-            self.val_coords,
-            self.dim_geometry,
-            fields_params,
-            equations_params,
-            train_input_fields=training_fields,
-            val_input_fields=validation_coords_fields,
-        )
-
-        # Lower and upper bounds of coords ### this is after filtering. Is that right?
-        ### Make these attributes of coords
-        self.input_coords_lb = {
-            label: torch.min(getattr(self.train_coords, label))
-            for label in self.train_coords.coord_labels
-        }
-        self.input_coords_ub = {
-            label: torch.max(getattr(self.train_coords, label))
-            for label in self.train_coords.coord_labels
-        }
-        self.input_coords_internal_lb = {
-            label: torch.min(getattr(self.train_coords, label))
-            for label in self.train_coords.internal_labels
-        }
-        self.input_coords_internal_ub = {
-            label: torch.max(getattr(self.train_coords, label))
-            for label in self.train_coords.internal_labels
+        # Lookup dataset metadata by label
+        dataset_dict = {
+            dataset["data_set_label"]: dataset
+            for dataset in self.pinn_params.data_sets_params.data_sets
         }
 
-    def _init_collocation(self) -> None:
-        # Set coords of collocation points
-        collocation_coords = load_collocation(
-            self.input_coords_lb,
-            self.input_coords_ub,
-            self.pinn_params,
-            self.device,
-        )
-        ### temp
-        file_path = "../../data/igrf_sampled_val.hdf5"
-        train_sampling_strategy = self.pinn_params.data_params.train_sampling_strategy
-        (
-            validation_coords,
-            _,
-        ) = load_dataset(file_path, train_sampling_strategy, "validation", self.device)
+        # Collect all input fields
+        input_fields_to_rank = {
+            field["label"]: field["rank"]
+            for field in self.pinn_params.fields_params.input_fields
+        }
 
-        # Initialise coord dataclass object
-        col_coords = self.Coords(coord_system=self.coord_system, **collocation_coords)
-        val_coords = self.Coords(coord_system=self.coord_system, **validation_coords)
+        # Loop over all loss terms to identify required datasets
+        for term in self.pinn_params.loss_terms_params.terms:
+            dataset_label = term["data_set_label"]
 
-        # Init loss term group
-        fields_params = self.pinn_params.fields_params
-        equations_params = self.pinn_params.equations_params
-        self.phys_loss_term_group = LossTermGroup(
-            col_coords,
-            val_coords,
-            self.dim_geometry,
-            fields_params,
-            equations_params,
-        )
+            # Skip if already loaded
+            if dataset_label in self.dataset_coords:
+                continue
+
+            dataset = dataset_dict[dataset_label]
+            file_path = dataset["file_path"]
+
+            # Load coords for both roles
+            coords_dict: dict[str, dict[str, torch.Tensor]] = {}
+            for role in ["training", "validation"]:
+                coords_dict[role] = load_coords(
+                    file_path=file_path,
+                    dataset_label=dataset_label,
+                    dataset_role=role,
+                    expected_coord_labels=list(self.pinn_params.coord_axes_labels),
+                    device=self.device,
+                )
+            self.dataset_coords[dataset_label] = coords_dict
+
+            # Load fields only if at least one data loss term uses this dataset
+            if any(
+                term["data_set_label"] == dataset_label
+                and term["loss_type"] == LossTermLabels.DATA
+                for term in self.pinn_params.loss_terms_params.terms
+            ):
+                fields_dict: dict[
+                    str, dict[str, torch.Tensor | dict[str, torch.Tensor]]
+                ] = {}
+                for role in ["training", "validation"]:
+                    fields_dict[role] = load_fields(
+                        file_path=file_path,
+                        dataset_label=dataset_label,
+                        dataset_role=role,
+                        expected_coord_labels=list(self.pinn_params.coord_axes_labels),
+                        device=self.device,
+                        input_fields_to_rank=input_fields_to_rank,
+                    )
+                self.dataset_fields[dataset_label] = fields_dict
 
     def _init_equations(self) -> None:
         # Load functions to registry
         load_functions_from_file_to_registry(self.pinn_params.equations_params)
 
     def _init_loss(self) -> None:
-        # Separate loss term params
-        data_loss_terms_params = [
-            term
-            for term in self.pinn_params.loss_terms_params.terms
-            if term["loss_type"] == LossTermLabels.DATA
-        ]
-        physics_loss_terms_params = [
-            term
-            for term in self.pinn_params.loss_terms_params.terms
-            if term["loss_type"] == LossTermLabels.PHYSICS
-        ]
+        # First init loss term groups
+        self.loss_term_groups: dict[str, LossTermGroup] = {}
 
-        # Add loss terms to groups
-        self.data_loss_term_group.init_loss_terms_and_add(
-            data_loss_terms_params, self.pinn_params.fields_params
-        )
-        self.phys_loss_term_group.init_loss_terms_and_add(
-            physics_loss_terms_params, self.pinn_params.fields_params
-        )
+        for dataset_label in self.dataset_coords:
+            # Get training and validation coords
+            coords = self.dataset_coords[dataset_label]
+            train_coord = self.Coords(
+                coord_system=self.coord_system, **coords["training"]
+            )
+            val_coord = self.Coords(
+                coord_system=self.coord_system, **coords["validation"]
+            )
+
+            # Get training and validation fields
+            if dataset_label in self.dataset_fields:
+                fields = self.dataset_fields[dataset_label]
+                train_fields = fields["training"]
+                val_fields = fields["validation"]
+            else:
+                train_fields = None
+                val_fields = None
+
+            # Create loss term group
+            self.loss_term_groups[dataset_label] = LossTermGroup(
+                train_coords=train_coord,
+                val_coords=val_coord,
+                dim_geometry=self.dim_geometry,
+                available_fields_params=self.pinn_params.fields_params,
+                available_equations_params=self.pinn_params.equations_params,
+                train_input_fields=train_fields,
+                val_input_fields=val_fields,
+            )
+
+        # Loop over all loss term groups
+        for group_label, loss_group in self.loss_term_groups.items():
+            # Find all loss terms that correspond to this dataset
+            relevant_loss_terms = [
+                term
+                for term in self.pinn_params.loss_terms_params.terms
+                if term["data_set_label"] == group_label
+            ]
+
+            # Initialise loss terms in the group
+            loss_group.init_loss_terms_and_add(
+                relevant_loss_terms, self.pinn_params.fields_params
+            )
 
     def _init_nn(self) -> None:
         # Extract params
@@ -225,7 +223,9 @@ class PINN:
         output_fields = self.pinn_params.fields_params.output_fields
 
         ### Currently hard code this. Only works for feed forward NN
-        in_features = [self.train_coords.internal_coord_dim] + hidden_layer_widths
+        ### Hardcode this for now
+        internal_coord_dim = 3
+        in_features = [internal_coord_dim] + hidden_layer_widths
         out_features = hidden_layer_widths + [len(output_fields)]
 
         self.layers = [
@@ -236,20 +236,29 @@ class PINN:
             for i in range(self.num_layers)
         ]
 
-        # Get lists of lb, ub sorted alphabetically by axis label
-        lb_list = []
-        ub_list = []
-
-        for coord_label in self.train_coords.internal_labels:
-            lb_list.append(self.input_coords_internal_lb[coord_label])
-            ub_list.append(self.input_coords_internal_ub[coord_label])
-
         output_fields_params = self.pinn_params.fields_params.output_fields
         output_field_label_to_rank = {
             f["label"]: f["rank"] for f in output_fields_params
         }
+
+        # get lower and upper bounds of all training points
+        lbs = torch.stack(
+            [
+                group.train_coords.internal_lb.detach()
+                for group in self.loss_term_groups.values()
+            ]
+        )
+        ubs = torch.stack(
+            [
+                group.train_coords.internal_ub.detach()
+                for group in self.loss_term_groups.values()
+            ]
+        )
+        lb = torch.min(lbs, dim=0).values
+        ub = torch.max(ubs, dim=0).values
+
         self.model = NeuralNetwork(
-            output_field_label_to_rank, self.layers, layers_params, lb_list, ub_list
+            output_field_label_to_rank, self.layers, layers_params, lb, ub
         ).to(self.device)
 
     def _init_learnt_parameters(self) -> None:
@@ -295,8 +304,9 @@ class PINN:
         trainer_hooks = [update_optimizer, early_stopping]
 
         # Init trainer
-        loss_groups = [self.data_loss_term_group, self.phys_loss_term_group]
-        self.trainer = Trainer(self.model, self.optimizer, loss_groups, trainer_hooks)
+        self.trainer = Trainer(
+            self.model, self.optimizer, self.loss_term_groups, trainer_hooks
+        )
 
         # Train model
         self.trainer.train()

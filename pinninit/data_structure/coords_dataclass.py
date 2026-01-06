@@ -24,6 +24,8 @@ class CoordsProtocol(Protocol):
     label_to_index: dict[str, int]
     internal_label_to_index: dict[str, int]
     internal_coord_dim: int
+    internal_lb: torch.Tensor
+    internal_ub: torch.Tensor
     tensor: torch.Tensor
     geometric: torch.Tensor
     internal: torch.Tensor
@@ -78,6 +80,10 @@ def _coords_post_init(self: CoordsProtocol) -> None:
     self.internal = torch.stack(
         [internal_coords_dict[label] for label in internal_labels], dim=1
     )
+
+    self.internal_lb = torch.min(self.internal, dim=0).values
+    self.internal_ub = torch.max(self.internal, dim=0).values
+
     self.internal_labels = tuple(internal_labels)
     self.internal_label_to_index = {label: i for i, label in enumerate(internal_labels)}
     for label in internal_geometric_coords_dict:
@@ -145,6 +151,8 @@ def make_coords_dataclass(
             ("label_to_index", dict[str, int], field(init=False)),
             ("internal_label_to_index", dict[str, int], field(init=False)),
             ("internal_coord_dim", int, field(init=False)),
+            ("internal_lb", torch.Tensor, field(init=False)),
+            ("internal_ub", torch.Tensor, field(init=False)),
             ("tensor", torch.Tensor, field(init=False)),
             ("geometric", torch.Tensor, field(init=False)),
             ("internal", torch.Tensor, field(init=False)),

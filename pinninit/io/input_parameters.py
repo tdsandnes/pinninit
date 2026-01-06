@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from ..collocation.collocation_sampler import CollocationSamplerLabels
 from ..geometry.coordinate_system import (
     CoordSystemLabels,
 )
@@ -15,7 +14,6 @@ from ..nn.initialise_biases import BiasInitLabels
 from ..nn.initialise_weights import WeightInitLabels
 from ..nn.layers import LayerTypeLabels
 from ..optimizer.optimizer import OptimizerLabels
-from .data_sampler import DataSetSamplerLabels
 from .io_utils import (
     expand_if_alias,
     get_enum_label_from_value,
@@ -27,73 +25,11 @@ if TYPE_CHECKING:
     from typing import Any
 
 
-class DataParams:
+class DataSetsParams:
     def __init__(self, input_params: dict[str, Any]):
-        # file_path
-        self.file_path = load_compulsory(
-            "file_path", "Data", input_params, data_type=str
+        self.data_sets = load_compulsory(
+            "data_sets", "DataSets", input_params, data_type=list
         )
-        # train_sampling_strategy
-        train_sampling_strategy_raw = load_compulsory(
-            "train_sampling_strategy", "Data", input_params, data_type=str
-        )
-
-        self.train_sampling_strategy = get_enum_label_from_value(
-            train_sampling_strategy_raw, DataSetSamplerLabels
-        )
-
-        if self.train_sampling_strategy == DataSetSamplerLabels.RANDOM:
-            # num_train_samples
-            self.num_train_samples = load_compulsory(
-                "num_train_samples", "Data", input_params, data_type=int
-            )
-            # train_sampling_seed
-            self.train_sampling_seed = load_compulsory(
-                "train_sampling_seed", "Data", input_params, data_type=int
-            )
-
-
-class CollocationParams:
-    def __init__(self, input_params: dict[str, Any]):
-        # from_file
-        self.from_file = load_optional(
-            "from_file", "Collocation", input_params, data_type=int, default=0
-        )
-        if self.from_file == 1:
-            # file_path
-            self.file_path = load_compulsory(
-                "file_path", "Collocation", input_params, data_type=str
-            )
-
-            return
-        elif self.from_file == 0:
-            # collocation_strategy
-            ###collocation_strategy_raw = load_compulsory(
-            ###    "collocation_strategy", "Collocation", input_params, data_type=str
-            ###)
-            self.collocation_strategy = (
-                CollocationSamplerLabels.RANDOM
-            )  ###This should be:
-            ###get_enum_label_from_value(collocation_strategy_raw, ...)### Add registry
-
-            if self.collocation_strategy == CollocationSamplerLabels.RANDOM:
-                # num_collocation_points
-                self.num_collocation_points = load_compulsory(
-                    "num_collocation_points", "Collocation", input_params, data_type=int
-                )
-                # collocation_sampling_seed
-                self.collocation_sampling_seed = load_compulsory(
-                    "collocation_sampling_seed",
-                    "Collocation",
-                    input_params,
-                    data_type=int,
-                )
-
-        else:
-            raise ValueError(
-                f"Unknown option: '{self.from_file}' for input parameter 'Collocation: "
-                f"from_file'. Available options are: {[0, 1]}"
-            )
 
 
 class CoordinatesParams:
@@ -265,8 +201,7 @@ class PINNParameters:
 
     def _extract_parameters(self) -> None:
         """Extract parameters as objects of individual classes"""
-        self.data_params = DataParams(self.input_params)
-        self.collocation_params = CollocationParams(self.input_params)
+        self.data_sets_params = DataSetsParams(self.input_params)
         self.coordinates_params = CoordinatesParams(self.input_params)
         self.fields_params = FieldsParams(self.input_params)
         self.constants_params = ConstantsParams(self.input_params)

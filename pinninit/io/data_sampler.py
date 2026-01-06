@@ -8,8 +8,6 @@ import numpy as np
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from ..io.input_parameters import PINNParameters
-
 
 class DataSetSamplerLabels(str, Enum):
     """Enumeration of data set sampler method labels."""
@@ -18,31 +16,29 @@ class DataSetSamplerLabels(str, Enum):
     RANDOM = "random"
 
 
-def mask_no_sampler(length: int, pinn_params: PINNParameters) -> np.ndarray:
+def mask_no_sampler(length: int, num_samples: int, seed: int) -> np.ndarray:
     """Returns mask with all True"""
     return np.ones(length, dtype=bool)
 
 
-def mask_random_array_sampler(length: int, pinn_params: PINNParameters) -> np.ndarray:
+def mask_random_array_sampler(length: int, num_samples: int, seed: int) -> np.ndarray:
     """
     Mask for randomly sampling 1D array of given length.
 
     Parameters:
     ----------
-    length:
+    length : int
         Mask length
-    pinn_params : PINNParameters
-        PINN parameters.
+    num_samples : int
+        Number of samples.
+    seed : int
+        Random seed
 
     Returns:
     ----------
     ndarray
         Mask.
     """
-    # Extract DataParams
-    num_samples = pinn_params.data_params.num_train_samples
-    seed = pinn_params.data_params.train_sampling_seed
-
     # Use seed to select num_train_samples points
     rng = np.random.default_rng(seed)
     mask = rng.choice(length, num_samples, replace=False)
@@ -51,7 +47,7 @@ def mask_random_array_sampler(length: int, pinn_params: PINNParameters) -> np.nd
 
 # Mapping from data set sampler method labels to python functions
 DATA_SET_SAMPLER_REGISTRY: dict[
-    DataSetSamplerLabels, Callable[[int, PINNParameters], np.ndarray]
+    DataSetSamplerLabels, Callable[[int, int, int], np.ndarray]
 ] = {
     DataSetSamplerLabels.NONE: mask_no_sampler,
     DataSetSamplerLabels.RANDOM: mask_random_array_sampler,

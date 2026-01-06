@@ -28,8 +28,8 @@ class NeuralNetwork(nn.Module):
         output_field_label_to_rank: dict[str, int],
         layers: list[nn.Module],
         layers_params: LayersParams,
-        lb: list[torch.Tensor],
-        ub: list[torch.Tensor],
+        lb: torch.Tensor,
+        ub: torch.Tensor,
     ):
         super().__init__()
         self.output_field_label_to_rank = output_field_label_to_rank
@@ -37,6 +37,10 @@ class NeuralNetwork(nn.Module):
         activation_function_labels = layers_params.activation_functions
         init_weight_lables = layers_params.init_weights
         init_bias_labels = layers_params.init_biases
+
+        # Lower and Upper bounds
+        self.lb = lb
+        self.ub = ub
 
         # Set activation functions and inital weights and biases for each layer
         activation_funcs = []
@@ -61,14 +65,6 @@ class NeuralNetwork(nn.Module):
             BIAS_INIT_REGISTRY[init_bias_labels[i]](layer.bias)
 
         self.activation_funcs = activation_funcs
-
-        ### hardcoded normalisation for now
-        lb_tensor = torch.tensor(lb)
-        ub_tensor = torch.tensor(ub)
-
-        # Register as buffers (not trainable parameters)
-        self.register_buffer("lb", lb_tensor)
-        self.register_buffer("ub", ub_tensor)
 
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         # Normalisation ### temp hardcoded for now, but should add a normalisation.py

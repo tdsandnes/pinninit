@@ -40,11 +40,10 @@ class Trainer:
         self,
         model: NeuralNetwork,
         optimizer: Optimizer,
-        loss_groups: list[LossTermGroup],
+        loss_groups: dict[str, LossTermGroup],
         trainer_modules: list[TrainerModule],
         max_iter: int | None = None,
     ) -> None:
-        ### Note that e.g. train_loss_groups = [data_loss_group, col_loss_group]
         self.model = model
         self.optimizer = optimizer
         self.loss_groups = loss_groups
@@ -136,12 +135,12 @@ class Trainer:
             module.on_train_end(self)
 
     def compute_group_losses(
-        self, loss_groups: list[LossTermGroup]
+        self, loss_groups: dict[str, LossTermGroup]
     ) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
         # Loop through all loss term groups
         group_train_losses = []
         group_val_losses = []
-        for group in loss_groups:
+        for group in loss_groups.values():
             # Compute loss
             train_loss = group.compute_loss_train(self.model)
             val_loss = group.compute_loss_val(self.model)
