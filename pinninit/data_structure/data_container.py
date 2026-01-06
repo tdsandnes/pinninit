@@ -147,23 +147,30 @@ class CoordDataContainer:
         self.consts[const_label] = value
         self.internal_consistency = False
 
+    def _clear_derived_fields(self) -> None:
+        """Clear all derived fields."""
+        for label in self.derived_field_labels & self._fields.keys():
+            del self._fields[label]
+        self.derived_field_labels.clear()
+        self.internal_consistency = False
+
     def _set_derived_fields(self) -> None:
         """
         Loop to evaluate equations until all outputs are computed.
         """
+        # Clear previously derived fields
+        self._clear_derived_fields()
 
         # Labels of all coords, fields, and consts.
-        # Not including derived fields, which we are recalculating here.
-        base_field_labels = set(self._fields.keys()) - self.derived_field_labels
         currently_available_labels = (
-            set(self.coords.coord_labels) | base_field_labels | set(self.consts.keys())
+            set(self.coords.coord_labels)
+            | set(self._fields.keys())
+            | set(self.consts.keys())
         )
 
         available_equations = self.available_equations_params.equations
         eqn_dict = {eq["label"]: eq for eq in available_equations}
         eqns_remaining = set(eqn_dict.keys())
-
-        preexisting_derived_fields_remaining = self.derived_field_labels.copy()
 
         # Loop through all equations and see if any satisfy conditions.
         # If new params have been added, it's possible that other equations are
@@ -222,17 +229,18 @@ class CoordDataContainer:
                 for label, eqn_output in zip(
                     eqn_output_labels, eqn_outputs, strict=True
                 ):
-                    # Update field if it is already in container
-                    if label in self.derived_field_labels:
-                        self._fields[label].update_from_tensor(eqn_output)
-                        preexisting_derived_fields_remaining.discard(label)
+                    # Raise error we already have this output stored
+                    if label in currently_available_labels:
+                        raise RuntimeError(
+                            f"Equation {eqn_label} attempted to "
+                            f"overwrite field '{label}', which is already available."
+                        )
 
-                    # else init the field and set it
-                    else:
-                        rank = self.field_label_to_rank[label]
-                        self._init_empty_field(label, rank)
-                        self._fields[label].update_from_tensor(eqn_output)
-                        self.derived_field_labels.add(label)
+                    # init and set field
+                    rank = self.field_label_to_rank[label]
+                    self._init_empty_field(label, rank)
+                    self._fields[label].update_from_tensor(eqn_output)
+                    self.derived_field_labels.add(label)
 
                     currently_available_labels.add(label)
 
@@ -245,12 +253,6 @@ class CoordDataContainer:
 
         # Store equations used
         self.equations_used = equations_used
-
-        # If any pre-existing fields haven't been updated, remove the field from the
-        # container for internal consistency
-        for field_label in preexisting_derived_fields_remaining:
-            del self._fields[field_label]
-            self.derived_field_labels.remove(field_label)
 
         # We now have internal consistency
         self.internal_consistency = True

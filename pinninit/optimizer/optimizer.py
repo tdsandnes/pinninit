@@ -53,12 +53,12 @@ class Adam(Optimizer):
         self._trainer = trainer
 
     def prepare_for_step(self) -> None:
-        # Compute losses
-        self.trainer.set_losses()
+        # Compute loss
+        train_loss = self.trainer.compute_train_loss()
 
         # Backprop
         self.optimizer.zero_grad()
-        self.trainer.train_loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
+        train_loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
 
     def step(self) -> None:
         self.optimizer.step()
@@ -76,14 +76,14 @@ class LBFGS(Optimizer):
         pass
 
     def _closure(self) -> float:
-        # Compute losses
-        self.trainer.set_losses()
+        # Compute loss
+        train_loss = self.trainer.compute_train_loss()
 
         # Backprop
         self.optimizer.zero_grad()
-        self.trainer.train_loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
+        train_loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
 
-        return float(self.trainer.train_loss)
+        return float(train_loss)
 
     def step(self) -> None:
         self.optimizer.step(self._closure)
