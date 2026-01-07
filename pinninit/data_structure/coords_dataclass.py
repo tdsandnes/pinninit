@@ -33,6 +33,7 @@ class CoordsProtocol(Protocol):
 
     # Methods
     def __post_init__(self) -> None: ...
+    def __getitem__(self, indices: slice | torch.Tensor) -> CoordsProtocol: ...
     def _validate_input(self) -> None: ...
 
 
@@ -92,6 +93,15 @@ def _coords_post_init(self: CoordsProtocol) -> None:
 
     # Set operators
     self.operators = Operators(self)
+
+
+def _getitem(self: CoordsProtocol, indices: slice | torch.Tensor) -> CoordsProtocol:
+    coord_data = {label: getattr(self, label)[indices] for label in self.coord_labels}
+    return self.__class__(
+        **coord_data,
+        coord_system=self.coord_system,
+        device=self.device,  # type: ignore[call-arg]
+    )
 
 
 def _coords_validate_input(self: Any) -> None:
@@ -166,6 +176,7 @@ def make_coords_dataclass(
         components,
         namespace={
             "__post_init__": _coords_post_init,
+            "__getitem__": _getitem,
             "_validate_input": _coords_validate_input,
         },
     )

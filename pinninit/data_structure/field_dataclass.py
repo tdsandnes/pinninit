@@ -25,6 +25,7 @@ class FieldProtocol(Protocol):
 
     # Methods
     def __post_init__(self) -> None: ...
+    def __getitem__(self, indices: slice | torch.Tensor) -> FieldProtocol: ...
     def _validate_input(self) -> None: ...
     def _set_tensors(self) -> None: ...
     def update_from_component_dict(self, new_components: dict[str, Any]) -> None: ...
@@ -49,6 +50,19 @@ def _field_post_init(self: FieldProtocol) -> None:
 
     # Set tensors
     self._set_tensors()
+
+
+def _getitem(self: FieldProtocol, indices: slice | torch.Tensor) -> FieldProtocol:
+    sliced_coords = self.coords[indices]
+
+    sliced_field_components = {
+        label: getattr(self, label)[indices] for label in self.component_labels
+    }
+
+    # Create new Field class for sliced coords
+    SlicedField = make_field_dataclass(self.rank, sliced_coords, self.device)
+
+    return SlicedField(**sliced_field_components)
 
 
 def _validate_input(self: Any) -> None:
@@ -182,6 +196,7 @@ def make_field_dataclass(
         namespace={
             "coords": coords,
             "__post_init__": _field_post_init,
+            "__getitem__": _getitem,
             "_validate_input": _validate_input,
             "_set_tensors": _set_tensors,
             "update_from_component_dict": update_from_component_dict,

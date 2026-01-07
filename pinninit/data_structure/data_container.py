@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from typing import Any
 
@@ -146,6 +148,24 @@ class CoordDataContainer:
 
         self.consts[const_label] = value
         self.internal_consistency = False
+
+    def slice_with_coords(
+        self, field_indices: slice | torch.Tensor, coords: CoordsProtocol
+    ) -> CoordDataContainer:
+        """Slice container using provided coords"""
+        sliced_container = CoordDataContainer(
+            coords, self.available_fields_params, self.available_equations_params
+        )
+
+        # Slice each non-derived field
+        for field_label, field in self._fields.items():
+            if field_label not in self.derived_field_labels:
+                sliced_container._fields[field_label] = field[field_indices]
+
+        # Add consts
+        sliced_container.consts = self.consts
+
+        return sliced_container
 
     def _clear_derived_fields(self) -> None:
         """Clear all derived fields."""

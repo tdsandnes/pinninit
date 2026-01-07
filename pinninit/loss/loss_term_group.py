@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
+from torch.utils.data import DataLoader
 
+from ..data_structure.batching import BatchingDataset
 from ..data_structure.data_container import CoordDataContainer
 from ..io.input_parameters import EquationsParams, FieldsParams
 from ..io.io_utils import get_enum_label_from_value
@@ -27,15 +29,23 @@ class LossTermGroup:
         dim_geometry: int,
         available_fields_params: FieldsParams,
         available_equations_params: EquationsParams,
+        device: torch.device,
         train_input_fields: dict[str, Any] | None = None,
         val_input_fields: dict[str, Any] | None = None,
         input_consts: dict[str, Any] | None = None,
+        batch_size: int | None = None,
+        shuffle_train: bool = True,
+        num_workers: int = 0,
     ) -> None:
         self.train_coords = train_coords
         self.val_coords = val_coords
         self.dim_geometry = dim_geometry
         self.available_fields_params = available_fields_params
         self.available_equations_params = available_equations_params
+        self.device = device
+        self.batch_size = batch_size
+        self.shuffle_train = shuffle_train
+        self.num_workers = num_workers
 
         # Check that all coords have same dimensions
         assert (
@@ -52,6 +62,9 @@ class LossTermGroup:
         self.val_input_data, self.val_output_data = self._init_data_containers(
             self.val_coords, val_input_fields, input_consts
         )
+
+        # Init data loaders
+        self._init_data_loaders()
 
         # Init loss terms as empty group
         self.loss_terms: list[LossTerm] = []
@@ -84,6 +97,31 @@ class LossTermGroup:
                 ### looking at learnable consts
 
         return input_data, output_data
+
+    def _init_data_loaders(self) -> None:
+        self.train_loader: DataLoader[int] | None = None
+        self.val_loader: DataLoader[int] | None = None
+
+        if self.batch_size is not None:
+            train_dataset = BatchingDataset(self.train_coords.n_points)
+            self.train_loader = DataLoader(
+                train_dataset,
+                batch_size=self.batch_size,
+                shuffle=self.shuffle_train,
+                num_workers=self.num_workers,
+                collate_fn=torch.utils.data.default_collate,
+                pin_memory=torch.cuda.is_available(),
+            )
+
+            val_dataset = BatchingDataset(self.val_coords.n_points)
+            self.val_loader = DataLoader(
+                val_dataset,
+                batch_size=self.batch_size,
+                shuffle=False,
+                num_workers=self.num_workers,
+                collate_fn=torch.utils.data.default_collate,
+                pin_memory=torch.cuda.is_available(),
+            )
 
     def add(self, loss_term: LossTerm) -> None:
         """Add a specific loss term to the group."""
@@ -163,53 +201,66 @@ class LossTermGroup:
             # Update index for next field
             idx = idx_end
 
-    def _compute_loss_at_coords(
+    def _compute_loss(
         self,
-        coords: CoordsProtocol,
         input_data: CoordDataContainer,
         output_data: CoordDataContainer,
     ) -> torch.Tensor:
         # Add contributions from all loss terms
-        loss = torch.tensor(0.0, device=coords.device)
+        loss = torch.tensor(0.0, device=self.device)
         for loss_term in self.loss_terms:
             loss += loss_term.compute_loss(input_data, output_data)
 
         return loss
 
+    def _compute_loss_batched(
+        self,
+        model: NeuralNetwork,
+        input_data: CoordDataContainer,
+        output_data: CoordDataContainer,
+        dataloader: DataLoader[int] | None,
+    ) -> torch.Tensor:
+        """Compute loss over batches using a DataLoader"""
+        if dataloader is not None and self.batch_size is not None:
+            total_loss = torch.tensor(0.0, device=self.device)
+            total_points: int = 0
+
+            # Loop through batches
+            for batch_indices in dataloader:
+                batch_coords = input_data.coords[batch_indices]
+
+                # Slice input and output data containers
+                input_batch = input_data.slice_with_coords(batch_indices, batch_coords)
+                output_batch = output_data.slice_with_coords(
+                    batch_indices, batch_coords
+                )
+
+                # Apply model
+                self._apply_model_at_coords(model, batch_coords, output_batch)
+
+                # Compute loss
+                batch_loss = self._compute_loss(input_batch, output_batch)
+
+                # Add loss to total loss and update counter
+                batch_size = batch_indices.numel()
+                total_loss += batch_loss * batch_size
+                total_points += batch_size
+
+            return total_loss / total_points
+
+        else:
+            # Full-batch
+            coords = input_data.coords
+
+            self._apply_model_at_coords(model, coords, output_data)
+            return self._compute_loss(input_data, output_data)
+
     def compute_loss_train(self, model: NeuralNetwork) -> torch.Tensor:
-        # Apply model
-        self._apply_model_at_coords(model, self.train_coords, self.train_output_data)
-        # Compute loss
-        return self._compute_loss_at_coords(
-            self.train_coords, self.train_input_data, self.train_output_data
+        return self._compute_loss_batched(
+            model, self.train_input_data, self.train_output_data, self.train_loader
         )
 
     def compute_loss_val(self, model: NeuralNetwork) -> torch.Tensor:
-        # Apply model
-        self._apply_model_at_coords(model, self.val_coords, self.val_output_data)
-        # Compute loss
-        return self._compute_loss_at_coords(
-            self.val_coords, self.val_input_data, self.val_output_data
+        return self._compute_loss_batched(
+            model, self.val_input_data, self.val_output_data, self.val_loader
         )
-
-    def compute_loss_arbitrary_coords(
-        self,
-        model: NeuralNetwork,
-        coords: CoordsProtocol,
-        input_fields: dict[str, Any] | None = None,
-        input_consts: dict[str, Any] | None = None,
-    ) -> torch.Tensor:
-        ### Note here containers get created each time. Therefore only for one-off
-        ### evaluation rather than something to be used each iter in training
-
-        ### Maybe input_consts should be set at __init__ and that one is accessed
-        ### throughout?
-
-        # Init data containers
-        input_data, output_data = self._init_data_containers(
-            coords, input_fields, input_consts
-        )
-        # Apply model
-        self._apply_model_at_coords(model, coords, output_data)
-        # Compute loss
-        return self._compute_loss_at_coords(coords, input_data, output_data)

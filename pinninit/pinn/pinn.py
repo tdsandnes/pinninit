@@ -187,6 +187,11 @@ class PINN:
                 train_fields = None
                 val_fields = None
 
+            ### Hardcode these for now
+            batch_size = 4096
+            shuffle_train = True
+            num_workers = 0
+
             # Create loss term group
             self.loss_term_groups[dataset_label] = LossTermGroup(
                 train_coords=train_coord,
@@ -194,8 +199,12 @@ class PINN:
                 dim_geometry=self.dim_geometry,
                 available_fields_params=self.pinn_params.fields_params,
                 available_equations_params=self.pinn_params.equations_params,
+                device=self.device,
                 train_input_fields=train_fields,
                 val_input_fields=val_fields,
+                batch_size=batch_size,
+                shuffle_train=shuffle_train,
+                num_workers=num_workers,
             )
 
         # Loop over all loss term groups
@@ -296,7 +305,7 @@ class PINN:
             ### Currently just use defaults here
         )
         patience = 500
-        frac_tol = 1e-1
+        frac_tol = 0.0  # 1e-1
         update_optimizer = UpdateOptimizer(new_optimizer, patience, frac_tol)
         patience = 500
         frac_tol = 0.0
