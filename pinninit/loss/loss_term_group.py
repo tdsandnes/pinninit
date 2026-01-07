@@ -107,7 +107,11 @@ class LossTermGroup:
         self.val_loader: DataLoader[int] | None = None
 
         if self.batch_size is not None:
-            train_dataset = BatchingDataset(self.train_coords.n_points)
+            # Get n_points from the full coords
+            train_n_points = self.train_coords.full_tensor.shape[0]
+            val_n_points = self.val_coords.full_tensor.shape[0]
+
+            train_dataset = BatchingDataset(train_n_points)
             self.train_loader = DataLoader(
                 train_dataset,
                 batch_size=self.batch_size,
@@ -117,7 +121,7 @@ class LossTermGroup:
                 pin_memory=torch.cuda.is_available(),
             )
 
-            val_dataset = BatchingDataset(self.val_coords.n_points)
+            val_dataset = BatchingDataset(val_n_points)
             self.val_loader = DataLoader(
                 val_dataset,
                 batch_size=self.batch_size,
@@ -189,11 +193,26 @@ class LossTermGroup:
         )
         field_label_to_rank_dict = {f["label"]: f["rank"] for f in fields}
 
+        # Track which fields are available in each container initially
+        # input_data has input fields loaded, output_data has output fields from NN
+        input_data_has = {f["label"] for f in fields_params.input_fields}
+        output_data_has = {f["label"] for f in fields_params.output_fields}
+
         for term in loss_terms:
             field_label = term["field_label"]
             loss_type = term["loss_type"]
             rank = field_label_to_rank_dict[field_label]
             components = 1 if rank == 0 else self.dim_geometry**rank
+
+            # Register field for input_data if it's not already available there
+            if field_label not in input_data_has:
+                self.train_input_data.register_required_field(field_label)
+                self.val_input_data.register_required_field(field_label)
+
+            # Register field for output_data if it's not already available there
+            if field_label not in output_data_has:
+                self.train_output_data.register_required_field(field_label)
+                self.val_output_data.register_required_field(field_label)
 
             ### Eventually tidy this up with aliases similar to activation function
             loss_functions = (
@@ -240,7 +259,7 @@ class LossTermGroup:
         idx = 0
         for field_label, rank in model.output_field_label_to_rank.items():
             # Extract field from model output and set in output data container
-            idx_end = idx + (1 if rank == 0 else rank * self.dim_geometry)
+            idx_end = idx + (1 if rank == 0 else self.dim_geometry**rank)
             value = output_fields[:, idx:idx_end]
 
             # Set field in output data container
@@ -275,24 +294,22 @@ class LossTermGroup:
 
             # Loop through batches
             for batch_indices in dataloader:
-                batch_coords = input_data.coords[batch_indices]
+                # Set batch on input/output containers
+                input_data.set_batch(batch_indices)
+                output_data.set_batch(batch_indices)
 
-                # Slice input and output data containers
-                input_batch = input_data.slice_with_coords(batch_indices, batch_coords)
-                output_batch = output_data.slice_with_coords(
-                    batch_indices, batch_coords
-                )
+                # Apply model to coords.batch_internal (already batched)
+                self._apply_model_at_coords(model, input_data.coords, output_data)
 
-                # Apply model
-                self._apply_model_at_coords(model, batch_coords, output_batch)
+                # Compute loss on batch
+                batch_loss = self._compute_loss(input_data, output_data)
 
-                # Compute loss
-                batch_loss = self._compute_loss(input_batch, output_batch)
+                total_loss += batch_loss * len(batch_indices)
+                total_points += len(batch_indices)
 
-                # Add loss to total loss and update counter
-                batch_size = batch_indices.numel()
-                total_loss += batch_loss * batch_size
-                total_points += batch_size
+            # Clear batch after loop
+            input_data.clear_batch()
+            output_data.clear_batch()
 
             return total_loss / total_points
 

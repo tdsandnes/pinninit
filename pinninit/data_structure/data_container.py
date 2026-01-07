@@ -44,36 +44,29 @@ class CoordDataContainer:
         # Empty dict of fields and field classes
         # Note that _fields can be internally inconsistent, but fields property cannot
         self._fields: dict[str, FieldProtocol] = {}
-        self.field_dataclasses: dict[int, type[FieldProtocol]] = {}
-
-        # Labels of derived fields and bool to keep track of if these are consistent
-        # with other fields and consts that might have recently been updated/added
-        self.derived_field_labels: set[str] = set()
+        self._derived_field_labels: set[str] = set()
         self.internal_consistency = True
+        self.field_dataclasses: dict[int, type[FieldProtocol]] = {}
 
         # Initialise consts
         self.consts: dict[str, torch.Tensor] = {}
 
-    @property
-    def fields(self) -> dict[str, FieldProtocol]:
-        # Ensure derived fields are up-to-date before returning
-        self._ensure_consistency()
-        return self._fields
+        # Fields that will be accessed (e.g., by loss terms)
+        self._required_fields: set[str] = set()
 
     def get_field(self, field_label: str) -> FieldProtocol:
-        # Ensure derived fields are up-to-date before returning
-        self._ensure_consistency()
-        return self._get_field(field_label)
+        # If field doesn't exist or if it's derived and dirty, compute it
+        if field_label not in self._fields or (
+            field_label in self._derived_field_labels and not self.internal_consistency
+        ):
+            self._set_derived_fields(required_fields=self._required_fields or None)
 
-    def _ensure_consistency(self) -> None:
-        if not self.internal_consistency:
-            self._set_derived_fields()
+        return self._get_field(field_label)
 
     def _init_empty_field(self, field_label: str, rank: int) -> None:
         if field_label in self._fields:
             raise ValueError(
-                f"Cannot initialise field {field_label}, which already exists in "
-                "data container."
+                f"Cannot initialise field {field_label}, which already exists."
             )
 
         # Get or create Field dataclass for this rank
@@ -82,7 +75,7 @@ class CoordDataContainer:
             make_field_dataclass(rank=rank, coords=self.coords, device=self.device),
         )
 
-        # Components must correspond to those expected from rank and coords
+        # Components use coords.n_points which respects batching
         labels, _ = generate_tensor_component_labels(self.coords.geometric_labels, rank)
         init_field_dict = {
             label: torch.zeros(self.coords.n_points, device=self.device)
@@ -91,22 +84,20 @@ class CoordDataContainer:
 
         self._fields[field_label] = Field(**init_field_dict)
 
-    def _get_field(self, field_label: str) -> FieldProtocol:
-        if field_label in self._fields:
-            return self._fields[field_label]
-        else:
-            raise KeyError(
-                f"Field label {field_label} not found in fields {self._fields.keys()}."
-            )
+    def _get_field(self, label: str) -> FieldProtocol:
+        """Get a field by label."""
+        if label not in self._fields:
+            raise KeyError(f"Field {label} not found.")
+        return self._fields[label]
 
     def _set_field(
         self, field_label: str, update: Callable[[FieldProtocol], None]
     ) -> None:
-        # Field must in available labels
+        # Field must be in available labels
         if field_label not in self.field_label_to_rank:
             raise ValueError(
                 f"Invalid field label {field_label} provided. "
-                f"Available options are {self.field_label_to_rank.keys()}."
+                f"Available options are {list(self.field_label_to_rank.keys())}."
             )
 
         # Init field if it hasn't already been initialised
@@ -116,11 +107,18 @@ class CoordDataContainer:
 
         # Update field
         update(self._fields[field_label])
-        self.internal_consistency = False
+        if field_label not in self._derived_field_labels:
+            self.internal_consistency = False
 
     def set_field_from_component_dict(
         self, field_label: str, field_component_dict: dict[str, Any]
     ) -> None:
+        # Clear derived fields that depend on this field
+        if field_label not in self._derived_field_labels:
+            for label in list(self._derived_field_labels):
+                self._fields.pop(label, None)
+            self._derived_field_labels.clear()
+
         self._set_field(
             field_label, lambda f: f.update_from_component_dict(field_component_dict)
         )
@@ -128,6 +126,12 @@ class CoordDataContainer:
     def set_field_from_component_tensor(
         self, field_label: str, field_component_tensor: torch.Tensor
     ) -> None:
+        # Clear derived fields that depend on this field
+        if field_label not in self._derived_field_labels:
+            for label in list(self._derived_field_labels):
+                self._fields.pop(label, None)
+            self._derived_field_labels.clear()
+
         self._set_field(
             field_label,
             lambda f: f.update_from_component_tensor(field_component_tensor),
@@ -136,6 +140,12 @@ class CoordDataContainer:
     def set_field_from_tensor(
         self, field_label: str, field_tensor: torch.Tensor
     ) -> None:
+        # Clear derived fields that depend on this field
+        if field_label not in self._derived_field_labels:
+            for label in list(self._derived_field_labels):
+                self._fields.pop(label, None)
+            self._derived_field_labels.clear()
+
         self._set_field(field_label, lambda f: f.update_from_tensor(field_tensor))
 
     def set_const(self, const_label: str, value: torch.Tensor) -> None:
@@ -149,55 +159,89 @@ class CoordDataContainer:
         self.consts[const_label] = value
         self.internal_consistency = False
 
-    def slice_with_coords(
-        self, field_indices: slice | torch.Tensor, coords: CoordsProtocol
-    ) -> CoordDataContainer:
-        """Slice container using provided coords"""
-        sliced_container = CoordDataContainer(
-            coords, self.available_fields_params, self.available_equations_params
-        )
+    def set_batch(self, indices: slice | torch.Tensor) -> None:
+        """Set batch view."""
+        self.coords.set_batch(indices)
 
-        # Slice each non-derived field
-        for field_label, field in self._fields.items():
-            if field_label not in self.derived_field_labels:
-                sliced_container._fields[field_label] = field[field_indices]
+        # Clear derived fields (need recomputation with new batch)
+        for label in self._derived_field_labels:
+            self._fields.pop(label, None)
+        self._derived_field_labels.clear()
 
-        # Add consts
-        sliced_container.consts = self.consts
+        # Remove any batch-only fields that don't match current batch
+        fields_to_remove = []
+        for label, field in self._fields.items():
+            if field.is_batch_only:
+                fields_to_remove.append(label)
 
-        return sliced_container
+        for label in fields_to_remove:
+            self._fields.pop(label)
 
-    def _clear_derived_fields(self) -> None:
-        """Clear all derived fields."""
-        for label in self.derived_field_labels & self._fields.keys():
-            del self._fields[label]
-        self.derived_field_labels.clear()
         self.internal_consistency = False
 
-    def _set_derived_fields(self) -> None:
-        """
-        Loop to evaluate equations until all outputs are computed.
+    def clear_batch(self) -> None:
+        """Clear batch view."""
+        self.coords.clear_batch()
+
+        # Clear all batch-only fields
+        fields_to_remove = []
+        for label, field in self._fields.items():
+            if field.is_batch_only:
+                fields_to_remove.append(label)
+
+        for label in fields_to_remove:
+            self._fields.pop(label)
+
+        self._derived_field_labels.clear()
+        self.internal_consistency = False
+
+    def register_required_field(self, field_label: str) -> None:
+        """Register a field that will be accessed (e.g., by loss terms)."""
+        self._required_fields.add(field_label)
+
+    def _set_derived_fields(self, required_fields: set[str] | None = None) -> None:
+        """Loop to evaluate equations until required outputs are computed.
+
+        Args:
+            required_fields: If provided, only compute these specific derived fields
+                            and their dependencies. If None, compute all possible.
         """
         # Clear previously derived fields
-        self._clear_derived_fields()
+        for label in self._derived_field_labels:
+            self._fields.pop(label, None)
+        self._derived_field_labels.clear()
 
-        # Labels of all coords, fields, and consts.
+        # Labels of all coords, fields, and consts
         currently_available_labels = (
             set(self.coords.coord_labels)
             | set(self._fields.keys())
             | set(self.consts.keys())
         )
 
+        # Determine which fields we need to compute
+        if required_fields is None:
+            # Compute everything possible
+            fields_to_compute = {
+                output
+                for eq in self.available_equations_params.equations
+                for output in eq["output_args"]
+            }
+        else:
+            # Compute only required fields and their dependencies
+            fields_to_compute = self._resolve_dependencies(
+                required_fields, currently_available_labels
+            )
+
+        # Track which fields still need to be computed
+        fields_still_needed = fields_to_compute - currently_available_labels
+
         available_equations = self.available_equations_params.equations
         eqn_dict = {eq["label"]: eq for eq in available_equations}
         eqns_remaining = set(eqn_dict.keys())
 
-        # Loop through all equations and see if any satisfy conditions.
-        # If new params have been added, it's possible that other equations are
-        # now available. Therefore keep looping until no new params are added.
         added_new_field = True
         equations_used = set()
-        while eqns_remaining and added_new_field:
+        while eqns_remaining and added_new_field and fields_still_needed:
             added_new_field = False
             equations_evaluated_this_round = set()
 
@@ -206,73 +250,108 @@ class CoordDataContainer:
                 eqn_input_labels = equation["input_args"]
                 eqn_output_labels = equation["output_args"]
 
+                # Skip if this equation doesn't produce any needed fields
+                if not any(
+                    output in fields_still_needed for output in eqn_output_labels
+                ):
+                    continue
+
                 # Only proceed if all input args are currently available
                 if not all(
                     arg in currently_available_labels for arg in eqn_input_labels
                 ):
-                    continue  # skip to next equation
+                    continue
 
                 # Get all input args of eqn
                 eqn_inputs: list[Any] = []
                 for label in eqn_input_labels:
                     if label in self.coords.coord_labels:
-                        eqn_inputs.append(getattr(self.coords, label))
+                        eqn_inputs.append(self.coords.get_coord(label))
                     elif label in self._fields:
-                        field = self._fields[label]
-                        eqn_inputs.append(field.tensor)
+                        eqn_inputs.append(self._fields[label].tensor)
                     elif label in self.consts:
                         eqn_inputs.append(self.consts[label])
                     else:
                         raise KeyError(
-                            "Not all params are available to evaluate equation."
+                            f"Input {label} not available for equation {eqn_label}"
                         )
 
                 # Evaluate equation
                 eqn_outputs = EQUATION_REGISTRY[eqn_label](
                     *eqn_inputs, self.coords.operators
                 )
-
-                # Make single outputs into tuple for easier looping through outputs
                 eqn_outputs = (
                     eqn_outputs if isinstance(eqn_outputs, tuple) else (eqn_outputs,)
                 )
 
-                # Make sure number of outputs is as expected
+                # Validate number of outputs
                 if len(eqn_outputs) != len(eqn_output_labels):
                     raise ValueError(
-                        f"The number of equation outputs, "
-                        f" {len(eqn_outputs)}, doesn't match the expected number, "
-                        f"{len(eqn_output_labels)}, for equation {eqn_label}."
+                        f"Equation {eqn_label} returned {len(eqn_outputs)} outputs, "
+                        f"expected {len(eqn_output_labels)}"
                     )
 
-                # Loop through equation outputs
+                # Store outputs
                 for label, eqn_output in zip(
                     eqn_output_labels, eqn_outputs, strict=True
                 ):
-                    # Raise error we already have this output stored
                     if label in currently_available_labels:
                         raise RuntimeError(
-                            f"Equation {eqn_label} attempted to "
-                            f"overwrite field '{label}', which is already available."
+                            f"Equation {eqn_label} tried to overwrite field '{label}'"
                         )
 
-                    # init and set field
+                    # Init and set field
                     rank = self.field_label_to_rank[label]
                     self._init_empty_field(label, rank)
                     self._fields[label].update_from_tensor(eqn_output)
-                    self.derived_field_labels.add(label)
-
+                    self._derived_field_labels.add(label)
                     currently_available_labels.add(label)
+
+                    # Remove from fields still needed
+                    fields_still_needed.discard(label)
 
                 added_new_field = True
                 equations_evaluated_this_round.add(eqn_label)
 
-            # Remove any evaluated eqns from the set of eqns left to evaluate
             eqns_remaining -= equations_evaluated_this_round
             equations_used.update(equations_evaluated_this_round)
 
-        # Store equations used
         self.equations_used = equations_used
-
-        # We now have internal consistency
         self.internal_consistency = True
+
+    def _resolve_dependencies(
+        self, required_fields: set[str], available_labels: set[str]
+    ) -> set[str]:
+        """Resolve all dependencies needed to compute required fields."""
+        fields_to_compute = set()
+        fields_to_check = list(required_fields)
+
+        # Build equation lookup
+        output_to_equation = {}
+        for eq in self.available_equations_params.equations:
+            for output in eq["output_args"]:
+                output_to_equation[output] = eq
+
+        # Iteratively find dependencies
+        while fields_to_check:
+            field = fields_to_check.pop()
+
+            # Skip if already available or already marked for computation
+            if field in available_labels or field in fields_to_compute:
+                continue
+
+            # Check if this field can be derived
+            if field not in output_to_equation:
+                # Field cannot be derived, skip
+                continue
+
+            # Mark this field for computation
+            fields_to_compute.add(field)
+
+            # Add its dependencies to check
+            equation = output_to_equation[field]
+            for input_field in equation["input_args"]:
+                if input_field not in available_labels:
+                    fields_to_check.append(input_field)
+
+        return fields_to_compute

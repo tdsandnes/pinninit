@@ -20,12 +20,15 @@ class FieldProtocol(Protocol):
     # Derived fields
     tensor: torch.Tensor
     component_tensor: torch.Tensor
+    is_batch_only: bool
+    full_tensor: torch.Tensor
+    full_component_tensor: torch.Tensor
     component_labels: tuple[str, ...]
     index_to_component_label: dict[tuple[int, ...], str]
+    batch_indices: slice | torch.Tensor
 
     # Methods
     def __post_init__(self) -> None: ...
-    def __getitem__(self, indices: slice | torch.Tensor) -> FieldProtocol: ...
     def _validate_input(self) -> None: ...
     def _set_tensors(self) -> None: ...
     def update_from_component_dict(self, new_components: dict[str, Any]) -> None: ...
@@ -52,17 +55,45 @@ def _field_post_init(self: FieldProtocol) -> None:
     self._set_tensors()
 
 
-def _getitem(self: FieldProtocol, indices: slice | torch.Tensor) -> FieldProtocol:
-    sliced_coords = self.coords[indices]
+def tensor(self: FieldProtocol) -> torch.Tensor:
+    """Get field tensor, respecting batch mode."""
+    if self.coords.is_batch:
+        if self.is_batch_only:
+            # Field was created with batched coords, so full_tensor is already batched
+            return self.full_tensor
+        else:
+            # Field was created with full coords, slice to current batch
+            return self.full_tensor[self.coords.batch_indices]
+    else:
+        if self.is_batch_only:
+            # Trying to access batch-only field when coords are not batched
+            raise RuntimeError(
+                "Cannot access batch-only field when coordinates are not in batch mode."
+            )
+        else:
+            # Full field with full coords
+            return self.full_tensor
 
-    sliced_field_components = {
-        label: getattr(self, label)[indices] for label in self.component_labels
-    }
 
-    # Create new Field class for sliced coords
-    SlicedField = make_field_dataclass(self.rank, sliced_coords, self.device)
-
-    return SlicedField(**sliced_field_components)
+def component_tensor(self: FieldProtocol) -> torch.Tensor:
+    """Get component tensor, respecting batch mode."""
+    if self.coords.is_batch:
+        if self.is_batch_only:
+            # Field was created with batched coords, so full_component_tensor is
+            # already batched
+            return self.full_component_tensor
+        else:
+            # Field was created with full coords, slice to current batch
+            return self.full_component_tensor[self.coords.batch_indices]
+    else:
+        if self.is_batch_only:
+            # Trying to access batch-only field when coords are not batched
+            raise RuntimeError(
+                "Cannot access batch-only field when coordinates are not in batch mode."
+            )
+        else:
+            # Full field with full coords
+            return self.full_component_tensor
 
 
 def _validate_input(self: Any) -> None:
@@ -89,8 +120,11 @@ def _set_tensors(self: FieldProtocol) -> None:
     """Construct component tensor and tensor in shape that can be used for maths
     operations."""
 
+    # Is this field sampled at batched coords
+    self.is_batch_only = self.coords.is_batch
+
     # Set component tensor
-    self.component_tensor = torch.stack(
+    self.full_component_tensor = torch.stack(
         [getattr(self, label) for label in self.component_labels],
         dim=1,
     )
@@ -101,7 +135,7 @@ def _set_tensors(self: FieldProtocol) -> None:
     tensor_shape = (n_points,) + (n_geometric,) * self.rank
 
     # Reshape component_tensor into structured tensor
-    self.tensor = self.component_tensor.reshape(tensor_shape)
+    self.full_tensor = self.full_component_tensor.reshape(tensor_shape)
 
 
 def update_from_component_dict(
@@ -184,8 +218,10 @@ def make_field_dataclass(
             # Derived fields
             ("component_labels", tuple[str, ...], field(init=False)),
             ("index_to_component_label", dict[tuple[int, ...], str], field(init=False)),
-            ("tensor", torch.Tensor, field(init=False)),
-            ("component_tensor", torch.Tensor, field(init=False)),
+            ("is_batch_only", bool, field(init=False)),
+            ("full_tensor", torch.Tensor, field(init=False)),
+            ("full_component_tensor", torch.Tensor, field(init=False)),
+            ("batch_indices", slice | torch.Tensor, field(init=False)),
         ]
     )
 
@@ -196,7 +232,8 @@ def make_field_dataclass(
         namespace={
             "coords": coords,
             "__post_init__": _field_post_init,
-            "__getitem__": _getitem,
+            "tensor": property(tensor),
+            "component_tensor": property(component_tensor),
             "_validate_input": _validate_input,
             "_set_tensors": _set_tensors,
             "update_from_component_dict": update_from_component_dict,

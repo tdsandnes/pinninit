@@ -13,33 +13,40 @@ if TYPE_CHECKING:
 class Operators:
     def __init__(self, coords: CoordsProtocol):
         # Extract from coords
-        self.coord_system = coords.coord_system
         self.coords = coords
-        self.coords_geometric = coords.geometric
+        self.coord_system = coords.coord_system
         self.geometric_labels = coords.geometric_labels
         self.dim_geometry = self.coord_system.dim_geometry
-        self.n_points = coords.n_points
-        self.device = coords.device
+        self.device = self.coords.device
 
-        # Metric tensors for each point
-        self.G = self.coord_system.metric_tensor(self.n_points, self.coords_geometric)
+        # Initial computation
+        self.set_quantities()
+
+    def set_quantities(self) -> None:
+        """Compute quantities based on current coordinate state."""
+        # Always recompute based on current geometric coords
+        self.G = self.coord_system.metric_tensor(
+            self.coords.n_points, self.coords.geometric
+        )
         self.G_inv = torch.linalg.inv(self.G)
         self.det_G = torch.det(self.G)
         self.sqrt_det_G = torch.sqrt(torch.abs(self.det_G))
-        validate_pytorch_tensor(
-            self.G, (self.n_points, self.dim_geometry, self.dim_geometry)
-        )
-        validate_pytorch_tensor(
-            self.G_inv, (self.n_points, self.dim_geometry, self.dim_geometry)
-        )
-        validate_pytorch_tensor(self.det_G, (self.n_points,))
-        validate_pytorch_tensor(self.sqrt_det_G, (self.n_points,))
 
-        # Get scale factors (assumes the coordinate system is orthogonal)
         self.scale_factors = self.coord_system.get_scale_factors(
-            self.coords_geometric, self.n_points
+            self.coords.geometric, self.coords.n_points
         )
-        validate_pytorch_tensor(self.scale_factors, (self.n_points, self.dim_geometry))
+
+        # Validate
+        n_points = self.coords.n_points
+        validate_pytorch_tensor(
+            self.G, (n_points, self.dim_geometry, self.dim_geometry)
+        )
+        validate_pytorch_tensor(
+            self.G_inv, (n_points, self.dim_geometry, self.dim_geometry)
+        )
+        validate_pytorch_tensor(self.det_G, (n_points,))
+        validate_pytorch_tensor(self.sqrt_det_G, (n_points,))
+        validate_pytorch_tensor(self.scale_factors, (n_points, self.dim_geometry))
 
     def d_dcoord(
         self,
@@ -60,7 +67,7 @@ class Operators:
         torch.Tensor
             Derivative of each element of f.
         """
-        coord = getattr(self.coords, coord_label)
+        coord = self.coords.get_coord(coord_label)
         # Compute gradient wrt the specific coordinate
         df_dcoord = torch.autograd.grad(
             outputs=f,
@@ -90,10 +97,10 @@ class Operators:
         """
         # Coordinate system dimensions
         dim_geometry = self.dim_geometry
-        coords_geometric = self.coords_geometric
+        coords_geometric = self.coords.geometric
 
         # Validate input tensors
-        n_points = self.n_points
+        n_points = self.coords.n_points
         validate_pytorch_tensor(f, (n_points,))
         validate_pytorch_tensor(coords_geometric, (n_points, dim_geometry))
 
@@ -160,8 +167,8 @@ class Operators:
         """
         # Coordinate system dimensions
         dim_geometry = self.dim_geometry
-        coords_geometric = self.coords_geometric
-        n_points = self.n_points
+        coords_geometric = self.coords.geometric
+        n_points = self.coords.n_points
 
         # Validate inputs
         validate_pytorch_tensor(v1, (n_points, dim_geometry))
@@ -204,8 +211,8 @@ class Operators:
         """
         # Coordinate system dimensions
         dim_geometry = self.dim_geometry
-        coords_geometric = self.coords_geometric
-        n_points = self.n_points
+        coords_geometric = self.coords.geometric
+        n_points = self.coords.n_points
 
         # Validate inputs
         validate_pytorch_tensor(contra_v, (n_points, dim_geometry))
@@ -218,7 +225,7 @@ class Operators:
         contra_div_v = torch.zeros(n_points, device=self.device)
 
         for i, coord_label in enumerate(self.geometric_labels):
-            coord = getattr(self.coords, coord_label)
+            coord = self.coords.get_coord(coord_label)
             deriv_ii = torch.autograd.grad(
                 outputs=inner_term[:, i],
                 inputs=coord,
@@ -255,11 +262,11 @@ class Operators:
         """
         # Coordinate system dimensions
         dim_geometry = self.dim_geometry
-        coords_geometric = self.coords_geometric
+        coords_geometric = self.coords.geometric
 
         # Validate inputs
-        validate_pytorch_tensor(v, (self.n_points, dim_geometry))
-        validate_pytorch_tensor(coords_geometric, (self.n_points, dim_geometry))
+        validate_pytorch_tensor(v, (self.coords.n_points, dim_geometry))
+        validate_pytorch_tensor(coords_geometric, (self.coords.n_points, dim_geometry))
 
         # Get v in contravariant basis
         contra_v = v / self.scale_factors
@@ -288,9 +295,9 @@ class Operators:
         """
         # Validate input tensors
         dim_geometry = self.dim_geometry
-        coords_geometric = self.coords_geometric
-        validate_pytorch_tensor(f, (self.n_points,))
-        validate_pytorch_tensor(coords_geometric, (self.n_points, dim_geometry))
+        coords_geometric = self.coords.geometric
+        validate_pytorch_tensor(f, (self.coords.n_points,))
+        validate_pytorch_tensor(coords_geometric, (self.coords.n_points, dim_geometry))
 
         # Get contravariant grad of f
         contra_grad_f = self.contravariant_grad(f)
@@ -320,9 +327,9 @@ class Operators:
         """
         # Validate input tensors
         dim_geometry = self.dim_geometry
-        coords_geometric = self.coords_geometric
-        validate_pytorch_tensor(v, (self.n_points, dim_geometry))
-        validate_pytorch_tensor(coords_geometric, (self.n_points, dim_geometry))
+        coords_geometric = self.coords.geometric
+        validate_pytorch_tensor(v, (self.coords.n_points, dim_geometry))
+        validate_pytorch_tensor(coords_geometric, (self.coords.n_points, dim_geometry))
 
         # Compute Laplacian component-wise
         laplacian_v = torch.stack(
