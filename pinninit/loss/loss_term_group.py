@@ -43,9 +43,6 @@ class LossTermGroup:
         self.available_fields_params = available_fields_params
         self.available_equations_params = available_equations_params
         self.device = device
-        self.batch_size = batch_size
-        self.shuffle_train = shuffle_train
-        self.num_workers = num_workers
 
         # Check that all coords have same dimensions
         assert (
@@ -63,8 +60,15 @@ class LossTermGroup:
             self.val_coords, val_input_fields, input_consts
         )
 
-        # Init data loaders
+        # Init batching
+        self._default_batch_size = batch_size
+        self._default_shuffle_train = shuffle_train
+        self._default_num_workers = num_workers
+        self.batch_size = self._default_batch_size
+        self.shuffle_train = self._default_shuffle_train
+        self.num_workers = self._default_num_workers
         self._init_data_loaders()
+        self.is_default_batching = True
 
         # Init loss terms as empty group
         self.loss_terms: list[LossTerm] = []
@@ -121,6 +125,50 @@ class LossTermGroup:
                 num_workers=self.num_workers,
                 collate_fn=torch.utils.data.default_collate,
                 pin_memory=torch.cuda.is_available(),
+            )
+
+    def set_batching(
+        self,
+        batch_size: int | None,
+        shuffle_train: bool = True,
+        num_workers: int = 0,
+    ) -> None:
+        if (
+            batch_size == self._default_batch_size
+            and shuffle_train == self._default_shuffle_train
+            and num_workers == self._default_num_workers
+        ):
+            # If values given are defaults, then reset to default
+            self.reset_to_default_batching()
+        else:
+            # Else update to new values
+            self.batch_size = batch_size
+            self.shuffle_train = shuffle_train
+            self.num_workers = num_workers
+            self._init_data_loaders()
+            self.is_default_batching = False
+
+            # Print message
+            print(
+                f"Updated batching of {self.__class__.__name__} (id={id(self)}): "
+                f"batch_size={self.batch_size}, shuffle_train={self.shuffle_train}, "
+                f"num_workers={self.num_workers}"
+            )
+
+    def reset_to_default_batching(self) -> None:
+        # Only reset if not already default
+        if not self.is_default_batching:
+            self.batch_size = self._default_batch_size
+            self.shuffle_train = self._default_shuffle_train
+            self.num_workers = self._default_num_workers
+            self._init_data_loaders()
+            self.is_default_batching = True
+
+            # Print message
+            print(
+                f"Reset batching of {self.__class__.__name__} (id={id(self)}): "
+                f"batch_size={self.batch_size}, shuffle_train={self.shuffle_train}, "
+                f"num_workers={self.num_workers}"
             )
 
     def add(self, loss_term: LossTerm) -> None:

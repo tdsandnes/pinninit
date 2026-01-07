@@ -21,8 +21,9 @@ class OptimizerLabels(str, Enum):
 
 
 class Optimizer(ABC):
-    def __init__(self, optimizer: optim.Optimizer):
+    def __init__(self, optimizer: optim.Optimizer, requires_full_batch: bool):
         self.optimizer = optimizer
+        self.requires_full_batch = requires_full_batch
         self._trainer: Trainer | None = None
 
     @abstractmethod
@@ -45,9 +46,12 @@ class Optimizer(ABC):
 
 
 class Adam(Optimizer):
+    # Class attributes
+    requires_full_batch = False
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         optimizer = optim.Adam(*args, **kwargs)
-        super().__init__(optimizer)
+        super().__init__(optimizer, self.__class__.requires_full_batch)
 
     def attach_trainer(self, trainer: Trainer) -> None:
         self._trainer = trainer
@@ -65,9 +69,12 @@ class Adam(Optimizer):
 
 
 class LBFGS(Optimizer):
+    # Class attributes
+    requires_full_batch = True
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         optimizer = optim.LBFGS(*args, **kwargs)
-        super().__init__(optimizer)
+        super().__init__(optimizer, self.__class__.requires_full_batch)
 
     def attach_trainer(self, trainer: Trainer) -> None:
         self._trainer = trainer

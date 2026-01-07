@@ -87,9 +87,20 @@ class Trainer:
         else:
             raise KeyError(f"Stop barrier '{name}' not found.")
 
-    def step(
-        self,
-    ) -> None:
+    def _prepare_for_step(self) -> None:
+        # Set batching of loss term groups if needed
+        if self.optimizer.requires_full_batch:
+            for group in self.loss_groups.values():
+                group.set_batching(batch_size=None)
+        else:
+            for group in self.loss_groups.values():
+                if not group.is_default_batching:
+                    group.reset_to_default_batching()
+
+        # Prepare optimizer for step
+        self.optimizer.prepare_for_step()
+
+    def step(self) -> None:
         # Execute all trainer modules at start of step
         for module in self.trainer_modules:
             module.on_step_start(self)
@@ -102,7 +113,7 @@ class Trainer:
         self.compute_val_loss()
 
         # Update the model parameters
-        self.optimizer.prepare_for_step()
+        self._prepare_for_step()
         self.optimizer.step()
 
         # Update best model if needed
