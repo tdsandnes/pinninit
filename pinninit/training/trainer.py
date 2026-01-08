@@ -153,7 +153,7 @@ class Trainer:
         for module in self.trainer_modules:
             module.on_train_start(self)
 
-        self.iter = 0
+        self.iter = 1
         while not self.ready_to_stop():
             # Step the trainer
             self.step()
@@ -244,7 +244,7 @@ class Trainer:
     ### Directs to a polymorphic EarlyStopping class in a early_stopping.py
 
     def print_status(self, verbosity: int = 1) -> None:
-        if self.iter % 500 == 0:
+        if (self.iter - 1) % 500 == 0:
             ### temp
 
             train_losses = [loss.item() for loss in self.pre_step_group_train_losses]
@@ -253,9 +253,17 @@ class Trainer:
                 weights[-1] for weights in self.pre_step_loss_weight_history.values()
             ]
 
+            ### Note (self.iter - 1) here because quantities are pre-step
+            iter_str = (
+                "Initial state"
+                if (self.iter - 1) == 0
+                else f"State after iter {(self.iter - 1)}"
+            )
             print(
-                f"Iter: {self.iter}, "
-                f"Training Loss: {train_losses}, "
-                f"Validation Loss: {val_losses}, "
-                f"Loss Term Group Weights: {loss_weights}, "
+                "-------------------------------------------------------------------\n"
+                f"{iter_str}: \n"
+                "-------------------------------------------------------------------\n"
+                f"Training Loss: {sum(train_losses)} ({train_losses}), \n"
+                f"Validation Loss: {sum(val_losses)} ({val_losses}), \n"
+                f"Loss group weights: {loss_weights},"
             )

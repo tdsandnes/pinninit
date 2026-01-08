@@ -9,10 +9,15 @@ class UpdateOptimizer(TrainerModule):
     """Trainer module for updating the optimizer based on validation loss."""
 
     def __init__(
-        self, new_optimizer: Optimizer, patience: int, frac_tol: float = 0.0
+        self,
+        new_optimizer: Optimizer,
+        patience: int,
+        frac_tol: float = 0.0,
+        min_iter: int = 0,
     ) -> None:
         self.patience = patience
         self.frac_tol = frac_tol
+        self.min_iter = min_iter
         self.new_optimizer = new_optimizer
         self.updated = False
 
@@ -37,7 +42,7 @@ class UpdateOptimizer(TrainerModule):
         self.plateau_detector.step(trainer.post_step_val_loss)
 
         # If validation loss has plateaued, update optimizer
-        if self.plateau_detector.plateau_detected:
+        if self.plateau_detector.plateau_detected and trainer.iter >= self.min_iter:
             trainer.optimizer = self.new_optimizer
             trainer.optimizer.attach_trainer(trainer)
             self.updated = True

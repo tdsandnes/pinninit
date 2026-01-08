@@ -313,16 +313,35 @@ class PINN:
         )
         patience = 2000
         frac_tol = 1e-1
-        update_optimizer = UpdateOptimizer(new_optimizer, patience, frac_tol)
+        min_iter = 10000
+        update_optimizer = UpdateOptimizer(
+            new_optimizer=new_optimizer,
+            patience=patience,
+            frac_tol=frac_tol,
+            min_iter=min_iter,
+        )
         patience = 500
         frac_tol = 0.0
-        early_stopping = EarlyStopping(patience, frac_tol)
+        min_iter = 0
+        early_stopping = EarlyStopping(
+            patience=patience, frac_tol=frac_tol, min_iter=min_iter
+        )
         trainer_hooks = [update_optimizer, early_stopping]
         ### Hardcode this for now
         if hasattr(self.pinn_params.loss_terms_params, "weight_methods"):
-            for method_cfg in self.pinn_params.loss_terms_params.weight_methods:
-                if method_cfg["label"] == "adaptive_W21":
-                    update_weights = UpdateLossTermWeightsW21(method_cfg)
+            for weight_method in self.pinn_params.loss_terms_params.weight_methods:
+                if weight_method["label"] == "adaptive_W21":
+                    reference_group_label = weight_method["reference_weight_group"]
+                    alpha = weight_method["alpha"]
+                    update_frequency = weight_method.get("update_frequency", 1)
+                    min_iter = weight_method.get("min_iter", 0)
+
+                    update_weights = UpdateLossTermWeightsW21(
+                        reference_group_label=reference_group_label,
+                        alpha=alpha,
+                        update_frequency=update_frequency,
+                        min_iter=min_iter,
+                    )
                     trainer_hooks.append(update_weights)
 
         # Init trainer

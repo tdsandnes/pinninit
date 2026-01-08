@@ -8,7 +8,7 @@ from ..loss.loss_term_group import LossTermGroup
 from .trainer import Trainer, TrainerModule
 
 if TYPE_CHECKING:
-    from typing import Any
+    pass
 
 
 class UpdateLossTermWeightsW21(TrainerModule):
@@ -16,11 +16,17 @@ class UpdateLossTermWeightsW21(TrainerModule):
     Adaptive loss term weights following Wang et al. (2021).
     """
 
-    def __init__(self, method_params: dict[str, Any]):
-        self.label = method_params["label"]  ### Make this enum
-        self.ref_group_label = method_params["reference_weight_group"]
-        self.update_freq = method_params["update_frequency"]
-        self.alpha = method_params["alpha"]
+    def __init__(
+        self,
+        reference_group_label: str,
+        alpha: float,
+        update_frequency: int = 1,
+        min_iter: int = 0,
+    ):
+        self.reference_group_label = reference_group_label
+        self.alpha = alpha
+        self.update_frequency = update_frequency
+        self.min_iter = min_iter
 
         # Maps weight_group_label to LossTermGroup
         self.adaptive_groups: dict[str, LossTermGroup] = {}
@@ -31,12 +37,9 @@ class UpdateLossTermWeightsW21(TrainerModule):
 
         for group in trainer.loss_groups.values():
             # Initialise adaptive groups
-            if group.weight_method_label == self.label:
+            if group.weight_method_label == "adaptive_W21":  ### Make this enum
                 if group.weight_group_label is None:
-                    raise ValueError(
-                        "Parameter 'weight_group_label' required for loss term weight "
-                        f"method {self.label}."
-                    )
+                    raise ValueError("Parameter 'weight_group_label' not given.")
 
                 self.adaptive_groups[group.weight_group_label] = group
                 if group.initial_weight is None:
@@ -49,24 +52,24 @@ class UpdateLossTermWeightsW21(TrainerModule):
                 group.weight = group.initial_weight
 
             # Identify reference group
-            if group.weight_group_label == self.ref_group_label:
+            if group.weight_group_label == self.reference_group_label:
                 self.reference_group = group
                 if group.weight_method_label != "constant":  ### Make this enum
                     raise ValueError(
-                        f"Reference group '{self.ref_group_label}' must use "
+                        f"Reference group '{self.reference_group_label}' must use "
                         f"constant weighting, not '{group.weight_method_label}'."
                     )
 
         if self.reference_group is None:
             raise ValueError(
-                f"Reference weight group '{self.ref_group_label}' not found."
+                f"Reference weight group '{self.reference_group_label}' not found."
             )
 
     def on_step_start(self, trainer: Trainer) -> None:
         pass
 
     def on_step_end(self, trainer: Trainer) -> None:
-        if trainer.iter > 0 and trainer.iter % self.update_freq == 0:
+        if trainer.iter >= self.min_iter and trainer.iter % self.update_frequency == 0:
             self._update_weights(trainer)
 
     def on_train_end(self, trainer: Trainer) -> None:
@@ -99,7 +102,7 @@ class UpdateLossTermWeightsW21(TrainerModule):
         # Reference group weight gradient
         if self.reference_group is None:
             raise RuntimeError(
-                f"Reference weight group '{self.ref_group_label}' is not set."
+                f"Reference weight group '{self.reference_group_label}' is not set."
             )
         ref_grad = self._get_group_grad_stats(trainer, self.reference_group)
         ref_max = torch.max(ref_grad)

@@ -7,9 +7,10 @@ from .training_utils import LossPlateauDetector
 class EarlyStopping(TrainerModule):
     """Trainer module for early stopping based on validation loss."""
 
-    def __init__(self, patience: int, frac_tol: float = 0.0) -> None:
+    def __init__(self, patience: int, frac_tol: float = 0.0, min_iter: int = 0) -> None:
         self.patience = patience
         self.frac_tol = frac_tol
+        self.min_iter = min_iter
 
     def on_train_start(self, trainer: Trainer) -> None:
         self.plateau_detector = LossPlateauDetector(self.patience, self.frac_tol)
@@ -25,7 +26,7 @@ class EarlyStopping(TrainerModule):
         self.plateau_detector.step(trainer.post_step_val_loss)
 
         # If validation loss has plateaued, request stop
-        if self.plateau_detector.plateau_detected:
+        if self.plateau_detector.plateau_detected and trainer.iter >= self.min_iter:
             trainer._stop_requested = True
 
     def on_state_change(self, trainer: Trainer) -> None:
