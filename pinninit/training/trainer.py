@@ -55,8 +55,8 @@ class Trainer:
 
         # Initialise training state
         self.iter: int = 0
-        self.pre_step_train_loss_history: list[float] = []
-        self.pre_step_val_loss_history: list[float] = []
+        self.pre_step_train_loss_history: list[list[float]] = []
+        self.pre_step_val_loss_history: list[list[float]] = []
         self.best_post_step_val_loss: float | None = None
         self.best_model_state: dict[str, torch.Tensor] | None = None
         self._stop_requested: bool = False
@@ -171,38 +171,56 @@ class Trainer:
 
     def compute_train_loss(self) -> torch.Tensor:
         #  Compute training loss
-        group_train_losses = [
-            group.compute_loss_train(self.model) for group in self.loss_groups.values()
+        group_unweighted_train_losses = [
+            group.compute_unweighted_loss_train(self.model)
+            for group in self.loss_groups.values()
         ]
-        train_loss = torch.stack(group_train_losses).sum()
+        group_weighted_train_losses = [
+            group.weight * loss
+            for group, loss in zip(
+                self.loss_groups.values(), group_unweighted_train_losses, strict=True
+            )
+        ]
+        train_loss = torch.stack(group_weighted_train_losses).sum()
 
         # Store training loss if this is the first time computating it in a step
         key = self.compute_train_loss.__name__
         if self._first_call_in_step_registry[key]:
-            self.pre_step_group_train_losses = [
-                loss.detach() for loss in group_train_losses
+            self.pre_step_unweighted_group_train_losses = [
+                loss.detach() for loss in group_unweighted_train_losses
             ]
             self.pre_step_train_loss = train_loss.detach()
-            self.pre_step_train_loss_history.append(self.pre_step_train_loss.item())
+            self.pre_step_train_loss_history.append(
+                [loss.item() for loss in self.pre_step_unweighted_group_train_losses]
+            )
             self._first_call_in_step_registry[key] = False
 
         return train_loss
 
     def compute_val_loss(self) -> torch.Tensor:
         #  Compute validation loss
-        group_val_losses = [
-            group.compute_loss_val(self.model) for group in self.loss_groups.values()
+        group_unweighted_val_losses = [
+            group.compute_unweighted_loss_val(self.model)
+            for group in self.loss_groups.values()
         ]
-        val_loss = torch.stack(group_val_losses).sum()
+        group_weighted_val_losses = [
+            group.weight * loss
+            for group, loss in zip(
+                self.loss_groups.values(), group_unweighted_val_losses, strict=True
+            )
+        ]
+        val_loss = torch.stack(group_weighted_val_losses).sum()
 
         # Store validation loss if this is the first time computating it in a step
         key = self.compute_val_loss.__name__
         if self._first_call_in_step_registry[key]:
-            self.pre_step_group_val_losses = [
-                loss.detach() for loss in group_val_losses
+            self.pre_step_unweighted_group_val_losses = [
+                loss.detach() for loss in group_unweighted_val_losses
             ]
             self.pre_step_val_loss = val_loss.detach()
-            self.pre_step_val_loss_history.append(self.pre_step_val_loss.item())
+            self.pre_step_val_loss_history.append(
+                [loss.item() for loss in self.pre_step_unweighted_group_val_losses]
+            )
             self._first_call_in_step_registry[key] = False
 
         return val_loss
@@ -247,8 +265,12 @@ class Trainer:
         if (self.iter - 1) % 500 == 0:
             ### temp
 
-            train_losses = [loss.item() for loss in self.pre_step_group_train_losses]
-            val_losses = [loss.item() for loss in self.pre_step_group_val_losses]
+            train_losses = [
+                loss.item() for loss in self.pre_step_unweighted_group_train_losses
+            ]
+            val_losses = [
+                loss.item() for loss in self.pre_step_unweighted_group_val_losses
+            ]
             loss_weights = [
                 weights[-1] for weights in self.pre_step_loss_weight_history.values()
             ]
@@ -263,7 +285,9 @@ class Trainer:
                 "-------------------------------------------------------------------\n"
                 f"{iter_str}: \n"
                 "-------------------------------------------------------------------\n"
-                f"Training Loss: {sum(train_losses)} ({train_losses}), \n"
-                f"Validation Loss: {sum(val_losses)} ({val_losses}), \n"
+                f"Training Loss: weighted sum: {self.pre_step_train_loss} (unweighted "
+                f"contributions: {train_losses}), \n"
+                f"Validation Loss: weighted sum: {self.pre_step_val_loss} (unweighted "
+                f"contributions: {val_losses}), \n"
                 f"Loss group weights: {loss_weights},"
             )

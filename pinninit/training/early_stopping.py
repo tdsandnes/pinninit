@@ -22,12 +22,14 @@ class EarlyStopping(TrainerModule):
         pass
 
     def on_step_end(self, trainer: Trainer) -> None:
-        # Update loss plateau detector
-        self.plateau_detector.step(trainer.post_step_val_loss)
+        # Wait until min_iter to update plateau detector
+        if trainer.iter >= self.min_iter:
+            # Update loss plateau detector
+            self.plateau_detector.step(trainer.post_step_val_loss)
 
-        # If validation loss has plateaued, request stop
-        if self.plateau_detector.plateau_detected and trainer.iter >= self.min_iter:
-            trainer._stop_requested = True
+            # If validation loss has plateaued, request stop
+            if self.plateau_detector.plateau_detected:
+                trainer._stop_requested = True
 
     def on_state_change(self, trainer: Trainer) -> None:
         # Reset counter if another module changed trainer state

@@ -19,7 +19,7 @@ class UpdateLossTermWeightsW21(TrainerModule):
     def __init__(
         self,
         reference_group_label: str,
-        alpha: float,
+        alpha: float = 0.1,  # NOTE: outdated arxiv version of W+21 has incorrect value
         update_frequency: int = 1,
         min_iter: int = 0,
     ):
@@ -66,11 +66,11 @@ class UpdateLossTermWeightsW21(TrainerModule):
             )
 
     def on_step_start(self, trainer: Trainer) -> None:
-        pass
-
-    def on_step_end(self, trainer: Trainer) -> None:
         if trainer.iter >= self.min_iter and trainer.iter % self.update_frequency == 0:
             self._update_weights(trainer)
+
+    def on_step_end(self, trainer: Trainer) -> None:
+        pass
 
     def on_train_end(self, trainer: Trainer) -> None:
         pass
@@ -78,45 +78,41 @@ class UpdateLossTermWeightsW21(TrainerModule):
     def on_state_change(self, trainer: Trainer) -> None:
         pass
 
-    def _get_group_grad_stats(
-        self, trainer: Trainer, group: LossTermGroup
-    ) -> torch.Tensor:
-        trainer.optimizer.optimizer.zero_grad()
-
-        loss = group.compute_loss_train(trainer.model)
-        loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
-
-        grads = []
-        for param in trainer.model.parameters():
-            if param.requires_grad and param.grad is not None:
-                grads.append(param.grad.abs().reshape(-1))
-
-        if not grads:
-            raise RuntimeError(
-                f"Error computing grad for loss group '{group.weight_group_label}'."
-            )
-
-        return torch.cat(grads).detach()
-
     def _update_weights(self, trainer: Trainer) -> None:
-        # Reference group weight gradient
         if self.reference_group is None:
             raise RuntimeError(
-                f"Reference weight group '{self.reference_group_label}' is not set."
+                f"Reference group '{self.reference_group_label}' not set."
             )
-        ref_grad = self._get_group_grad_stats(trainer, self.reference_group)
-        ref_max = torch.max(ref_grad)
 
-        # Update weights of adaptive groups
+        # Compute gradients for the reference group
+        ref_loss = self.reference_group.compute_unweighted_loss_train(trainer.model)
+        ref_grads = torch.autograd.grad(
+            ref_loss,
+            list(trainer.model.parameters()),
+            retain_graph=True,
+            allow_unused=True,
+        )
+        ref_grads_flat = torch.cat(
+            [g.detach().reshape(-1) for g in ref_grads if g is not None]
+        )
+        ref_max_abs = torch.max(ref_grads_flat.abs())
+
+        # Compute and update adaptive groups
         for group in self.adaptive_groups.values():
-            grad = self._get_group_grad_stats(trainer, group)
-            target_mean = torch.mean(grad)
+            group_loss = group.compute_unweighted_loss_train(trainer.model)
+            grads = torch.autograd.grad(
+                group_loss,
+                list(trainer.model.parameters()),
+                retain_graph=True,
+                allow_unused=True,
+            )
+            grads_flat = torch.cat(
+                [g.detach().reshape(-1) for g in grads if g is not None]
+            )
+            group_mean_abs = torch.mean(grads_flat.abs())
 
             # Wang et al. (2021) Eqn. 40
-            lambda_hat = ref_max / target_mean
+            lambda_hat = ref_max_abs / group_mean_abs
 
             # Wang et al. (2021) Eqn. 41
             group.weight = (1 - self.alpha) * group.weight + self.alpha * lambda_hat
-
-        # Clean up
-        trainer.optimizer.optimizer.zero_grad()

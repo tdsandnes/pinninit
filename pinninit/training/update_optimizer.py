@@ -38,21 +38,23 @@ class UpdateOptimizer(TrainerModule):
         if self.updated:
             return
 
-        # Update loss plateau detector
-        self.plateau_detector.step(trainer.post_step_val_loss)
+        # Wait until min_iter to update plateau detector
+        if trainer.iter >= self.min_iter:
+            # Update loss plateau detector
+            self.plateau_detector.step(trainer.post_step_val_loss)
 
-        # If validation loss has plateaued, update optimizer
-        if self.plateau_detector.plateau_detected and trainer.iter >= self.min_iter:
-            trainer.optimizer = self.new_optimizer
-            trainer.optimizer.attach_trainer(trainer)
-            self.updated = True
-            print(f"Optimizer updated on iteration {trainer.iter}.")
+            # If validation loss has plateaued, update optimizer
+            if self.plateau_detector.plateau_detected:
+                trainer.optimizer = self.new_optimizer
+                trainer.optimizer.attach_trainer(trainer)
+                self.updated = True
+                print(f"Optimizer updated on iteration {trainer.iter}.")
 
-            # Remove stop barrier
-            trainer._update_stop_barrier(self.__class__.__name__, True)
+                # Remove stop barrier
+                trainer._update_stop_barrier(self.__class__.__name__, True)
 
-            # Notify trainer that its state has changed
-            trainer._state_updated = True
+                # Notify trainer that its state has changed
+                trainer._state_updated = True
 
     def on_state_change(self, trainer: Trainer) -> None:
         pass

@@ -312,7 +312,7 @@ class PINN:
             ### Currently just use defaults here
         )
         patience = 2000
-        frac_tol = 1e-1
+        frac_tol = 0.0
         min_iter = 10000
         update_optimizer = UpdateOptimizer(
             new_optimizer=new_optimizer,
@@ -320,9 +320,9 @@ class PINN:
             frac_tol=frac_tol,
             min_iter=min_iter,
         )
-        patience = 500
+        patience = 2000
         frac_tol = 0.0
-        min_iter = 0
+        min_iter = 10000
         early_stopping = EarlyStopping(
             patience=patience, frac_tol=frac_tol, min_iter=min_iter
         )

@@ -282,13 +282,10 @@ class LossTermGroup:
         output_data: CoordDataContainer,
     ) -> torch.Tensor:
         # Add contributions from all loss terms
-        unweighted = torch.tensor(0.0, device=self.device)
-
-        for loss_term in self.loss_terms:
-            unweighted += loss_term.compute_loss(input_data, output_data)
-
-        # Apply weight
-        return self.weight * unweighted
+        losses = [
+            term.compute_loss(input_data, output_data) for term in self.loss_terms
+        ]
+        return torch.stack(losses).sum()
 
     def _compute_loss_batched(
         self,
@@ -330,12 +327,22 @@ class LossTermGroup:
             self._apply_model_at_coords(model, coords, output_data)
             return self._compute_loss(input_data, output_data)
 
-    def compute_loss_train(self, model: NeuralNetwork) -> torch.Tensor:
+    def compute_unweighted_loss_train(self, model: NeuralNetwork) -> torch.Tensor:
         return self._compute_loss_batched(
             model, self.train_input_data, self.train_output_data, self.train_loader
         )
 
-    def compute_loss_val(self, model: NeuralNetwork) -> torch.Tensor:
+    def compute_unweighted_loss_val(self, model: NeuralNetwork) -> torch.Tensor:
         return self._compute_loss_batched(
+            model, self.val_input_data, self.val_output_data, self.val_loader
+        )
+
+    def compute_weighted_loss_train(self, model: NeuralNetwork) -> torch.Tensor:
+        return self.weight * self._compute_loss_batched(
+            model, self.train_input_data, self.train_output_data, self.train_loader
+        )
+
+    def compute_weighted_loss_val(self, model: NeuralNetwork) -> torch.Tensor:
+        return self.weight * self._compute_loss_batched(
             model, self.val_input_data, self.val_output_data, self.val_loader
         )
