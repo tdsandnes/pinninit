@@ -27,7 +27,6 @@ class EarlyStopping(TrainerModule):
         # If validation loss has plateaued, request stop
         if self.plateau_detector.plateau_detected:
             trainer._stop_requested = True
-            print(f"Early stopping requested on iteration {trainer.iter}.")
 
     def on_state_change(self, trainer: Trainer) -> None:
         # Reset counter if another module changed trainer state

@@ -188,7 +188,7 @@ class PINN:
                 val_fields = None
 
             ### Hardcode these for now
-            batch_size = 4096
+            batch_size = None  # 4096
             shuffle_train = True
             num_workers = 0
 
@@ -304,8 +304,8 @@ class PINN:
             list(self.model.parameters()) + list(self.learnt_consts.values()),
             ### Currently just use defaults here
         )
-        patience = 500
-        frac_tol = 0.0  # 1e-1
+        patience = 2000
+        frac_tol = 1e-1
         update_optimizer = UpdateOptimizer(new_optimizer, patience, frac_tol)
         patience = 500
         frac_tol = 0.0

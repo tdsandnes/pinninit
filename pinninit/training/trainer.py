@@ -55,8 +55,8 @@ class Trainer:
 
         # Initialise training state
         self.iter: int = 0
-        self.train_loss_history: list[torch.Tensor] = []
-        self.val_loss_history: list[torch.Tensor] = []
+        self.train_loss_history: list[float] = []
+        self.val_loss_history: list[float] = []
         self.best_val_loss: float | None = None
         self.best_model_state: dict[str, torch.Tensor] | None = None
         self._stop_requested: bool = False
@@ -167,7 +167,7 @@ class Trainer:
         if self._first_call_in_step_registry[key]:
             self.group_train_losses = [loss.detach() for loss in group_train_losses]
             self.train_loss = train_loss.detach()
-            self.train_loss_history.append(self.train_loss)
+            self.train_loss_history.append(self.train_loss.item())
             self._first_call_in_step_registry[key] = False
 
         return train_loss
@@ -184,7 +184,7 @@ class Trainer:
         if self._first_call_in_step_registry[key]:
             self.group_val_losses = [loss.detach() for loss in group_val_losses]
             self.val_loss = val_loss.detach()
-            self.val_loss_history.append(self.val_loss)
+            self.val_loss_history.append(self.val_loss.item())
             self._first_call_in_step_registry[key] = False
 
         return val_loss

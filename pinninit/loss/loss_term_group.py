@@ -137,6 +137,14 @@ class LossTermGroup:
         shuffle_train: bool = True,
         num_workers: int = 0,
     ) -> None:
+        # Early return if already has these exact settings
+        if (
+            batch_size == self.batch_size
+            and shuffle_train == self.shuffle_train
+            and num_workers == self.num_workers
+        ):
+            return
+
         if (
             batch_size == self._default_batch_size
             and shuffle_train == self._default_shuffle_train
