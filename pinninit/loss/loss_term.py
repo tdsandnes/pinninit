@@ -23,23 +23,16 @@ class LossTermLabels(str, Enum):
 class LossTerm(ABC):
     """Base class for loss terms"""
 
-    ### str for now but make all these enum
     def __init__(
         self,
         field_label: str,
-        component_index: int,
+        component_idx: int,
         loss_function_label: LossFunctionLabels,
-        weight_method_label: str,
-        weight_value_label: str,
     ):
         self.field_label = field_label
-        self.component_index = component_index
+        self.component_idx = component_idx
         self.loss_function_label = loss_function_label
-        # Look up the loss function in registry
         self.loss_func = LOSS_FUNCTION_REGISTRY[loss_function_label]
-        self.weight_method_label = weight_method_label
-        ### Temp until better way of handling different methods
-        self.weight_value_label = weight_value_label
 
     @abstractmethod
     def compute_loss(
@@ -97,50 +90,6 @@ class LossTerm(ABC):
         assert isinstance(loss, torch.Tensor), f"Loss returned {type(loss)}"
         return loss
 
-    def _compute_weight(self) -> torch.Tensor:
-        """
-        Computes the weight of the loss term.
-
-        ### Temp: currently just return scalar self.weight_value_label. Ideally want
-        ### this to go to a loss_weights.py file where we can add various constant
-        and adaptive methods.
-        """
-        ### Temp until better way of handling different methods
-        return torch.tensor(self.weight_value_label)
-
-    def _compute_weighted_loss(
-        self,
-        f_pred: torch.Tensor | None = None,
-        f_target: torch.Tensor | None = None,
-        f_residual: torch.Tensor | None = None,
-    ) -> torch.Tensor:
-        """
-        Computes product of loss and the weight of the loss term.
-
-        There are two valid ways to call this function:
-            (1) Provide both f_pred and f_target
-            (2) Provide f_residual only
-
-        Parameters
-        ----------
-        f_pred : torch.Tensor, optional
-            Predicted function values.
-        f_target : torch.Tensor, optional
-            Target function values.
-        f_residual : torch.Tensor, optional
-            Precomputed residual (f_pred - f_target)
-
-        Returns
-        -------
-        torch.Tensor
-            Weighted loss term.
-        """
-        weight = self._compute_weight()
-        loss = self._compute_loss(
-            f_pred=f_pred, f_target=f_target, f_residual=f_residual
-        )
-        return weight * loss
-
 
 class DataLoss(LossTerm):
     """Data loss term"""
@@ -148,21 +97,17 @@ class DataLoss(LossTerm):
     def __init__(
         self,
         field_label: str,
-        component_index: int,
-        loss_function: LossFunctionLabels,
-        weight_method: str,
-        weight_value: str,
+        component_idx: int,
+        loss_function_label: LossFunctionLabels,
     ):
-        super().__init__(
-            field_label, component_index, loss_function, weight_method, weight_value
-        )
+        super().__init__(field_label, component_idx, loss_function_label)
 
     def compute_target_value(
         self,
         input_data: CoordDataContainer,
     ) -> torch.Tensor:
         return input_data.get_field(self.field_label).component_tensor[
-            :, self.component_index
+            :, self.component_idx
         ]
 
     def compute_predicted_value(
@@ -170,7 +115,7 @@ class DataLoss(LossTerm):
         output_data: CoordDataContainer,
     ) -> torch.Tensor:
         return output_data.get_field(self.field_label).component_tensor[
-            :, self.component_index
+            :, self.component_idx
         ]
 
     def compute_residual(
@@ -189,7 +134,7 @@ class DataLoss(LossTerm):
     ) -> torch.Tensor:
         f_target = self.compute_target_value(input_data)
         f_pred = self.compute_predicted_value(output_data)
-        return self._compute_weighted_loss(f_target=f_target, f_pred=f_pred)
+        return self._compute_loss(f_target=f_target, f_pred=f_pred)
 
 
 class PhysicsLoss(LossTerm):
@@ -198,14 +143,10 @@ class PhysicsLoss(LossTerm):
     def __init__(
         self,
         field_label: str,
-        component_index: int,
-        loss_function: LossFunctionLabels,
-        weight_method: str,
-        weight_value: str,
+        component_idx: int,
+        loss_function_label: LossFunctionLabels,
     ):
-        super().__init__(
-            field_label, component_index, loss_function, weight_method, weight_value
-        )
+        super().__init__(field_label, component_idx, loss_function_label)
 
     def compute_residual(
         self,
@@ -213,7 +154,7 @@ class PhysicsLoss(LossTerm):
         output_data: CoordDataContainer,
     ) -> torch.Tensor:
         return output_data.get_field(self.field_label).component_tensor[
-            :, self.component_index
+            :, self.component_idx
         ]
 
     def compute_loss(
@@ -222,7 +163,7 @@ class PhysicsLoss(LossTerm):
         output_data: CoordDataContainer,
     ) -> torch.Tensor:
         f_residual = self.compute_residual(input_data, output_data)
-        return self._compute_weighted_loss(f_residual=f_residual)
+        return self._compute_loss(f_residual=f_residual)
 
 
 # Mapping from loss term labels to classes

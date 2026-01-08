@@ -70,6 +70,11 @@ class Trainer:
             if callable(attr)
         }
 
+        # Log loss term weights
+        self.pre_step_loss_weight_history: dict[str, list[float]] = {}
+        for group_label, group in self.loss_groups.items():
+            self.pre_step_loss_weight_history[group_label] = [group.weight.item()]
+
     def ready_to_stop(
         self,
     ) -> bool:
@@ -90,6 +95,10 @@ class Trainer:
     def _prepare_for_step(self) -> None:
         # Store pre-step validation loss
         self.compute_val_loss()
+
+        # Log weights
+        for group_label, group in self.loss_groups.items():
+            self.pre_step_loss_weight_history[group_label].append(group.weight.item())
 
         # Set batching of loss term groups if needed
         if self.optimizer.requires_full_batch:
@@ -240,9 +249,13 @@ class Trainer:
 
             train_losses = [loss.item() for loss in self.pre_step_group_train_losses]
             val_losses = [loss.item() for loss in self.pre_step_group_val_losses]
+            loss_weights = [
+                weights[-1] for weights in self.pre_step_loss_weight_history.values()
+            ]
 
             print(
                 f"Iter: {self.iter}, "
                 f"Training Loss: {train_losses}, "
-                f"Val Loss: {val_losses}, "
+                f"Validation Loss: {val_losses}, "
+                f"Loss Term Group Weights: {loss_weights}, "
             )

@@ -1,0 +1,119 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import torch
+
+from ..loss.loss_term_group import LossTermGroup
+from .trainer import Trainer, TrainerModule
+
+if TYPE_CHECKING:
+    from typing import Any
+
+
+class UpdateLossTermWeightsW21(TrainerModule):
+    """
+    Adaptive loss term weights following Wang et al. (2021).
+    """
+
+    def __init__(self, method_params: dict[str, Any]):
+        self.label = method_params["label"]  ### Make this enum
+        self.ref_group_label = method_params["reference_weight_group"]
+        self.update_freq = method_params["update_frequency"]
+        self.alpha = method_params["alpha"]
+
+        # Maps weight_group_label to LossTermGroup
+        self.adaptive_groups: dict[str, LossTermGroup] = {}
+        self.reference_group: LossTermGroup | None = None
+
+    def on_train_start(self, trainer: Trainer) -> None:
+        self.adaptive_groups.clear()
+
+        for group in trainer.loss_groups.values():
+            # Initialise adaptive groups
+            if group.weight_method_label == self.label:
+                if group.weight_group_label is None:
+                    raise ValueError(
+                        "Parameter 'weight_group_label' required for loss term weight "
+                        f"method {self.label}."
+                    )
+
+                self.adaptive_groups[group.weight_group_label] = group
+                if group.initial_weight is None:
+                    raise ValueError(
+                        f"Initial weight for group "
+                        f"'{group.weight_group_label}' is not given"
+                    )
+
+                # Set group weight
+                group.weight = group.initial_weight
+
+            # Identify reference group
+            if group.weight_group_label == self.ref_group_label:
+                self.reference_group = group
+                if group.weight_method_label != "constant":  ### Make this enum
+                    raise ValueError(
+                        f"Reference group '{self.ref_group_label}' must use "
+                        f"constant weighting, not '{group.weight_method_label}'."
+                    )
+
+        if self.reference_group is None:
+            raise ValueError(
+                f"Reference weight group '{self.ref_group_label}' not found."
+            )
+
+    def on_step_start(self, trainer: Trainer) -> None:
+        pass
+
+    def on_step_end(self, trainer: Trainer) -> None:
+        if trainer.iter > 0 and trainer.iter % self.update_freq == 0:
+            self._update_weights(trainer)
+
+    def on_train_end(self, trainer: Trainer) -> None:
+        pass
+
+    def on_state_change(self, trainer: Trainer) -> None:
+        pass
+
+    def _get_group_grad_stats(
+        self, trainer: Trainer, group: LossTermGroup
+    ) -> torch.Tensor:
+        trainer.optimizer.optimizer.zero_grad()
+
+        loss = group.compute_loss_train(trainer.model)
+        loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
+
+        grads = []
+        for param in trainer.model.parameters():
+            if param.requires_grad and param.grad is not None:
+                grads.append(param.grad.abs().reshape(-1))
+
+        if not grads:
+            raise RuntimeError(
+                f"Error computing grad for loss group '{group.weight_group_label}'."
+            )
+
+        return torch.cat(grads).detach()
+
+    def _update_weights(self, trainer: Trainer) -> None:
+        # Reference group weight gradient
+        if self.reference_group is None:
+            raise RuntimeError(
+                f"Reference weight group '{self.ref_group_label}' is not set."
+            )
+        ref_grad = self._get_group_grad_stats(trainer, self.reference_group)
+        ref_max = torch.max(ref_grad)
+
+        # Update weights of adaptive groups
+        for group in self.adaptive_groups.values():
+            grad = self._get_group_grad_stats(trainer, group)
+            target_mean = torch.mean(grad)
+
+            # Wang et al. (2021) Eqn. 40
+            lambda_hat = ref_max / target_mean
+
+            # Wang et al. (2021) Eqn. 41
+            group.weight = (1 - self.alpha) * group.weight + self.alpha * lambda_hat
+
+        # Clean up
+        trainer.optimizer.optimizer.zero_grad()

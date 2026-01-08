@@ -18,6 +18,7 @@ from ..nn.neural_network import NeuralNetwork
 from ..optimizer.optimizer import OPTIMIZER_REGISTRY, OptimizerLabels
 from ..training.early_stopping import EarlyStopping
 from ..training.trainer import Trainer
+from ..training.update_loss_term_weights import UpdateLossTermWeightsW21
 from ..training.update_optimizer import UpdateOptimizer
 
 
@@ -167,9 +168,12 @@ class PINN:
     def _init_loss(self) -> None:
         # First init loss term groups
         self.loss_term_groups: dict[str, LossTermGroup] = {}
+        loss_terms_params = self.pinn_params.loss_terms_params.terms
 
-        for dataset_label in self.dataset_coords:
+        for loss_term in loss_terms_params:
             # Get training and validation coords
+            loss_term_label = loss_term["field_label"]
+            dataset_label = loss_term["data_set_label"]
             coords = self.dataset_coords[dataset_label]
             train_coord = self.Coords(
                 coord_system=self.coord_system, **coords["training"]
@@ -187,13 +191,22 @@ class PINN:
                 train_fields = None
                 val_fields = None
 
+            # Init loss term group weight
+            weight_method_label = loss_term["weight_method"]
+            weight_group_label = loss_term["weight_group"]
+            initial_weight = torch.tensor(
+                loss_term["weight_value"],
+                device=self.device,
+                requires_grad=False,
+            )
+
             ### Hardcode these for now
             batch_size = None  # 4096
             shuffle_train = True
             num_workers = 0
 
             # Create loss term group
-            self.loss_term_groups[dataset_label] = LossTermGroup(
+            self.loss_term_groups[loss_term_label] = LossTermGroup(
                 train_coords=train_coord,
                 val_coords=val_coord,
                 dim_geometry=self.dim_geometry,
@@ -202,23 +215,17 @@ class PINN:
                 device=self.device,
                 train_input_fields=train_fields,
                 val_input_fields=val_fields,
+                weight_method_label=weight_method_label,
+                weight_group_label=weight_group_label,
+                initial_weight=initial_weight,
                 batch_size=batch_size,
                 shuffle_train=shuffle_train,
                 num_workers=num_workers,
             )
 
-        # Loop over all loss term groups
-        for group_label, loss_group in self.loss_term_groups.items():
-            # Find all loss terms that correspond to this dataset
-            relevant_loss_terms = [
-                term
-                for term in self.pinn_params.loss_terms_params.terms
-                if term["data_set_label"] == group_label
-            ]
-
             # Initialise loss terms in the group
-            loss_group.init_loss_terms_and_add(
-                relevant_loss_terms, self.pinn_params.fields_params
+            self.loss_term_groups[loss_term_label].init_loss_term_and_add(
+                loss_term, self.pinn_params.fields_params
             )
 
     def _init_nn(self) -> None:
@@ -311,6 +318,12 @@ class PINN:
         frac_tol = 0.0
         early_stopping = EarlyStopping(patience, frac_tol)
         trainer_hooks = [update_optimizer, early_stopping]
+        ### Hardcode this for now
+        if hasattr(self.pinn_params.loss_terms_params, "weight_methods"):
+            for method_cfg in self.pinn_params.loss_terms_params.weight_methods:
+                if method_cfg["label"] == "adaptive_W21":
+                    update_weights = UpdateLossTermWeightsW21(method_cfg)
+                    trainer_hooks.append(update_weights)
 
         # Init trainer
         self.trainer = Trainer(
@@ -326,6 +339,7 @@ class PINN:
                 "model_state_dict": self.model.state_dict(),
                 "train_loss_history": self.trainer.pre_step_train_loss_history,
                 "val_loss_history": self.trainer.pre_step_val_loss_history,
+                "loss_weight_history": self.trainer.pre_step_loss_weight_history,
                 ###         "loss_values": self.loss_values,
                 ###         "data_loss_values": self.data_loss_values,
                 ###         "phys_loss_values": self.phys_loss_values,
@@ -348,6 +362,7 @@ class PINN:
         # Restore the additional attributes
         self.train_loss_history = checkpoint["train_loss_history"]
         self.val_loss_history = checkpoint["val_loss_history"]
+        self.loss_weight_history = checkpoint["loss_weight_history"]
 
     ###  self.loss_values = checkpoint.get("loss_values", [])
     ###  self.data_loss_values = checkpoint.get("data_loss_values", [])

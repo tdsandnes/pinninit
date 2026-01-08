@@ -33,6 +33,9 @@ class LossTermGroup:
         train_input_fields: dict[str, Any] | None = None,
         val_input_fields: dict[str, Any] | None = None,
         input_consts: dict[str, Any] | None = None,
+        weight_method_label: str | None = None,
+        weight_group_label: str | None = None,
+        initial_weight: torch.Tensor | None = None,
         batch_size: int | None = None,
         shuffle_train: bool = True,
         num_workers: int = 0,
@@ -58,6 +61,16 @@ class LossTermGroup:
         )
         self.val_input_data, self.val_output_data = self._init_data_containers(
             self.val_coords, val_input_fields, input_consts
+        )
+
+        # Init weight
+        self.weight_method_label = weight_method_label
+        self.weight_group_label = weight_group_label
+        self.initial_weight = initial_weight
+        self.weight = (
+            initial_weight
+            if initial_weight is not None
+            else torch.tensor(1.0, device=self.device)
         )
 
         # Init batching
@@ -187,66 +200,53 @@ class LossTermGroup:
         """Add a specific loss term to the group."""
         self.loss_terms.append(loss_term)
 
-    def init_loss_terms_and_add(
+    def init_loss_term_and_add(
         self,
-        loss_terms: list[dict[str, Any]],
+        loss_term: dict[str, Any],
         fields_params: FieldsParams,
     ) -> None:
-        """Init multiple loss terms and add to group"""
-        # Field label to rank dict
-        fields = (
-            fields_params.input_fields
-            + fields_params.output_fields
-            + fields_params.derivable_fields
-        )
-        field_label_to_rank_dict = {f["label"]: f["rank"] for f in fields}
+        field_label = loss_term["field_label"]
+        loss_type = loss_term["loss_type"]
 
-        # Track which fields are available in each container initially
-        # input_data has input fields loaded, output_data has output fields from NN
-        input_data_has = {f["label"] for f in fields_params.input_fields}
-        output_data_has = {f["label"] for f in fields_params.output_fields}
-
-        for term in loss_terms:
-            field_label = term["field_label"]
-            loss_type = term["loss_type"]
-            rank = field_label_to_rank_dict[field_label]
-            components = 1 if rank == 0 else self.dim_geometry**rank
-
-            # Register field for input_data if it's not already available there
-            if field_label not in input_data_has:
-                self.train_input_data.register_required_field(field_label)
-                self.val_input_data.register_required_field(field_label)
-
-            # Register field for output_data if it's not already available there
-            if field_label not in output_data_has:
-                self.train_output_data.register_required_field(field_label)
-                self.val_output_data.register_required_field(field_label)
-
-            ### Eventually tidy this up with aliases similar to activation function
-            loss_functions = (
-                term["loss_function"] if components > 1 else [term["loss_function"]]
+        # Dict of field to rank
+        field_to_rank = {
+            f["label"]: f["rank"]
+            for f in (
+                fields_params.input_fields
+                + fields_params.output_fields
+                + fields_params.derivable_fields
             )
-            weight_methods = (
-                term["weight_method"] if components > 1 else [term["weight_method"]]
-            )
-            weight_values = (
-                term["weight_value"] if components > 1 else [term["weight_value"]]
+        }
+        rank = field_to_rank[field_label]
+        n_components = 1 if rank == 0 else self.dim_geometry**rank
+
+        # Register field for input_data and output_data if it's not already there
+        input_field_labels = {f["label"] for f in fields_params.input_fields}
+        output_field_labels = {f["label"] for f in fields_params.output_fields}
+        if field_label not in input_field_labels:
+            self.train_input_data.register_required_field(field_label)
+            self.val_input_data.register_required_field(field_label)
+        if field_label not in output_field_labels:
+            self.train_output_data.register_required_field(field_label)
+            self.val_output_data.register_required_field(field_label)
+
+        # Standardise inputs to lists if they aren't already
+        loss_functions = loss_term["loss_function"]
+        if not isinstance(loss_functions, list):
+            loss_functions = [loss_functions] * n_components
+
+        for component_idx in range(n_components):
+            loss_function_label = get_enum_label_from_value(
+                loss_functions[component_idx], LossFunctionLabels
             )
 
-            for idx in range(components):
-                loss_function = get_enum_label_from_value(
-                    loss_functions[idx], LossFunctionLabels
+            self.add(
+                LOSS_TERM_REGISTRY[loss_type](
+                    field_label=field_label,
+                    component_idx=component_idx,
+                    loss_function_label=loss_function_label,
                 )
-                weight_method = weight_methods[idx]
-                weight_value = weight_values[idx]
-
-                # Init loss term
-                loss_term = LOSS_TERM_REGISTRY[loss_type](
-                    field_label, idx, loss_function, weight_method, weight_value
-                )
-
-                # Add loss term to group
-                self.add(loss_term)
+            )
 
     def remove(self, loss_term: LossTerm) -> None:
         """Remove a specific loss term from the group."""
@@ -282,11 +282,13 @@ class LossTermGroup:
         output_data: CoordDataContainer,
     ) -> torch.Tensor:
         # Add contributions from all loss terms
-        loss = torch.tensor(0.0, device=self.device)
-        for loss_term in self.loss_terms:
-            loss += loss_term.compute_loss(input_data, output_data)
+        unweighted = torch.tensor(0.0, device=self.device)
 
-        return loss
+        for loss_term in self.loss_terms:
+            unweighted += loss_term.compute_loss(input_data, output_data)
+
+        # Apply weight
+        return self.weight * unweighted
 
     def _compute_loss_batched(
         self,

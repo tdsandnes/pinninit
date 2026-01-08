@@ -92,6 +92,11 @@ class LossTermsParams:
                 term["loss_type"], LossTermLabels
             )
 
+        # weight_methods ### Do Enum for methods eventually
+        self.weight_methods = load_optional(
+            "weight_methods", "LossTerms", input_params, data_type=list
+        )
+
 
 class OptimizerParams:
     def __init__(self, input_params: dict[str, Any]):
