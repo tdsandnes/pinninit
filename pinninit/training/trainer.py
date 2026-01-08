@@ -55,9 +55,9 @@ class Trainer:
 
         # Initialise training state
         self.iter: int = 0
-        self.train_loss_history: list[float] = []
-        self.val_loss_history: list[float] = []
-        self.best_val_loss: float | None = None
+        self.pre_step_train_loss_history: list[float] = []
+        self.pre_step_val_loss_history: list[float] = []
+        self.best_post_step_val_loss: float | None = None
         self.best_model_state: dict[str, torch.Tensor] | None = None
         self._stop_requested: bool = False
         self._stop_barriers: dict[str, bool] = {}
@@ -88,6 +88,9 @@ class Trainer:
             raise KeyError(f"Stop barrier '{name}' not found.")
 
     def _prepare_for_step(self) -> None:
+        # Store pre-step validation loss
+        self.compute_val_loss()
+
         # Set batching of loss term groups if needed
         if self.optimizer.requires_full_batch:
             for group in self.loss_groups.values():
@@ -100,6 +103,13 @@ class Trainer:
         # Prepare optimizer for step
         self.optimizer.prepare_for_step()
 
+    def _end_step(self) -> None:
+        # Validation loss at end of step
+        self.post_step_val_loss = self.compute_val_loss()
+
+        # Update best model if needed
+        self.update_best_model()
+
     def step(self) -> None:
         # Execute all trainer modules at start of step
         for module in self.trainer_modules:
@@ -109,15 +119,10 @@ class Trainer:
         for key in self._first_call_in_step_registry:
             self._first_call_in_step_registry[key] = True
 
-        # Store pre-step validation loss
-        self.compute_val_loss()
-
         # Update the model parameters
         self._prepare_for_step()
         self.optimizer.step()
-
-        # Update best model if needed
-        self.update_best_model()
+        self._end_step()
 
         # Execute all trainer modules at end of step
         for module in self.trainer_modules:
@@ -165,9 +170,11 @@ class Trainer:
         # Store training loss if this is the first time computating it in a step
         key = self.compute_train_loss.__name__
         if self._first_call_in_step_registry[key]:
-            self.group_train_losses = [loss.detach() for loss in group_train_losses]
-            self.train_loss = train_loss.detach()
-            self.train_loss_history.append(self.train_loss.item())
+            self.pre_step_group_train_losses = [
+                loss.detach() for loss in group_train_losses
+            ]
+            self.pre_step_train_loss = train_loss.detach()
+            self.pre_step_train_loss_history.append(self.pre_step_train_loss.item())
             self._first_call_in_step_registry[key] = False
 
         return train_loss
@@ -182,9 +189,11 @@ class Trainer:
         # Store validation loss if this is the first time computating it in a step
         key = self.compute_val_loss.__name__
         if self._first_call_in_step_registry[key]:
-            self.group_val_losses = [loss.detach() for loss in group_val_losses]
-            self.val_loss = val_loss.detach()
-            self.val_loss_history.append(self.val_loss.item())
+            self.pre_step_group_val_losses = [
+                loss.detach() for loss in group_val_losses
+            ]
+            self.pre_step_val_loss = val_loss.detach()
+            self.pre_step_val_loss_history.append(self.pre_step_val_loss.item())
             self._first_call_in_step_registry[key] = False
 
         return val_loss
@@ -193,10 +202,13 @@ class Trainer:
         self,
     ) -> None:
         """Updates best model state if validation loss is lower than previous best."""
-        current_val_loss = self.val_loss.item()
+        current_val_loss = self.post_step_val_loss.item()
 
-        if self.best_val_loss is None or current_val_loss < self.best_val_loss:
-            self.best_val_loss = current_val_loss
+        if (
+            self.best_post_step_val_loss is None
+            or current_val_loss < self.best_post_step_val_loss
+        ):
+            self.best_post_step_val_loss = current_val_loss
             self.best_model_state = {
                 k: v.detach().clone() for k, v in self.model.state_dict().items()
             }
@@ -226,8 +238,8 @@ class Trainer:
         if self.iter % 500 == 0:
             ### temp
 
-            train_losses = [loss.item() for loss in self.group_train_losses]
-            val_losses = [loss.item() for loss in self.group_val_losses]
+            train_losses = [loss.item() for loss in self.pre_step_group_train_losses]
+            val_losses = [loss.item() for loss in self.pre_step_group_val_losses]
 
             print(
                 f"Iter: {self.iter}, "

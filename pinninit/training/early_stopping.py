@@ -22,7 +22,7 @@ class EarlyStopping(TrainerModule):
 
     def on_step_end(self, trainer: Trainer) -> None:
         # Update loss plateau detector
-        self.plateau_detector.step(trainer.val_loss)
+        self.plateau_detector.step(trainer.post_step_val_loss)
 
         # If validation loss has plateaued, request stop
         if self.plateau_detector.plateau_detected:

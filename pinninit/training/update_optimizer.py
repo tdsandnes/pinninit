@@ -34,7 +34,7 @@ class UpdateOptimizer(TrainerModule):
             return
 
         # Update loss plateau detector
-        self.plateau_detector.step(trainer.val_loss)
+        self.plateau_detector.step(trainer.post_step_val_loss)
 
         # If validation loss has plateaued, update optimizer
         if self.plateau_detector.plateau_detected:

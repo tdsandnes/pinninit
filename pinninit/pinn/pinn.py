@@ -324,8 +324,8 @@ class PINN:
         torch.save(
             {
                 "model_state_dict": self.model.state_dict(),
-                "train_loss_history": self.trainer.train_loss_history,
-                "val_loss_history": self.trainer.val_loss_history,
+                "train_loss_history": self.trainer.pre_step_train_loss_history,
+                "val_loss_history": self.trainer.pre_step_val_loss_history,
                 ###         "loss_values": self.loss_values,
                 ###         "data_loss_values": self.data_loss_values,
                 ###         "phys_loss_values": self.phys_loss_values,
