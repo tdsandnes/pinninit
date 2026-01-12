@@ -57,7 +57,8 @@ class Trainer:
         self.iter: int = 0
         self.pre_step_train_loss_history: list[list[float]] = []
         self.pre_step_val_loss_history: list[list[float]] = []
-        self.best_post_step_val_loss: float | None = None
+        self.best_weighted_average_val_loss: float | None = None
+        self.best_model_iter: int | None = None
         self.best_model_state: dict[str, torch.Tensor] | None = None
         self._stop_requested: bool = False
         self._stop_barriers: dict[str, bool] = {}
@@ -165,6 +166,9 @@ class Trainer:
             if self.max_iter is not None and self.iter >= self.max_iter:
                 break
 
+        # Restore best model
+        self.load_best_model()
+
         # Execute all trainer modules at end of training
         for module in self.trainer_modules:
             module.on_train_end(self)
@@ -237,13 +241,14 @@ class Trainer:
         self,
     ) -> None:
         """Updates best model state if validation loss is lower than previous best."""
-        current_val_loss = self.post_step_val_loss.item()
+        current_weighted_average_val_loss = self.weighted_average_val_loss.item()
 
         if (
-            self.best_post_step_val_loss is None
-            or current_val_loss < self.best_post_step_val_loss
+            self.best_weighted_average_val_loss is None
+            or current_weighted_average_val_loss < self.best_weighted_average_val_loss
         ):
-            self.best_post_step_val_loss = current_val_loss
+            self.best_weighted_average_val_loss = current_weighted_average_val_loss
+            self.best_model_iter = self.iter
             self.best_model_state = {
                 k: v.detach().clone() for k, v in self.model.state_dict().items()
             }
