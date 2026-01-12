@@ -72,8 +72,8 @@ class Trainer:
 
         # Log loss term weights
         self.pre_step_loss_weight_history: dict[str, list[float]] = {}
-        for group_label, group in self.loss_groups.items():
-            self.pre_step_loss_weight_history[group_label] = [group.weight.item()]
+        for group_label in self.loss_groups:
+            self.pre_step_loss_weight_history[group_label] = []
 
     def ready_to_stop(
         self,
@@ -225,6 +225,14 @@ class Trainer:
 
         return val_loss
 
+    @property
+    def sum_of_loss_term_weights(self) -> torch.Tensor:
+        return torch.stack([group.weight for group in self.loss_groups.values()]).sum()
+
+    @property
+    def weighted_average_val_loss(self) -> torch.Tensor:
+        return self.post_step_val_loss / self.sum_of_loss_term_weights
+
     def update_best_model(
         self,
     ) -> None:
@@ -274,6 +282,7 @@ class Trainer:
             loss_weights = [
                 weights[-1] for weights in self.pre_step_loss_weight_history.values()
             ]
+            plateau_quantity = self.weighted_average_val_loss
 
             ### Note (self.iter - 1) here because quantities are pre-step
             iter_str = (
@@ -285,9 +294,12 @@ class Trainer:
                 "-------------------------------------------------------------------\n"
                 f"{iter_str}: \n"
                 "-------------------------------------------------------------------\n"
-                f"Training Loss: weighted sum: {self.pre_step_train_loss} (unweighted "
-                f"contributions: {train_losses}), \n"
-                f"Validation Loss: weighted sum: {self.pre_step_val_loss} (unweighted "
-                f"contributions: {val_losses}), \n"
-                f"Loss group weights: {loss_weights},"
+                f"Training Loss: \n"
+                f"- weighted sum:               {self.pre_step_train_loss}, \n"
+                f"- unweighted contributions:   {train_losses}, \n"
+                f"Validation Loss: \n"
+                f"- weighted sum:               {self.pre_step_val_loss}, \n"
+                f"- unweighted contributions:   {val_losses}, \n"
+                f"Loss group weights:           {loss_weights}, \n"
+                f"Plateau detection quantity:   {plateau_quantity},"
             )

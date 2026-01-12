@@ -311,18 +311,18 @@ class PINN:
             list(self.model.parameters()) + list(self.learnt_consts.values()),
             ### Currently just use defaults here
         )
-        patience = 2000
-        frac_tol = 0.0
-        min_iter = 10000
+        patience = 500
+        frac_tol = 1e-2
+        min_iter = 5000
         update_optimizer = UpdateOptimizer(
             new_optimizer=new_optimizer,
             patience=patience,
             frac_tol=frac_tol,
             min_iter=min_iter,
         )
-        patience = 2000
-        frac_tol = 0.0
-        min_iter = 10000
+        patience = 500
+        frac_tol = 1e-2
+        min_iter = 5000
         early_stopping = EarlyStopping(
             patience=patience, frac_tol=frac_tol, min_iter=min_iter
         )

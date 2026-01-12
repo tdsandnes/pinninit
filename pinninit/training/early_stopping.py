@@ -25,7 +25,8 @@ class EarlyStopping(TrainerModule):
         # Wait until min_iter to update plateau detector
         if trainer.iter >= self.min_iter:
             # Update loss plateau detector
-            self.plateau_detector.step(trainer.post_step_val_loss)
+            plateau_quantity = trainer.weighted_average_val_loss
+            self.plateau_detector.step(plateau_quantity)
 
             # If validation loss has plateaued, request stop
             if self.plateau_detector.plateau_detected:
