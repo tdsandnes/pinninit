@@ -6,6 +6,8 @@ from typing import TYPE_CHECKING
 import torch
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from ..loss.loss_term_group import LossTermGroup
     from ..nn.neural_network import NeuralNetwork
     from ..optimizer.optimizer import Optimizer
@@ -70,13 +72,13 @@ class Trainer:
         self._stop_requested: bool = False
         self._stop_barriers: dict[str, bool] = {}
         self._state_updated = False
+        self.state_updates: list[dict[str, Any]] = []
         self.was_prev_step_coast: bool | None = None
 
         # Registry to keep track of the first call of a method in a step
         self._first_call_in_step_registry = {
-            name: True
-            for name, attr in self.__class__.__dict__.items()
-            if callable(attr)
+            "compute_train_loss": True,
+            "compute_val_loss": True,
         }
 
         # Log loss term weights
@@ -145,12 +147,26 @@ class Trainer:
         # Entering coast
         if not self.was_prev_step_coast and self.is_coasting:
             print(f"Coasting started on iteration {self.iter}")
+            self.state_updates.append(
+                {
+                    "event": "enter_coast",
+                    "iter": self.iter,
+                    "weighted_average_val_loss": self.weighted_average_val_loss,
+                }
+            )
             for module in self.trainer_modules:
                 module.on_state_change(self)
 
         # Exiting coast
         elif self.was_prev_step_coast and not self.is_coasting:
             print(f"Coasting ended on iteration {self.iter}")
+            self.state_updates.append(
+                {
+                    "event": "exit_coast",
+                    "iter": self.iter,
+                    "weighted_average_val_loss": self.weighted_average_val_loss,
+                }
+            )
             for module in self.trainer_modules:
                 module.on_state_change(self)
 
@@ -204,7 +220,23 @@ class Trainer:
             # Update iteration count and check max iterations
             self.iter += 1
             if self.max_iter is not None and self.iter >= self.max_iter:
+                self.state_updates.append(
+                    {
+                        "event": "stop_training_max_iter",
+                        "iter": self.iter,
+                        "weighted_average_val_loss": self.weighted_average_val_loss,
+                    }
+                )
                 break
+        # If while loop is broken because of early stop
+        else:
+            self.state_updates.append(
+                {
+                    "event": "stop_training_early_stop",
+                    "iter": self.iter,
+                    "weighted_average_val_loss": self.weighted_average_val_loss,
+                }
+            )
 
         # Restore best model
         self.load_best_model()

@@ -351,7 +351,7 @@ class PINN:
 
     def train(self) -> None:
         ### Hardcode these for now
-        trainer_hooks: list[Any] = []
+        trainer_modules: list[Any] = []
 
         ### Update optimizer
         optimizer_label = OptimizerLabels.LBFGS
@@ -362,7 +362,7 @@ class PINN:
         patience = 500
         frac_tol = 1e-2
         min_iter = 0
-        coast_iters_after_update = 2000
+        coast_iters_after_update = 1000
         update_optimizer = UpdateOptimizer(
             new_optimizer=new_optimizer,
             patience=patience,
@@ -370,7 +370,7 @@ class PINN:
             min_iter=min_iter,
             coast_iters_after_update=coast_iters_after_update,
         )
-        trainer_hooks.append(update_optimizer)
+        trainer_modules.append(update_optimizer)
 
         ### Early stopping
         patience = 500
@@ -379,7 +379,7 @@ class PINN:
         early_stopping = EarlyStopping(
             patience=patience, frac_tol=frac_tol, min_iter=min_iter
         )
-        trainer_hooks.append(early_stopping)
+        trainer_modules.append(early_stopping)
 
         ### Hardcode this for now
         if hasattr(self.pinn_params.loss_terms_params, "weight_methods"):
@@ -396,32 +396,36 @@ class PINN:
                         update_frequency=update_frequency,
                         min_iter=min_iter,
                     )
-                    trainer_hooks.append(update_weights)
+                    trainer_modules.append(update_weights)
 
         # Init trainer
-        warmup_iters = 2000
+        warmup_iters = 1000
         self.trainer = Trainer(
-            self.model,
-            self.optimizer,
-            self.loss_term_groups,
-            trainer_hooks,
-            warmup_iters,
+            model=self.model,
+            optimizer=self.optimizer,
+            loss_groups=self.loss_term_groups,
+            trainer_modules=trainer_modules,
+            warmup_iters=warmup_iters,
         )
 
         # Train model
         self.trainer.train()
 
     def save(self, path: str) -> None:
+        t = self.trainer  ### temp to fit on line so formatter doesn't complain
         torch.save(
             {
                 "model_state_dict": self.model.state_dict(),
-                "train_loss_history": self.trainer.pre_step_train_loss_history,
-                "val_loss_history": self.trainer.pre_step_val_loss_history,
-                "loss_weight_history": self.trainer.pre_step_loss_weight_history,
+                "train_loss_history": t.pre_step_train_loss_history,
+                "val_loss_history": t.pre_step_val_loss_history,
+                "loss_weight_history": t.pre_step_loss_weight_history,
                 "loss_group_weights": {
                     label: group.weight.detach().cpu()
                     for label, group in self.loss_term_groups.items()
                 },
+                "state_updates": t.state_updates,
+                "best_model_iter": t.best_model_iter,
+                "best_weighted_average_val_loss": t.best_weighted_average_val_loss,
                 ###         "loss_values": self.loss_values,
                 ###         "data_loss_values": self.data_loss_values,
                 ###         "phys_loss_values": self.phys_loss_values,
@@ -448,6 +452,11 @@ class PINN:
         for label, weight in checkpoint["loss_group_weights"].items():
             group = self.loss_term_groups[label]
             group.weight = weight.to(group.weight.device)
+        self.state_updates = checkpoint["state_updates"]
+        self.best_model_iter = checkpoint["best_model_iter"]
+        self.best_weighted_average_val_loss = checkpoint.get(
+            "best_weighted_average_val_loss"
+        )
 
     ###  self.loss_values = checkpoint.get("loss_values", [])
     ###  self.data_loss_values = checkpoint.get("data_loss_values", [])

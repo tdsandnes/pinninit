@@ -22,6 +22,7 @@ class UpdateOptimizer(TrainerModule):
         self.coast_iters_after_update = coast_iters_after_update
         self.new_optimizer = new_optimizer
         self.updated = False
+        self.stop_barrier_label = self.__class__.__name__
 
     def runs_during_coast(self, trainer: Trainer) -> bool:
         return False
@@ -30,13 +31,15 @@ class UpdateOptimizer(TrainerModule):
         self.plateau_detector = LossPlateauDetector(self.patience, self.frac_tol)
 
         # Training can only stop after optimizer has been updated
-        trainer._init_stop_barrier(self.__class__.__name__)
+        trainer._init_stop_barrier(self.stop_barrier_label)
 
     def on_train_end(self, trainer: Trainer) -> None:
         pass
 
     def on_step_start(self, trainer: Trainer) -> None:
-        pass
+        # Remove stop barrier
+        if self.updated and trainer._stop_barriers[self.stop_barrier_label] is False:
+            trainer._update_stop_barrier(self.stop_barrier_label, True)
 
     def on_step_end(self, trainer: Trainer) -> None:
         # Don't do anything if already updated
@@ -51,16 +54,26 @@ class UpdateOptimizer(TrainerModule):
 
             # If validation loss has plateaued, update optimizer
             if self.plateau_detector.plateau_detected:
+                # Reload the best model before switching optimizer
+                trainer.load_best_model()
+
+                # Update optimizer
                 trainer.optimizer = self.new_optimizer
                 trainer.optimizer.attach_trainer(trainer)
                 self.updated = True
                 print(f"Optimizer updated on iteration {trainer.iter}.")
 
+                # Log optimizer update
+                trainer.state_updates.append(
+                    {
+                        "event": "optimizer_update",
+                        "iter": trainer.iter,
+                        "weighted_average_val_loss": trainer.weighted_average_val_loss,
+                    }
+                )
+
                 # Notify trainer that its state has changed
                 trainer._state_updated = True
-
-                # Remove stop barrier
-                trainer._update_stop_barrier(self.__class__.__name__, True)
 
                 # Set coast phase for a number of iterations
                 if self.coast_iters_after_update > 0:
