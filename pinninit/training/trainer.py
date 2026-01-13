@@ -60,6 +60,7 @@ class Trainer:
         self.best_weighted_average_val_loss: float | None = None
         self.best_model_iter: int | None = None
         self.best_model_state: dict[str, torch.Tensor] | None = None
+        self.best_loss_group_weights: dict[str, torch.Tensor] | None = None
         self._stop_requested: bool = False
         self._stop_barriers: dict[str, bool] = {}
         self._state_updated = False
@@ -252,13 +253,25 @@ class Trainer:
             self.best_model_state = {
                 k: v.detach().clone() for k, v in self.model.state_dict().items()
             }
+            # Save loss term group weights
+            self.best_loss_group_weights = {
+                label: group.weight.detach().clone()
+                for label, group in self.loss_groups.items()
+            }
 
     def load_best_model(
         self,
     ) -> None:
         """Loads the best model state."""
-        if self.best_model_state is not None:
+        if (
+            self.best_model_state is not None
+            and self.best_loss_group_weights is not None
+        ):
             self.model.load_state_dict(self.best_model_state)
+            # Restore loss group weights
+            for label, weight in self.best_loss_group_weights.items():
+                group = self.loss_groups[label]
+                self.loss_groups[label].weight = weight.clone().to(group.weight.device)
         else:
             raise ValueError("No best model state to load.")
 

@@ -25,12 +25,12 @@ class LossTermGroup:
     def __init__(
         self,
         train_coords: CoordsProtocol,
-        val_coords: CoordsProtocol,
         dim_geometry: int,
         available_fields_params: FieldsParams,
         available_equations_params: EquationsParams,
         device: torch.device,
         train_input_fields: dict[str, Any] | None = None,
+        val_coords: CoordsProtocol | None = None,
         val_input_fields: dict[str, Any] | None = None,
         input_consts: dict[str, Any] | None = None,
         weight_method_label: str | None = None,
@@ -50,18 +50,24 @@ class LossTermGroup:
         # Check that all coords have same dimensions
         assert (
             train_coords.coord_system.dim_geometry == dim_geometry
-        ), "Training coordinate system dimensions must match dim of loss term group."
-        assert (
-            val_coords.coord_system.dim_geometry == dim_geometry
-        ), "Validation coordinate system dimensions must match dim of loss term group."
+        ), "Training coord system dimensions must match dim of loss term group."
 
         # Init data containers
         self.train_input_data, self.train_output_data = self._init_data_containers(
             self.train_coords, train_input_fields, input_consts
         )
-        self.val_input_data, self.val_output_data = self._init_data_containers(
-            self.val_coords, val_input_fields, input_consts
-        )
+
+        self.val_input_data: CoordDataContainer | None = None
+        self.val_output_data: CoordDataContainer | None = None
+        if val_coords is not None:
+            # Check that all coords have same dimensions
+            assert (
+                val_coords.coord_system.dim_geometry == dim_geometry
+            ), "Validation coord system dimensions must match dim of loss term group."
+
+            self.val_input_data, self.val_output_data = self._init_data_containers(
+                val_coords, val_input_fields, input_consts
+            )
 
         # Init weight
         self.weight_method_label = weight_method_label
@@ -122,7 +128,6 @@ class LossTermGroup:
         if self.batch_size is not None:
             # Get n_points from the full coords
             train_n_points = self.train_coords.full_tensor.shape[0]
-            val_n_points = self.val_coords.full_tensor.shape[0]
 
             train_dataset = BatchingDataset(train_n_points)
             self.train_loader = DataLoader(
@@ -134,15 +139,18 @@ class LossTermGroup:
                 pin_memory=torch.cuda.is_available(),
             )
 
-            val_dataset = BatchingDataset(val_n_points)
-            self.val_loader = DataLoader(
-                val_dataset,
-                batch_size=self.batch_size,
-                shuffle=False,
-                num_workers=self.num_workers,
-                collate_fn=torch.utils.data.default_collate,
-                pin_memory=torch.cuda.is_available(),
-            )
+            # Only create val_loader if val_coords exists
+            if self.val_coords is not None:
+                val_n_points = self.val_coords.full_tensor.shape[0]
+                val_dataset = BatchingDataset(val_n_points)
+                self.val_loader = DataLoader(
+                    val_dataset,
+                    batch_size=self.batch_size,
+                    shuffle=False,
+                    num_workers=self.num_workers,
+                    collate_fn=torch.utils.data.default_collate,
+                    pin_memory=torch.cuda.is_available(),
+                )
 
     def set_batching(
         self,
@@ -225,10 +233,12 @@ class LossTermGroup:
         output_field_labels = {f["label"] for f in fields_params.output_fields}
         if field_label not in input_field_labels:
             self.train_input_data.register_required_field(field_label)
-            self.val_input_data.register_required_field(field_label)
+            if self.val_input_data is not None:
+                self.val_input_data.register_required_field(field_label)
         if field_label not in output_field_labels:
             self.train_output_data.register_required_field(field_label)
-            self.val_output_data.register_required_field(field_label)
+            if self.val_output_data is not None:
+                self.val_output_data.register_required_field(field_label)
 
         # Standardise inputs to lists if they aren't already
         loss_functions = loss_term["loss_function"]
@@ -332,17 +342,87 @@ class LossTermGroup:
             model, self.train_input_data, self.train_output_data, self.train_loader
         )
 
-    def compute_unweighted_loss_val(self, model: NeuralNetwork) -> torch.Tensor:
-        return self._compute_loss_batched(
-            model, self.val_input_data, self.val_output_data, self.val_loader
-        )
-
     def compute_weighted_loss_train(self, model: NeuralNetwork) -> torch.Tensor:
         return self.weight * self._compute_loss_batched(
             model, self.train_input_data, self.train_output_data, self.train_loader
         )
 
+    def compute_unweighted_loss_val(self, model: NeuralNetwork) -> torch.Tensor:
+        if self.val_coords is None:
+            raise ValueError("No validation coordinates provided to loss term group.")
+        if self.val_input_data is None or self.val_output_data is None:
+            raise ValueError(
+                "Validation input and output data containers required to compute loss."
+            )
+        return self._compute_loss_batched(
+            model, self.val_input_data, self.val_output_data, self.val_loader
+        )
+
     def compute_weighted_loss_val(self, model: NeuralNetwork) -> torch.Tensor:
+        if self.val_coords is None:
+            raise ValueError("No validation coordinates provided to loss term group.")
+        if self.val_input_data is None or self.val_output_data is None:
+            raise ValueError(
+                "Validation input and output data containers required to compute loss."
+            )
         return self.weight * self._compute_loss_batched(
             model, self.val_input_data, self.val_output_data, self.val_loader
         )
+
+    def compute_unweighted_loss_at_coords(
+        self,
+        model: NeuralNetwork,
+        coords: CoordsProtocol,
+        input_fields: dict[str, Any] | None = None,
+    ) -> torch.Tensor:
+        """Full-batch evaluation on arbitrary coordinates"""
+
+        input_data, output_data = self._init_data_containers(coords, input_fields)
+
+        self._apply_model_at_coords(model, coords, output_data)
+        return self._compute_loss(input_data, output_data)
+
+    def compute_weighted_loss_at_coords(
+        self,
+        model: NeuralNetwork,
+        coords: CoordsProtocol,
+        input_fields: dict[str, Any] | None = None,
+    ) -> torch.Tensor:
+        """Full-batch evaluation on arbitrary coordinates"""
+
+        input_data, output_data = self._init_data_containers(coords, input_fields)
+
+        self._apply_model_at_coords(model, coords, output_data)
+        return self.weight * self._compute_loss(input_data, output_data)
+
+    def compute_residuals_at_coords(
+        self,
+        model: NeuralNetwork,
+        coords: CoordsProtocol,
+        input_fields: dict[str, Any] | None = None,
+    ) -> dict[str, torch.Tensor]:
+        # Initialise data containers
+        input_data, output_data = self._init_data_containers(coords, input_fields)
+
+        # Apply model to fill output_data
+        self._apply_model_at_coords(model, coords, output_data)
+
+        residuals: dict[str, torch.Tensor] = {}
+
+        # Compute residual per loss term
+        for loss_term in self.loss_terms:
+            # Use the polymorphic compute_residual method
+            res = loss_term.compute_residual(input_data, output_data)
+
+            # Collapse multiple components to a single per-point scalar if needed
+            if res.ndim > 1:
+                res = torch.norm(res, dim=1)
+
+            # Map component_idx to actual component label
+            field = output_data.get_field(loss_term.field_label)
+            component_label = field.component_labels[loss_term.component_idx]
+
+            # Store using coordinate-based key
+            residuals[component_label] = res
+
+        return residuals

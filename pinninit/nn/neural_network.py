@@ -39,8 +39,8 @@ class NeuralNetwork(nn.Module):
         init_bias_labels = layers_params.init_biases
 
         # Lower and Upper bounds
-        self.lb = lb
-        self.ub = ub
+        self.register_buffer("lb", lb.view(1, -1))
+        self.register_buffer("ub", ub.view(1, -1))
 
         # Set activation functions and inital weights and biases for each layer
         activation_funcs = []
@@ -69,9 +69,7 @@ class NeuralNetwork(nn.Module):
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         # Normalisation ### temp hardcoded for now, but should add a normalisation.py
         ### that selects methods and then the method function in set in __init__
-        lb = self.lb.unsqueeze(0)
-        ub = self.ub.unsqueeze(0)
-        tensor = 2.0 * (tensor - lb) / (ub - lb) - 1.0
+        tensor = 2.0 * (tensor - self.lb) / (self.ub - self.lb) - 1.0
 
         for i, layer in enumerate(self.layers):
             tensor = layer(tensor)  # call each layer's forward

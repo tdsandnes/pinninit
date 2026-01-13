@@ -208,12 +208,12 @@ class PINN:
             # Create loss term group
             self.loss_term_groups[loss_term_label] = LossTermGroup(
                 train_coords=train_coord,
-                val_coords=val_coord,
                 dim_geometry=self.dim_geometry,
                 available_fields_params=self.pinn_params.fields_params,
                 available_equations_params=self.pinn_params.equations_params,
                 device=self.device,
                 train_input_fields=train_fields,
+                val_coords=val_coord,
                 val_input_fields=val_fields,
                 weight_method_label=weight_method_label,
                 weight_group_label=weight_group_label,
@@ -295,17 +295,65 @@ class PINN:
             lr=lr,
         )
 
-    # Function to predict values
-    def predict(self, coords: dict[str, torch.Tensor]) -> Any:
+    # Function to evaluate values at coords
+    def evaluate_model(self, coords: dict[str, torch.Tensor]) -> Any:
+        # Set to eval mode
+        self.model.eval()
+
         # Initialise coord dataclass object
         test_coords = self.Coords(coord_system=self.coord_system, **coords)
-
-        output = self.model(test_coords.internal)
+        with torch.no_grad():
+            output = self.model(test_coords.internal).detach()
 
         return output
 
+    def evaluate_losses(
+        self,
+        coords: dict[str, torch.Tensor],
+        fields_dict: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, float]:
+        # Set to eval mode
+        self.model.eval()
+
+        test_losses = {}
+        test_coords = self.Coords(coord_system=self.coord_system, **coords)
+        for loss_term_label in self.loss_term_groups:
+            loss_term_group = self.loss_term_groups[loss_term_label]
+            test_losses[loss_term_label] = (
+                loss_term_group.compute_unweighted_loss_at_coords(
+                    self.model, test_coords, fields_dict
+                )
+                .detach()
+                .item()
+            )
+        return test_losses
+
+    def evaluate_residuals_per_point(
+        self,
+        coords: dict[str, torch.Tensor],
+        fields_dict: dict[str, dict[str, Any]] | None = None,
+    ) -> dict[str, dict[str, torch.Tensor]]:
+        self.model.eval()
+        test_coords = self.Coords(coord_system=self.coord_system, **coords)
+
+        residuals_dict: dict[str, dict[str, torch.Tensor]] = {}
+
+        for label, group in self.loss_term_groups.items():
+            # Pass the per-group input fields if provided
+            res = group.compute_residuals_at_coords(
+                self.model, test_coords, fields_dict
+            )
+
+            # Detach all tensors in the returned dict
+            residuals_dict[label] = {k: v.detach() for k, v in res.items()}
+
+        return residuals_dict
+
     def train(self) -> None:
         ### Hardcode these for now
+        trainer_hooks: list[Any] = []
+
+        ### Update optimizer
         optimizer_label = OptimizerLabels.LBFGS
         new_optimizer = OPTIMIZER_REGISTRY[optimizer_label](
             list(self.model.parameters()) + list(self.learnt_consts.values()),
@@ -320,13 +368,17 @@ class PINN:
             frac_tol=frac_tol,
             min_iter=min_iter,
         )
+        trainer_hooks.append(update_optimizer)
+
+        ### Early stopping
         patience = 500
         frac_tol = 1e-2
         min_iter = 5000
         early_stopping = EarlyStopping(
             patience=patience, frac_tol=frac_tol, min_iter=min_iter
         )
-        trainer_hooks = [update_optimizer, early_stopping]
+        trainer_hooks.append(early_stopping)
+
         ### Hardcode this for now
         if hasattr(self.pinn_params.loss_terms_params, "weight_methods"):
             for weight_method in self.pinn_params.loss_terms_params.weight_methods:
@@ -359,6 +411,10 @@ class PINN:
                 "train_loss_history": self.trainer.pre_step_train_loss_history,
                 "val_loss_history": self.trainer.pre_step_val_loss_history,
                 "loss_weight_history": self.trainer.pre_step_loss_weight_history,
+                "loss_group_weights": {
+                    label: group.weight.detach().cpu()
+                    for label, group in self.loss_term_groups.items()
+                },
                 ###         "loss_values": self.loss_values,
                 ###         "data_loss_values": self.data_loss_values,
                 ###         "phys_loss_values": self.phys_loss_values,
@@ -382,6 +438,9 @@ class PINN:
         self.train_loss_history = checkpoint["train_loss_history"]
         self.val_loss_history = checkpoint["val_loss_history"]
         self.loss_weight_history = checkpoint["loss_weight_history"]
+        for label, weight in checkpoint["loss_group_weights"].items():
+            group = self.loss_term_groups[label]
+            group.weight = weight.to(group.weight.device)
 
     ###  self.loss_values = checkpoint.get("loss_values", [])
     ###  self.data_loss_values = checkpoint.get("data_loss_values", [])
