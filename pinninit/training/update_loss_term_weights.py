@@ -32,6 +32,9 @@ class UpdateLossTermWeightsW21(TrainerModule):
         self.adaptive_groups: dict[str, LossTermGroup] = {}
         self.reference_group: LossTermGroup | None = None
 
+    def runs_during_coast(self, trainer: Trainer) -> bool:
+        return True
+
     def on_train_start(self, trainer: Trainer) -> None:
         self.adaptive_groups.clear()
 

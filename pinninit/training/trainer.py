@@ -13,6 +13,10 @@ if TYPE_CHECKING:
 
 class TrainerModule(ABC):
     @abstractmethod
+    def runs_during_coast(self, trainer: Trainer) -> bool:
+        pass
+
+    @abstractmethod
     def on_train_start(self, trainer: Trainer) -> None:
         pass
 
@@ -43,12 +47,14 @@ class Trainer:
         loss_groups: dict[str, LossTermGroup],
         trainer_modules: list[TrainerModule],
         max_iter: int | None = None,
+        warmup_iters: int = 0,
     ) -> None:
         self.model = model
         self.optimizer = optimizer
         self.loss_groups = loss_groups
         self.trainer_modules = trainer_modules
         self.max_iter = max_iter
+        self.coast_until_iter = warmup_iters
 
         # Pass trainer to optimizer
         self.optimizer.attach_trainer(self)
@@ -64,6 +70,7 @@ class Trainer:
         self._stop_requested: bool = False
         self._stop_barriers: dict[str, bool] = {}
         self._state_updated = False
+        self.was_prev_step_coast: bool | None = None
 
         # Registry to keep track of the first call of a method in a step
         self._first_call_in_step_registry = {
@@ -77,7 +84,13 @@ class Trainer:
         for group_label in self.loss_groups:
             self.pre_step_loss_weight_history[group_label] = []
 
-    def ready_to_stop(
+    @property
+    def is_coasting(self) -> bool:
+        """Check if trainer is in coast phase (modules should not intervene)."""
+        return self.iter <= self.coast_until_iter
+
+    @property
+    def is_ready_to_stop(
         self,
     ) -> bool:
         """Checks if all stop barriers have been met."""
@@ -119,12 +132,36 @@ class Trainer:
         self.post_step_val_loss = self.compute_val_loss()
 
         # Update best model if needed
-        self.update_best_model()
+        if not self.is_coasting:
+            self.update_best_model()
+
+        # Update coast state of previous step
+        self.was_prev_step_coast = self.is_coasting
+
+    def _check_coast_transition(self) -> None:
+        if self.was_prev_step_coast is None:
+            return
+
+        # Entering coast
+        if not self.was_prev_step_coast and self.is_coasting:
+            print(f"Coasting started on iteration {self.iter}")
+            for module in self.trainer_modules:
+                module.on_state_change(self)
+
+        # Exiting coast
+        elif self.was_prev_step_coast and not self.is_coasting:
+            print(f"Coasting ended on iteration {self.iter}")
+            for module in self.trainer_modules:
+                module.on_state_change(self)
 
     def step(self) -> None:
+        # Check whether we are exiting coast
+        self._check_coast_transition()
+
         # Execute all trainer modules at start of step
         for module in self.trainer_modules:
-            module.on_step_start(self)
+            if not self.is_coasting or module.runs_during_coast(self):
+                module.on_step_start(self)
 
         # Reset registry keeping track of first calls in a step
         for key in self._first_call_in_step_registry:
@@ -137,12 +174,14 @@ class Trainer:
 
         # Execute all trainer modules at end of step
         for module in self.trainer_modules:
-            module.on_step_end(self)
+            if not self.is_coasting or module.runs_during_coast(self):
+                module.on_step_end(self)
 
         # Notify all modules of any state change
         if self._state_updated:
             for module in self.trainer_modules:
-                module.on_state_change(self)
+                if not self.is_coasting or module.runs_during_coast(self):
+                    module.on_state_change(self)
 
             # Reset _stop_requested
             self._stop_requested = False
@@ -156,7 +195,7 @@ class Trainer:
             module.on_train_start(self)
 
         self.iter = 1
-        while not self.ready_to_stop():
+        while not self.is_ready_to_stop:
             # Step the trainer
             self.step()
 

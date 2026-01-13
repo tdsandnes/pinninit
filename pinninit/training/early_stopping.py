@@ -12,6 +12,9 @@ class EarlyStopping(TrainerModule):
         self.frac_tol = frac_tol
         self.min_iter = min_iter
 
+    def runs_during_coast(self, trainer: Trainer) -> bool:
+        return False
+
     def on_train_start(self, trainer: Trainer) -> None:
         self.plateau_detector = LossPlateauDetector(self.patience, self.frac_tol)
 

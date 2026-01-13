@@ -14,12 +14,17 @@ class UpdateOptimizer(TrainerModule):
         patience: int,
         frac_tol: float = 0.0,
         min_iter: int = 0,
+        coast_iters_after_update: int = 0,
     ) -> None:
         self.patience = patience
         self.frac_tol = frac_tol
         self.min_iter = min_iter
+        self.coast_iters_after_update = coast_iters_after_update
         self.new_optimizer = new_optimizer
         self.updated = False
+
+    def runs_during_coast(self, trainer: Trainer) -> bool:
+        return False
 
     def on_train_start(self, trainer: Trainer) -> None:
         self.plateau_detector = LossPlateauDetector(self.patience, self.frac_tol)
@@ -51,11 +56,19 @@ class UpdateOptimizer(TrainerModule):
                 self.updated = True
                 print(f"Optimizer updated on iteration {trainer.iter}.")
 
-                # Remove stop barrier
-                trainer._update_stop_barrier(self.__class__.__name__, True)
-
                 # Notify trainer that its state has changed
                 trainer._state_updated = True
 
+                # Remove stop barrier
+                trainer._update_stop_barrier(self.__class__.__name__, True)
+
+                # Set coast phase for a number of iterations
+                if self.coast_iters_after_update > 0:
+                    trainer.coast_until_iter = max(
+                        trainer.coast_until_iter,
+                        trainer.iter + self.coast_iters_after_update,
+                    )
+
     def on_state_change(self, trainer: Trainer) -> None:
-        pass
+        # Reset counter if another module changed trainer state
+        self.plateau_detector.reset_counter()

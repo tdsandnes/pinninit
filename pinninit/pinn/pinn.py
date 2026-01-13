@@ -361,19 +361,21 @@ class PINN:
         )
         patience = 500
         frac_tol = 1e-2
-        min_iter = 5000
+        min_iter = 0
+        coast_iters_after_update = 2000
         update_optimizer = UpdateOptimizer(
             new_optimizer=new_optimizer,
             patience=patience,
             frac_tol=frac_tol,
             min_iter=min_iter,
+            coast_iters_after_update=coast_iters_after_update,
         )
         trainer_hooks.append(update_optimizer)
 
         ### Early stopping
         patience = 500
         frac_tol = 1e-2
-        min_iter = 5000
+        min_iter = 0
         early_stopping = EarlyStopping(
             patience=patience, frac_tol=frac_tol, min_iter=min_iter
         )
@@ -397,8 +399,13 @@ class PINN:
                     trainer_hooks.append(update_weights)
 
         # Init trainer
+        warmup_iters = 2000
         self.trainer = Trainer(
-            self.model, self.optimizer, self.loss_term_groups, trainer_hooks
+            self.model,
+            self.optimizer,
+            self.loss_term_groups,
+            trainer_hooks,
+            warmup_iters,
         )
 
         # Train model
