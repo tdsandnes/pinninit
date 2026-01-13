@@ -84,4 +84,4 @@ class UpdateOptimizer(TrainerModule):
 
     def on_state_change(self, trainer: Trainer) -> None:
         # Reset counter if another module changed trainer state
-        self.plateau_detector.reset_counter()
+        self.plateau_detector.reset()
