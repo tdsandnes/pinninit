@@ -218,26 +218,25 @@ class CoordDataContainer:
             | set(self.consts.keys())
         )
 
-        # Determine which fields we need to compute
         if required_fields is None:
-            # Compute everything possible
-            fields_to_compute = {
+            required_fields = {
                 output
                 for eq in self.available_equations_params.equations
                 for output in eq["output_args"]
             }
-        else:
-            # Compute only required fields and their dependencies
-            fields_to_compute = self._resolve_dependencies(
-                required_fields, currently_available_labels
-            )
 
-        # Track which fields still need to be computed
+        # Resolve all fields we need to compute (including intermediates)
+        fields_to_compute = self._resolve_dependencies(
+            required_fields, currently_available_labels
+        )
         fields_still_needed = fields_to_compute - currently_available_labels
 
         available_equations = self.available_equations_params.equations
         eqn_dict = {eq["label"]: eq for eq in available_equations}
         eqns_remaining = set(eqn_dict.keys())
+
+        # Temporary storage for intermediate fields
+        local_derived_fields: dict[str, torch.Tensor] = {}
 
         added_new_field = True
         equations_used = set()
@@ -269,6 +268,8 @@ class CoordDataContainer:
                         eqn_inputs.append(self.coords.get_coord(label))
                     elif label in self._fields:
                         eqn_inputs.append(self._fields[label].tensor)
+                    elif label in local_derived_fields:
+                        eqn_inputs.append(local_derived_fields[label])
                     elif label in self.consts:
                         eqn_inputs.append(self.consts[label])
                     else:
@@ -295,20 +296,17 @@ class CoordDataContainer:
                 for label, eqn_output in zip(
                     eqn_output_labels, eqn_outputs, strict=True
                 ):
-                    if label in currently_available_labels:
-                        raise RuntimeError(
-                            f"Equation {eqn_label} tried to overwrite field '{label}'"
-                        )
-
-                    # Init and set field
-                    rank = self.field_label_to_rank[label]
-                    self._init_empty_field(label, rank)
-                    self._fields[label].update_from_tensor(eqn_output)
-                    self._derived_field_labels.add(label)
-                    currently_available_labels.add(label)
-
-                    # Remove from fields still needed
-                    fields_still_needed.discard(label)
+                    if label not in self._fields and label in required_fields:
+                        rank = self.field_label_to_rank[label]
+                        self._init_empty_field(label, rank)
+                        self._fields[label].update_from_tensor(eqn_output)
+                        self._derived_field_labels.add(label)
+                        currently_available_labels.add(label)
+                        fields_still_needed.discard(label)
+                    elif label not in self._fields:
+                        local_derived_fields[label] = eqn_output
+                        currently_available_labels.add(label)
+                        fields_still_needed.discard(label)
 
                 added_new_field = True
                 equations_evaluated_this_round.add(eqn_label)

@@ -28,25 +28,6 @@ class Operators:
         self.G = self.coord_system.metric_tensor(
             self.coords.n_points, self.coords.geometric
         )
-        self.G_inv = torch.linalg.inv(self.G)
-        self.det_G = torch.det(self.G)
-        self.sqrt_det_G = torch.sqrt(torch.abs(self.det_G))
-
-        self.scale_factors = self.coord_system.get_scale_factors(
-            self.coords.geometric, self.coords.n_points
-        )
-
-        # Validate
-        n_points = self.coords.n_points
-        validate_pytorch_tensor(
-            self.G, (n_points, self.dim_geometry, self.dim_geometry)
-        )
-        validate_pytorch_tensor(
-            self.G_inv, (n_points, self.dim_geometry, self.dim_geometry)
-        )
-        validate_pytorch_tensor(self.det_G, (n_points,))
-        validate_pytorch_tensor(self.sqrt_det_G, (n_points,))
-        validate_pytorch_tensor(self.scale_factors, (n_points, self.dim_geometry))
 
     def d_dcoord(
         self,
@@ -114,11 +95,8 @@ class Operators:
         )[0]
         validate_pytorch_tensor(derivative_f, (n_points, dim_geometry))
 
-        # Batch matrix multiplication:
-        # (n_points, dim_geometry, dim_geometry) @ (n_points, dim_geometry, 1) ->
-        # (n_points, dim_geometry, 1)
-        # Squeeze the result to get the final (n_points, dim_geometry) vector
-        contra_grad_f = torch.bmm(self.G_inv, derivative_f.unsqueeze(2)).squeeze(2)
+        # Batch matrix multiplication with inverse metric tensor
+        contra_grad_f = self.G.inv_metric_times_vec(derivative_f)
         validate_pytorch_tensor(contra_grad_f, (n_points, dim_geometry))
 
         return contra_grad_f
@@ -140,7 +118,7 @@ class Operators:
         torch.Tensor
             Gradient of the function: (n_points, dim_geometry)
         """
-        return self.scale_factors * self.contravariant_grad(f)
+        return self.G.scale_factors_times_vec(self.contravariant_grad(f))
 
     def v_dot_grad(
         self,
@@ -219,24 +197,16 @@ class Operators:
         validate_pytorch_tensor(coords_geometric, (n_points, dim_geometry))
 
         # Term to take derivatives of
-        inner_term = self.sqrt_det_G.unsqueeze(1) * contra_v
+        inner_term = self.G.sqrt_det_times_vec(contra_v)
+        derivatives = torch.autograd.grad(
+            outputs=inner_term,
+            inputs=self.coords.geometric,
+            grad_outputs=torch.ones_like(inner_term),
+            create_graph=True,
+            retain_graph=True,
+        )[0]  # shape: (n_points, dim_geometry)
 
-        # Loop over diagonal elements
-        contra_div_v = torch.zeros(n_points, device=self.device)
-
-        for i, coord_label in enumerate(self.geometric_labels):
-            coord = self.coords.get_coord(coord_label)
-            deriv_ii = torch.autograd.grad(
-                outputs=inner_term[:, i],
-                inputs=coord,
-                grad_outputs=torch.ones(n_points, device=self.device),
-                create_graph=True,
-                retain_graph=True,
-            )[0]
-            contra_div_v += deriv_ii
-
-        # Divide by sqrt of det g to get divergence
-        contra_div_v /= self.sqrt_det_G
+        contra_div_v = self.G.inv_sqrt_det_times_scalar(derivatives.sum(dim=1))
         validate_pytorch_tensor(contra_div_v, (n_points,))
 
         return contra_div_v
@@ -269,7 +239,7 @@ class Operators:
         validate_pytorch_tensor(coords_geometric, (self.coords.n_points, dim_geometry))
 
         # Get v in contravariant basis
-        contra_v = v / self.scale_factors
+        contra_v = self.G.inv_scale_factors_times_vec(v)
 
         # Get divergence (basis independent)
         div_v = self.contravariant_div(contra_v)
