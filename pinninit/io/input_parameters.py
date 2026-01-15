@@ -187,8 +187,25 @@ class LayersParams:
 
 class TrainingParams:
     def __init__(self, input_params: dict[str, Any]):
-        # epochs
-        self.epochs = load_compulsory("epochs", "Training", input_params, data_type=int)
+        # max_epochs
+        self.max_epochs = load_optional(
+            "max_epochs", "Training", input_params, data_type=int, default=None
+        )
+
+        # batch_size
+        self.batch_size = load_optional(
+            "batch_size", "Training", input_params, data_type=int, default=None
+        )
+
+        # shuffle_train
+        self.shuffle_train = load_optional(
+            "shuffle_train", "Training", input_params, data_type=bool, default=True
+        )
+
+        # num_workers
+        self.num_workers = load_optional(
+            "num_workers", "Training", input_params, data_type=int, default=0
+        )
 
 
 class PINNParameters:

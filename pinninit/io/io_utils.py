@@ -8,6 +8,8 @@ from ..utils import check_against_data_type
 if TYPE_CHECKING:
     from typing import Any
 
+_SENTINEL = object()
+
 
 def load_compulsory(
     field: str,
@@ -56,7 +58,7 @@ def load_optional(
     section: str,
     input_params: dict[str, Any],
     data_type: type | None = None,
-    default: Any = None,
+    default: Any = _SENTINEL,
 ) -> Any:
     """
     Load an optional parameter from a nested dictionary and validate its type.
@@ -78,30 +80,26 @@ def load_optional(
     -------
     Any
         The validated parameter value or the default value if provided, otherwise None.
-
-    Raises
-    ------
-    ValueError
-        If conversion to the specified data type fails.
     """
-    # If Group doesn't exit in file
-    if section not in input_params and data_type is not None:
-        return data_type()
+    # Section missin
+    if section not in input_params:
+        if default is not _SENTINEL:
+            return check_against_data_type(default, data_type)
+        return data_type() if data_type is not None else None
 
-    if input_params[section] is not None and field in input_params[section]:
-        # Read value from input params
-        read_value = input_params[section][field]
-        # Check data type
-        return check_against_data_type(read_value, data_type)
+    section_dict = input_params.get(section)
 
-    elif default is not None:
-        # Return given default value
+    # Field present
+    if section_dict is not None and field in section_dict:
+        value = section_dict[field]
+        return check_against_data_type(value, data_type)
+
+    # Default was provided
+    if default is not _SENTINEL:
         return check_against_data_type(default, data_type)
-    elif data_type is not None:
-        # Return empty if no value in parameter file and no default value is given
-        return data_type()
-    else:
-        return None
+
+    # No value, no default
+    return data_type() if data_type is not None else None
 
 
 def get_enum_label_from_value(enum_value: Any, lookup_enum: type[Enum]) -> Any:

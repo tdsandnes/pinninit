@@ -200,10 +200,11 @@ class PINN:
                 requires_grad=False,
             )
 
-            ### Hardcode these for now
-            batch_size = None  # 4096
-            shuffle_train = True
-            num_workers = 0
+            batch_size = getattr(self.pinn_params.training_params, "batch_size", None)
+            shuffle_train = getattr(
+                self.pinn_params.training_params, "shuffle_train", True
+            )
+            num_workers = getattr(self.pinn_params.training_params, "num_workers", 0)
 
             # Create loss term group
             self.loss_term_groups[loss_term_label] = LossTermGroup(
@@ -399,12 +400,14 @@ class PINN:
                     trainer_modules.append(update_weights)
 
         # Init trainer
+        max_iter = getattr(self.pinn_params.training_params, "max_epochs", None)
         warmup_iters = 1000
         self.trainer = Trainer(
             model=self.model,
             optimizer=self.optimizer,
             loss_groups=self.loss_term_groups,
             trainer_modules=trainer_modules,
+            max_iter=max_iter,
             warmup_iters=warmup_iters,
         )
 
