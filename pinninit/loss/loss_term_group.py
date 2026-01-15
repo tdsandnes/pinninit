@@ -36,9 +36,12 @@ class LossTermGroup:
         weight_method_label: str | None = None,
         weight_group_label: str | None = None,
         initial_weight: torch.Tensor | None = None,
-        batch_size: int | None = None,
+        batch_size_train: int | None = None,
+        batch_size_val: int | None = None,
         shuffle_train: bool = True,
-        num_workers: int = 0,
+        shuffle_val: bool = False,
+        num_workers_train: int = 0,
+        num_workers_val: int = 0,
     ) -> None:
         self.train_coords = train_coords
         self.val_coords = val_coords
@@ -80,13 +83,19 @@ class LossTermGroup:
         )
 
         # Init batching
-        self._default_batch_size = batch_size
+        self._default_batch_size_train = batch_size_train
+        self._default_batch_size_val = batch_size_val
         self._default_shuffle_train = shuffle_train
-        self._default_num_workers = num_workers
-        self.batch_size = self._default_batch_size
+        self._default_shuffle_val = shuffle_val
+        self._default_num_workers_train = num_workers_train
+        self._default_num_workers_val = num_workers_val
+        self.batch_size_train = self._default_batch_size_train
+        self.batch_size_val = self._default_batch_size_val
         self.shuffle_train = self._default_shuffle_train
-        self.num_workers = self._default_num_workers
-        self._init_data_loaders()
+        self.shuffle_val = self._default_shuffle_val
+        self.num_workers_train = self._default_num_workers_train
+        self.num_workers_val = self._default_num_workers_val
+        self._set_train_val_data_loaders()
         self.is_default_batching = True
 
         # Init loss terms as empty group
@@ -121,87 +130,114 @@ class LossTermGroup:
 
         return input_data, output_data
 
-    def _init_data_loaders(self) -> None:
-        self.train_loader: DataLoader[int] | None = None
-        self.val_loader: DataLoader[int] | None = None
+    def _set_train_val_data_loaders(self) -> None:
+        n_points_train = self.train_coords.full_tensor.shape[0]
+        self.train_loader = self._set_data_loader(
+            n_points_train,
+            self.batch_size_train,
+            self.shuffle_train,
+            self.num_workers_train,
+        )
+        if self.val_coords is not None:
+            n_points_val = self.val_coords.full_tensor.shape[0]
+            self.val_loader = self._set_data_loader(
+                n_points_val,
+                self.batch_size_val,
+                self.shuffle_val,
+                self.num_workers_val,
+            )
 
-        if self.batch_size is not None:
-            # Get n_points from the full coords
-            train_n_points = self.train_coords.full_tensor.shape[0]
-
-            train_dataset = BatchingDataset(train_n_points)
-            self.train_loader = DataLoader(
-                train_dataset,
-                batch_size=self.batch_size,
-                shuffle=self.shuffle_train,
-                num_workers=self.num_workers,
+    def _set_data_loader(
+        self,
+        n_points: int,
+        batch_size: int | None = None,
+        shuffle: bool = True,
+        num_workers: int = 0,
+    ) -> DataLoader[int] | None:
+        if batch_size is not None:
+            dataset = BatchingDataset(n_points)
+            return DataLoader(
+                dataset,
+                batch_size=batch_size,
+                shuffle=shuffle,
+                num_workers=num_workers,
                 collate_fn=torch.utils.data.default_collate,
                 pin_memory=torch.cuda.is_available(),
             )
-
-            # Only create val_loader if val_coords exists
-            if self.val_coords is not None:
-                val_n_points = self.val_coords.full_tensor.shape[0]
-                val_dataset = BatchingDataset(val_n_points)
-                self.val_loader = DataLoader(
-                    val_dataset,
-                    batch_size=self.batch_size,
-                    shuffle=False,
-                    num_workers=self.num_workers,
-                    collate_fn=torch.utils.data.default_collate,
-                    pin_memory=torch.cuda.is_available(),
-                )
+        else:
+            return None
 
     def set_batching(
         self,
-        batch_size: int | None,
+        batch_size_train: int | None,
+        batch_size_val: int | None,
         shuffle_train: bool = True,
-        num_workers: int = 0,
+        shuffle_val: bool = False,
+        num_workers_train: int = 0,
+        num_workers_val: int = 0,
     ) -> None:
         # Early return if already has these exact settings
         if (
-            batch_size == self.batch_size
+            batch_size_train == self.batch_size_train
+            and batch_size_val == self.batch_size_val
             and shuffle_train == self.shuffle_train
-            and num_workers == self.num_workers
+            and shuffle_val == self.shuffle_val
+            and num_workers_train == self.num_workers_train
+            and num_workers_val == self.num_workers_val
         ):
             return
 
         if (
-            batch_size == self._default_batch_size
+            batch_size_train == self._default_batch_size_train
+            and batch_size_val == self._default_batch_size_val
             and shuffle_train == self._default_shuffle_train
-            and num_workers == self._default_num_workers
+            and shuffle_val == self._default_shuffle_val
+            and num_workers_train == self._default_num_workers_train
+            and num_workers_val == self._default_num_workers_val
         ):
             # If values given are defaults, then reset to default
             self.reset_to_default_batching()
         else:
             # Else update to new values
-            self.batch_size = batch_size
+            self.batch_size_train = batch_size_train
+            self.batch_size_val = batch_size_val
             self.shuffle_train = shuffle_train
-            self.num_workers = num_workers
-            self._init_data_loaders()
+            self.shuffle_val = shuffle_val
+            self.num_workers_train = num_workers_train
+            self.num_workers_val = num_workers_val
+            self._set_train_val_data_loaders()
             self.is_default_batching = False
 
             # Print message
             print(
                 f"Updated batching of {self.__class__.__name__} (id={id(self)}): "
-                f"batch_size={self.batch_size}, shuffle_train={self.shuffle_train}, "
-                f"num_workers={self.num_workers}"
+                f"batch_size_train={self.batch_size_train}, "
+                f"batch_size_val={self.batch_size_val}, "
+                f"shuffle_train={self.shuffle_train}, shuffle_val={self.shuffle_val}, "
+                f"num_workers_train={self.num_workers_train}, "
+                f"num_workers_val={self.num_workers_val}"
             )
 
     def reset_to_default_batching(self) -> None:
         # Only reset if not already default
         if not self.is_default_batching:
-            self.batch_size = self._default_batch_size
+            self.batch_size_train = self._default_batch_size_train
+            self.batch_size_val = self._default_batch_size_val
             self.shuffle_train = self._default_shuffle_train
-            self.num_workers = self._default_num_workers
-            self._init_data_loaders()
+            self.shuffle_val = self._default_shuffle_val
+            self.num_workers_train = self._default_num_workers_train
+            self.num_workers_val = self._default_num_workers_val
+            self._set_train_val_data_loaders()
             self.is_default_batching = True
 
             # Print message
             print(
                 f"Reset batching of {self.__class__.__name__} (id={id(self)}): "
-                f"batch_size={self.batch_size}, shuffle_train={self.shuffle_train}, "
-                f"num_workers={self.num_workers}"
+                f"batch_size_train={self.batch_size_train}, "
+                f"batch_size_val={self.batch_size_val}, "
+                f"shuffle_train={self.shuffle_train}, shuffle_val={self.shuffle_val}, "
+                f"num_workers_train={self.num_workers_train}, "
+                f"num_workers_val={self.num_workers_val}"
             )
 
     def add(self, loss_term: LossTerm) -> None:
@@ -303,9 +339,10 @@ class LossTermGroup:
         input_data: CoordDataContainer,
         output_data: CoordDataContainer,
         dataloader: DataLoader[int] | None,
+        detach: bool = False,
     ) -> torch.Tensor:
         """Compute loss over batches using a DataLoader"""
-        if dataloader is not None and self.batch_size is not None:
+        if dataloader is not None:
             total_loss = torch.tensor(0.0, device=self.device)
             total_points: int = 0
 
@@ -321,7 +358,11 @@ class LossTermGroup:
                 # Compute loss on batch
                 batch_loss = self._compute_loss(input_data, output_data)
 
-                total_loss += batch_loss * len(batch_indices)
+                if detach:
+                    total_loss += batch_loss.detach() * len(batch_indices)
+                else:
+                    total_loss += batch_loss * len(batch_indices)
+
                 total_points += len(batch_indices)
 
             # Clear batch after loop
@@ -339,12 +380,20 @@ class LossTermGroup:
 
     def compute_unweighted_loss_train(self, model: NeuralNetwork) -> torch.Tensor:
         return self._compute_loss_batched(
-            model, self.train_input_data, self.train_output_data, self.train_loader
+            model,
+            self.train_input_data,
+            self.train_output_data,
+            self.train_loader,
+            detach=False,
         )
 
     def compute_weighted_loss_train(self, model: NeuralNetwork) -> torch.Tensor:
         return self.weight * self._compute_loss_batched(
-            model, self.train_input_data, self.train_output_data, self.train_loader
+            model,
+            self.train_input_data,
+            self.train_output_data,
+            self.train_loader,
+            detach=False,
         )
 
     def compute_unweighted_loss_val(self, model: NeuralNetwork) -> torch.Tensor:
@@ -355,7 +404,11 @@ class LossTermGroup:
                 "Validation input and output data containers required to compute loss."
             )
         return self._compute_loss_batched(
-            model, self.val_input_data, self.val_output_data, self.val_loader
+            model,
+            self.val_input_data,
+            self.val_output_data,
+            self.val_loader,
+            detach=False,
         )
 
     def compute_weighted_loss_val(self, model: NeuralNetwork) -> torch.Tensor:
@@ -366,7 +419,11 @@ class LossTermGroup:
                 "Validation input and output data containers required to compute loss."
             )
         return self.weight * self._compute_loss_batched(
-            model, self.val_input_data, self.val_output_data, self.val_loader
+            model,
+            self.val_input_data,
+            self.val_output_data,
+            self.val_loader,
+            detach=False,
         )
 
     def compute_unweighted_loss_at_coords(
@@ -374,55 +431,106 @@ class LossTermGroup:
         model: NeuralNetwork,
         coords: CoordsProtocol,
         input_fields: dict[str, Any] | None = None,
+        batch_size: int | None = None,
+        shuffle: bool = True,
+        num_workers: int = 0,
     ) -> torch.Tensor:
         """Full-batch evaluation on arbitrary coordinates"""
 
+        # Set data containers
         input_data, output_data = self._init_data_containers(coords, input_fields)
 
-        self._apply_model_at_coords(model, coords, output_data)
-        return self._compute_loss(input_data, output_data)
+        # Set up data loader
+        n_points_test = coords.full_tensor.shape[0]
+        test_loader = self._set_data_loader(
+            n_points_test, batch_size, shuffle, num_workers
+        )
+
+        # Return unweighted loss
+        return self._compute_loss_batched(
+            model, input_data, output_data, test_loader, detach=True
+        )
 
     def compute_weighted_loss_at_coords(
         self,
         model: NeuralNetwork,
         coords: CoordsProtocol,
         input_fields: dict[str, Any] | None = None,
+        batch_size: int | None = None,
+        shuffle: bool = True,
+        num_workers: int = 0,
     ) -> torch.Tensor:
         """Full-batch evaluation on arbitrary coordinates"""
 
+        # Set data containers
         input_data, output_data = self._init_data_containers(coords, input_fields)
 
-        self._apply_model_at_coords(model, coords, output_data)
-        return self.weight * self._compute_loss(input_data, output_data)
+        # Set up data loader
+        n_points_test = coords.full_tensor.shape[0]
+        test_loader = self._set_data_loader(
+            n_points_test, batch_size, shuffle, num_workers
+        )
+
+        # Return unweighted loss
+        return self.weight * self._compute_loss_batched(
+            model, input_data, output_data, test_loader, detach=True
+        )
+
+    def _compute_residuals(
+        self,
+        input_data: CoordDataContainer,
+        output_data: CoordDataContainer,
+    ) -> dict[str, torch.Tensor]:
+        """Compute residuals for the current batch stored in data containers."""
+
+        residuals: dict[str, torch.Tensor] = {}
+
+        for loss_term in self.loss_terms:
+            res = loss_term.compute_residual(input_data, output_data)
+
+            field = output_data.get_field(loss_term.field_label)
+            component_label = field.component_labels[loss_term.component_idx]
+
+            residuals[component_label] = res
+
+        return residuals
 
     def compute_residuals_at_coords(
         self,
         model: NeuralNetwork,
         coords: CoordsProtocol,
         input_fields: dict[str, Any] | None = None,
+        batch_size: int | None = None,
+        shuffle: bool = True,
+        num_workers: int = 0,
     ) -> dict[str, torch.Tensor]:
-        # Initialise data containers
         input_data, output_data = self._init_data_containers(coords, input_fields)
+        n_points = coords.full_tensor.shape[0]
+        loader = self._set_data_loader(n_points, batch_size, shuffle, num_workers)
 
-        # Apply model to fill output_data
-        self._apply_model_at_coords(model, coords, output_data)
+        if loader is not None:
+            all_residuals: dict[str, list[torch.Tensor]] = {}
 
-        residuals: dict[str, torch.Tensor] = {}
+            for batch_indices in loader:
+                input_data.set_batch(batch_indices)
+                output_data.set_batch(batch_indices)
+                self._apply_model_at_coords(model, input_data.coords, output_data)
 
-        # Compute residual per loss term
-        for loss_term in self.loss_terms:
-            # Use the polymorphic compute_residual method
-            res = loss_term.compute_residual(input_data, output_data)
+                batch_residuals = self._compute_residuals(input_data, output_data)
 
-            # Collapse multiple components to a single per-point scalar if needed
-            if res.ndim > 1:
-                res = torch.norm(res, dim=1)
+                for label, res in batch_residuals.items():
+                    if label not in all_residuals:
+                        all_residuals[label] = []
+                    all_residuals[label].append(res.detach())
 
-            # Map component_idx to actual component label
-            field = output_data.get_field(loss_term.field_label)
-            component_label = field.component_labels[loss_term.component_idx]
-
-            # Store using coordinate-based key
-            residuals[component_label] = res
-
-        return residuals
+            input_data.clear_batch()
+            output_data.clear_batch()
+            print(
+                {label: torch.cat(tensors) for label, tensors in all_residuals.items()}
+            )
+            return {
+                label: torch.cat(tensors) for label, tensors in all_residuals.items()
+            }
+        else:
+            self._apply_model_at_coords(model, coords, output_data)
+            return self._compute_residuals(input_data, output_data)

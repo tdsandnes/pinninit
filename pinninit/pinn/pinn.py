@@ -200,11 +200,24 @@ class PINN:
                 requires_grad=False,
             )
 
-            batch_size = getattr(self.pinn_params.training_params, "batch_size", None)
+            batch_size_train = getattr(
+                self.pinn_params.training_params, "batch_size_train", None
+            )
+            batch_size_val = getattr(
+                self.pinn_params.training_params, "batch_size_val", None
+            )
             shuffle_train = getattr(
                 self.pinn_params.training_params, "shuffle_train", True
             )
-            num_workers = getattr(self.pinn_params.training_params, "num_workers", 0)
+            shuffle_val = getattr(
+                self.pinn_params.training_params, "shuffle_val", False
+            )
+            num_workers_train = getattr(
+                self.pinn_params.training_params, "num_workers_train", 0
+            )
+            num_workers_val = getattr(
+                self.pinn_params.training_params, "num_workers_val", 0
+            )
 
             # Create loss term group
             self.loss_term_groups[loss_term_label] = LossTermGroup(
@@ -219,9 +232,12 @@ class PINN:
                 weight_method_label=weight_method_label,
                 weight_group_label=weight_group_label,
                 initial_weight=initial_weight,
-                batch_size=batch_size,
+                batch_size_train=batch_size_train,
+                batch_size_val=batch_size_val,
                 shuffle_train=shuffle_train,
-                num_workers=num_workers,
+                shuffle_val=shuffle_val,
+                num_workers_train=num_workers_train,
+                num_workers_val=num_workers_val,
             )
 
             # Initialise loss terms in the group
@@ -312,6 +328,9 @@ class PINN:
         self,
         coords: dict[str, torch.Tensor],
         fields_dict: dict[str, dict[str, Any]] | None = None,
+        batch_size: int | None = None,
+        shuffle: bool = False,
+        num_workers: int = 0,
     ) -> dict[str, float]:
         # Set to eval mode
         self.model.eval()
@@ -322,7 +341,12 @@ class PINN:
             loss_term_group = self.loss_term_groups[loss_term_label]
             test_losses[loss_term_label] = (
                 loss_term_group.compute_unweighted_loss_at_coords(
-                    self.model, test_coords, fields_dict
+                    self.model,
+                    test_coords,
+                    fields_dict,
+                    batch_size=batch_size,
+                    shuffle=shuffle,
+                    num_workers=num_workers,
                 )
                 .detach()
                 .item()
@@ -333,6 +357,9 @@ class PINN:
         self,
         coords: dict[str, torch.Tensor],
         fields_dict: dict[str, dict[str, Any]] | None = None,
+        batch_size: int | None = None,
+        shuffle: bool = False,
+        num_workers: int = 0,
     ) -> dict[str, dict[str, torch.Tensor]]:
         self.model.eval()
         test_coords = self.Coords(coord_system=self.coord_system, **coords)
@@ -342,7 +369,12 @@ class PINN:
         for label, group in self.loss_term_groups.items():
             # Pass the per-group input fields if provided
             res = group.compute_residuals_at_coords(
-                self.model, test_coords, fields_dict
+                self.model,
+                test_coords,
+                fields_dict,
+                batch_size=batch_size,
+                shuffle=shuffle,
+                num_workers=num_workers,
             )
 
             # Detach all tensors in the returned dict

@@ -120,7 +120,7 @@ class Trainer:
         # Set batching of loss term groups if needed
         if self.optimizer.requires_full_batch:
             for group in self.loss_groups.values():
-                group.set_batching(batch_size=None)
+                group.set_batching(batch_size_train=None, batch_size_val=None)
         else:
             for group in self.loss_groups.values():
                 if not group.is_default_batching:

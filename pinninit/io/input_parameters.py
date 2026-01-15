@@ -192,9 +192,14 @@ class TrainingParams:
             "max_epochs", "Training", input_params, data_type=int, default=None
         )
 
-        # batch_size
-        self.batch_size = load_optional(
-            "batch_size", "Training", input_params, data_type=int, default=None
+        # batch_size_train
+        self.batch_size_train = load_optional(
+            "batch_size_train", "Training", input_params, data_type=int, default=None
+        )
+
+        # batch_size_val
+        self.batch_size_val = load_optional(
+            "batch_size_val", "Training", input_params, data_type=int, default=None
         )
 
         # shuffle_train
@@ -202,9 +207,19 @@ class TrainingParams:
             "shuffle_train", "Training", input_params, data_type=bool, default=True
         )
 
-        # num_workers
-        self.num_workers = load_optional(
-            "num_workers", "Training", input_params, data_type=int, default=0
+        # shuffle_val
+        self.shuffle_val = load_optional(
+            "shuffle_val", "Training", input_params, data_type=bool, default=False
+        )
+
+        # num_workers_train
+        self.num_workers_train = load_optional(
+            "num_workers_train", "Training", input_params, data_type=int, default=0
+        )
+
+        # num_workers_val
+        self.num_workers_val = load_optional(
+            "num_workers_val", "Training", input_params, data_type=int, default=0
         )
 
 
