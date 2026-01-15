@@ -347,9 +347,7 @@ class PINN:
                     batch_size=batch_size,
                     shuffle=shuffle,
                     num_workers=num_workers,
-                )
-                .detach()
-                .item()
+                ).item()
             )
         return test_losses
 

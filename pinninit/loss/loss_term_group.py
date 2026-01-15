@@ -342,6 +342,10 @@ class LossTermGroup:
         detach: bool = False,
     ) -> torch.Tensor:
         """Compute loss over batches using a DataLoader"""
+        # If detach=True, disables parameter gradients.
+        if detach:
+            model.requires_grad_(False)
+
         if dataloader is not None:
             total_loss = torch.tensor(0.0, device=self.device)
             total_points: int = 0
@@ -368,15 +372,20 @@ class LossTermGroup:
             # Clear batch after loop
             input_data.clear_batch()
             output_data.clear_batch()
-
-            return total_loss / total_points
+            final_loss = total_loss / total_points
 
         else:
-            # Full-batch
-            coords = input_data.coords
+            # Full-batch case
+            self._apply_model_at_coords(model, input_data.coords, output_data)
+            final_loss = self._compute_loss(input_data, output_data)
+            if detach:
+                final_loss = final_loss.detach()
 
-            self._apply_model_at_coords(model, coords, output_data)
-            return self._compute_loss(input_data, output_data)
+        # Re-enable parameter grads if we turned them off
+        if detach:
+            model.requires_grad_(True)
+
+        return final_loss
 
     def compute_unweighted_loss_train(self, model: NeuralNetwork) -> torch.Tensor:
         return self._compute_loss_batched(
@@ -388,13 +397,7 @@ class LossTermGroup:
         )
 
     def compute_weighted_loss_train(self, model: NeuralNetwork) -> torch.Tensor:
-        return self.weight * self._compute_loss_batched(
-            model,
-            self.train_input_data,
-            self.train_output_data,
-            self.train_loader,
-            detach=False,
-        )
+        return self.weight * self.compute_unweighted_loss_train(model)
 
     def compute_unweighted_loss_val(self, model: NeuralNetwork) -> torch.Tensor:
         if self.val_coords is None:
@@ -403,28 +406,17 @@ class LossTermGroup:
             raise ValueError(
                 "Validation input and output data containers required to compute loss."
             )
+
         return self._compute_loss_batched(
             model,
             self.val_input_data,
             self.val_output_data,
             self.val_loader,
-            detach=False,
+            detach=True,
         )
 
     def compute_weighted_loss_val(self, model: NeuralNetwork) -> torch.Tensor:
-        if self.val_coords is None:
-            raise ValueError("No validation coordinates provided to loss term group.")
-        if self.val_input_data is None or self.val_output_data is None:
-            raise ValueError(
-                "Validation input and output data containers required to compute loss."
-            )
-        return self.weight * self._compute_loss_batched(
-            model,
-            self.val_input_data,
-            self.val_output_data,
-            self.val_loader,
-            detach=False,
-        )
+        return self.weight * self.compute_unweighted_loss_val(model)
 
     def compute_unweighted_loss_at_coords(
         self,
@@ -435,8 +427,6 @@ class LossTermGroup:
         shuffle: bool = True,
         num_workers: int = 0,
     ) -> torch.Tensor:
-        """Full-batch evaluation on arbitrary coordinates"""
-
         # Set data containers
         input_data, output_data = self._init_data_containers(coords, input_fields)
 
@@ -460,20 +450,8 @@ class LossTermGroup:
         shuffle: bool = True,
         num_workers: int = 0,
     ) -> torch.Tensor:
-        """Full-batch evaluation on arbitrary coordinates"""
-
-        # Set data containers
-        input_data, output_data = self._init_data_containers(coords, input_fields)
-
-        # Set up data loader
-        n_points_test = coords.full_tensor.shape[0]
-        test_loader = self._set_data_loader(
-            n_points_test, batch_size, shuffle, num_workers
-        )
-
-        # Return unweighted loss
-        return self.weight * self._compute_loss_batched(
-            model, input_data, output_data, test_loader, detach=True
+        return self.weight * self.compute_unweighted_loss_at_coords(
+            model, coords, input_fields, batch_size, shuffle, num_workers
         )
 
     def _compute_residuals(
@@ -504,6 +482,9 @@ class LossTermGroup:
         shuffle: bool = True,
         num_workers: int = 0,
     ) -> dict[str, torch.Tensor]:
+        # Disable weight gradients for analysis
+        model.requires_grad_(False)
+
         input_data, output_data = self._init_data_containers(coords, input_fields)
         n_points = coords.full_tensor.shape[0]
         loader = self._set_data_loader(n_points, batch_size, shuffle, num_workers)
@@ -521,16 +502,28 @@ class LossTermGroup:
                 for label, res in batch_residuals.items():
                     if label not in all_residuals:
                         all_residuals[label] = []
-                    all_residuals[label].append(res.detach())
+                    all_residuals[label].append(res.detach().cpu())
 
             input_data.clear_batch()
             output_data.clear_batch()
-            print(
-                {label: torch.cat(tensors) for label, tensors in all_residuals.items()}
-            )
+
+            # Re-enable weight gradients
+            model.requires_grad_(True)
             return {
                 label: torch.cat(tensors) for label, tensors in all_residuals.items()
             }
         else:
             self._apply_model_at_coords(model, coords, output_data)
-            return self._compute_residuals(input_data, output_data)
+            residuals = self._compute_residuals(input_data, output_data)
+
+            # detach tensors before returning
+            detached_res = {
+                label: val.detach().cpu() for label, val in residuals.items()
+            }
+
+            input_data.clear_batch()
+            output_data.clear_batch()
+
+            # Cleanup for full-batch case
+            model.requires_grad_(True)
+            return detached_res
