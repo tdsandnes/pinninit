@@ -118,6 +118,7 @@ class LayersParams:
     }
     alias_activation_functions_raw = {
         "all_tanh": lambda num_layers: ["tanh"] * (num_layers - 1) + ["none"],
+        "all_silu": lambda num_layers: ["silu"] * (num_layers - 1) + ["none"],
     }
     alias_init_weights = {
         "all_xavier": lambda num_layers: ["xavier"] * num_layers,
