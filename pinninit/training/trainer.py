@@ -338,11 +338,28 @@ class Trainer:
             self.best_model_state is not None
             and self.best_loss_group_weights is not None
         ):
+            print(
+                f"Loading best model, corresponding to iter {self.best_model_iter}, "
+                f"on iteration {self.iter}"
+            )
+            self.state_updates.append(
+                {
+                    "event": "load_best_model",
+                    "iter": self.iter,
+                    "weighted_average_val_loss": self.best_weighted_average_val_loss,
+                }
+            )
             self.model.load_state_dict(self.best_model_state)
             # Restore loss group weights
             for label, weight in self.best_loss_group_weights.items():
                 group = self.loss_groups[label]
                 self.loss_groups[label].weight = weight.clone().to(group.weight.device)
+
+            # Notify modules of updated state
+            self._state_updated = True
+            for module in self.trainer_modules:
+                module.on_state_change(self)
+            self._state_updated = False
         else:
             raise ValueError("No best model state to load.")
 
