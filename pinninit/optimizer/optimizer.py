@@ -4,11 +4,12 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING
 
+import torch.nn as nn
 import torch.optim as optim
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-    from typing import Any
+    from collections.abc import Callable, Iterable
+    from typing import Any, ClassVar
 
     from ..training.trainer import Trainer
 
@@ -21,22 +22,44 @@ class OptimizerLabels(str, Enum):
 
 
 class Optimizer(ABC):
-    def __init__(self, optimizer: optim.Optimizer, requires_full_batch: bool):
-        self.optimizer = optimizer
-        self.requires_full_batch = requires_full_batch
+    # Class attributes
+    _requires_closure: ClassVar[bool]
+    _requires_full_batch: ClassVar[bool]
+
+    def __init__(self, torch_optimizer: optim.Optimizer):
+        self._torch_optimizer = torch_optimizer
         self._trainer: Trainer | None = None
 
-    @abstractmethod
     def attach_trainer(self, trainer: Trainer) -> None:
-        pass
+        self._trainer = trainer
+
+    def closure(self) -> float:
+        raise RuntimeError(
+            f"{self.__class__.__name__} declares requires_closure=True but does not "
+            "implement closure()."
+        )
 
     @abstractmethod
     def prepare_for_step(self) -> None:
         pass
 
-    @abstractmethod
     def step(self) -> None:
-        pass
+        if self.requires_closure:
+            self.optimizer.step(self.closure)
+        else:
+            self.optimizer.step()
+
+    @property
+    def requires_full_batch(self) -> bool:
+        return self.__class__._requires_full_batch
+
+    @property
+    def requires_closure(self) -> bool:
+        return self.__class__._requires_closure
+
+    @property
+    def optimizer(self) -> optim.Optimizer:
+        return self._torch_optimizer
 
     @property
     def trainer(self) -> Trainer:
@@ -47,14 +70,14 @@ class Optimizer(ABC):
 
 class Adam(Optimizer):
     # Class attributes
-    requires_full_batch = False
+    _requires_closure = False
+    _requires_full_batch = False
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        optimizer = optim.Adam(*args, **kwargs)
-        super().__init__(optimizer, self.__class__.requires_full_batch)
-
-    def attach_trainer(self, trainer: Trainer) -> None:
-        self._trainer = trainer
+    def __init__(
+        self, params: Iterable[nn.Parameter], *args: Any, **kwargs: Any
+    ) -> None:
+        optimizer = optim.Adam(params, *args, **kwargs)
+        super().__init__(optimizer)
 
     def prepare_for_step(self) -> None:
         # Compute loss
@@ -64,25 +87,22 @@ class Adam(Optimizer):
         self.optimizer.zero_grad()
         train_loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
 
-    def step(self) -> None:
-        self.optimizer.step()
-
 
 class LBFGS(Optimizer):
     # Class attributes
-    requires_full_batch = True
+    _requires_closure = True
+    _requires_full_batch = True
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        optimizer = optim.LBFGS(*args, **kwargs)
-        super().__init__(optimizer, self.__class__.requires_full_batch)
-
-    def attach_trainer(self, trainer: Trainer) -> None:
-        self._trainer = trainer
+    def __init__(
+        self, params: Iterable[nn.Parameter], *args: Any, **kwargs: Any
+    ) -> None:
+        optimizer = optim.LBFGS(params, *args, **kwargs)
+        super().__init__(optimizer)
 
     def prepare_for_step(self) -> None:
         pass
 
-    def _closure(self) -> float:
+    def closure(self) -> float:
         # Compute loss
         train_loss = self.trainer.compute_train_loss()
 
@@ -91,9 +111,6 @@ class LBFGS(Optimizer):
         train_loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
 
         return float(train_loss)
-
-    def step(self) -> None:
-        self.optimizer.step(self._closure)
 
 
 # Mapping from optimizer labels to classes
