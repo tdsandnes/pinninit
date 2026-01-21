@@ -445,20 +445,17 @@ class PINN:
         self.trainer.train()
 
     def save(self, path: str) -> None:
-        t = self.trainer  ### temp to fit on line so formatter doesn't complain
+        trainer = self.trainer
+        logger = self.trainer.logger
         torch.save(
             {
                 "model_state_dict": self.model.state_dict(),
-                "train_loss_history": t.pre_step_train_loss_history,
-                "val_loss_history": t.pre_step_val_loss_history,
-                "loss_weight_history": t.pre_step_loss_weight_history,
-                "loss_group_weights": {
-                    label: group.weight.detach().cpu()
-                    for label, group in self.loss_term_groups.items()
-                },
-                "state_updates": t.state_updates,
-                "best_model_iter": t.best_model_iter,
-                "best_weighted_average_val_loss": t.best_weighted_average_val_loss,
+                "pre_step_train_losses_log": logger.pre_step_train_losses_log,
+                "post_step_val_losses_log": logger.post_step_val_losses_log,
+                "loss_term_weights_log": logger.loss_term_weights_log,
+                "events": logger.events,
+                "best_model_iter": trainer.best_model_iter,
+                "best_weighted_avg_val_loss": trainer.best_weighted_avg_val_loss,
                 ###         "loss_values": self.loss_values,
                 ###         "data_loss_values": self.data_loss_values,
                 ###         "phys_loss_values": self.phys_loss_values,
@@ -479,17 +476,12 @@ class PINN:
         self.model.load_state_dict(checkpoint["model_state_dict"])
 
         # Restore the additional attributes
-        self.train_loss_history = checkpoint["train_loss_history"]
-        self.val_loss_history = checkpoint["val_loss_history"]
-        self.loss_weight_history = checkpoint["loss_weight_history"]
-        for label, weight in checkpoint["loss_group_weights"].items():
-            group = self.loss_term_groups[label]
-            group.weight = weight.to(group.weight.device)
-        self.state_updates = checkpoint["state_updates"]
+        self.pre_step_train_losses_log = checkpoint["pre_step_train_losses_log"]
+        self.post_step_val_losses_log = checkpoint["post_step_val_losses_log"]
+        self.loss_term_weights_log = checkpoint["loss_term_weights_log"]
+        self.events = checkpoint["events"]
         self.best_model_iter = checkpoint["best_model_iter"]
-        self.best_weighted_average_val_loss = checkpoint.get(
-            "best_weighted_average_val_loss"
-        )
+        self.best_weighted_avg_val_loss = checkpoint.get("best_weighted_avg_val_loss")
 
     ###  self.loss_values = checkpoint.get("loss_values", [])
     ###  self.data_loss_values = checkpoint.get("data_loss_values", [])

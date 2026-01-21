@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import torch
-
 
 class LossPlateauDetector:
     """Detects plateau in loss based on significant relative improvement.
@@ -21,8 +19,7 @@ class LossPlateauDetector:
         self.steps_since_significant_improvement = 0
         self.plateau_detected = False
 
-    def step(self, current_value_tensor: torch.Tensor) -> None:
-        current_value = float(current_value_tensor.detach())
+    def step(self, current_value: float) -> None:
         if current_value <= 0.0:
             raise ValueError(
                 "Value must be strictly positive for relative comparison, "

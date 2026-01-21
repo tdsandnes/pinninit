@@ -5,16 +5,20 @@ from typing import TYPE_CHECKING
 import torch
 
 from ..loss.loss_term_group import LossTermGroup
-from .trainer import Trainer, TrainerModule
+from .trainer import Trainer
+from .trainer_module import TrainerModule
 
 if TYPE_CHECKING:
-    pass
+    from .trainer_logger import TrainerLogger
 
 
 class UpdateLossTermWeightsW21(TrainerModule):
     """
     Adaptive loss term weights following Wang et al. (2021).
     """
+
+    # Class attributes
+    runs_during_coast = True
 
     def __init__(
         self,
@@ -32,10 +36,9 @@ class UpdateLossTermWeightsW21(TrainerModule):
         self.adaptive_groups: dict[str, LossTermGroup] = {}
         self.reference_group: LossTermGroup | None = None
 
-    def runs_during_coast(self, trainer: Trainer) -> bool:
-        return True
-
-    def on_train_start(self, trainer: Trainer) -> None:
+    def on_train_start(
+        self, trainer: Trainer, logger: TrainerLogger | None = None
+    ) -> None:
         self.adaptive_groups.clear()
 
         for group in trainer.loss_groups.values():
@@ -68,17 +71,25 @@ class UpdateLossTermWeightsW21(TrainerModule):
                 f"Reference weight group '{self.reference_group_label}' not found."
             )
 
-    def on_step_start(self, trainer: Trainer) -> None:
+    def on_step_start(
+        self, trainer: Trainer, logger: TrainerLogger | None = None
+    ) -> None:
         if trainer.iter >= self.min_iter and trainer.iter % self.update_frequency == 0:
             self._update_weights(trainer)
 
-    def on_step_end(self, trainer: Trainer) -> None:
+    def on_step_end(
+        self, trainer: Trainer, logger: TrainerLogger | None = None
+    ) -> None:
         pass
 
-    def on_train_end(self, trainer: Trainer) -> None:
+    def on_train_end(
+        self, trainer: Trainer, logger: TrainerLogger | None = None
+    ) -> None:
         pass
 
-    def on_state_change(self, trainer: Trainer) -> None:
+    def on_state_change(
+        self, trainer: Trainer, logger: TrainerLogger | None = None
+    ) -> None:
         pass
 
     def _update_weights(self, trainer: Trainer) -> None:
