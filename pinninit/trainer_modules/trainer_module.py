@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from typing import ClassVar
 
-    from .trainer import Trainer
-    from .trainer_logger import TrainerLogger
+    from ..trainer.trainer import Trainer
+    from ..trainer.trainer_logger import TrainerLogger
 
 
 class TrainerModule(ABC):

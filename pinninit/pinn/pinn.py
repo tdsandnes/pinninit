@@ -16,10 +16,10 @@ from ..loss.loss_term_group import LossTermGroup
 from ..nn.layers import LAYER_TYPE_REGISTRY
 from ..nn.neural_network import NeuralNetwork
 from ..optimizer.optimizer import OPTIMIZER_REGISTRY, OptimizerLabels
-from ..training.early_stopping import EarlyStopping
-from ..training.trainer import Trainer
-from ..training.update_loss_term_weights import UpdateLossTermWeightsW21
-from ..training.update_optimizer import UpdateOptimizer
+from ..trainer.trainer import Trainer
+from ..trainer_modules.early_stopping import EarlyStopping
+from ..trainer_modules.update_loss_term_weights import UpdateLossTermWeightsW21
+from ..trainer_modules.update_optimizer import UpdateOptimizer
 
 
 class PINN:

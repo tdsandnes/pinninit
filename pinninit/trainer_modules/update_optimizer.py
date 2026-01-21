@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ..optimizer.optimizer import Optimizer
-from .trainer import Trainer
+from ..trainer.trainer import Trainer
 from .trainer_module import TrainerModule
-from .training_utils import LossPlateauDetector
+from .trainer_module_utils import LossPlateauDetector
 
 if TYPE_CHECKING:
-    from .trainer_logger import TrainerLogger
+    from ..trainer.trainer_logger import TrainerLogger
 
 
 class UpdateOptimizer(TrainerModule):

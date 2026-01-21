@@ -5,11 +5,11 @@ from typing import TYPE_CHECKING
 import torch
 
 from ..loss.loss_term_group import LossTermGroup
-from .trainer import Trainer
+from ..trainer.trainer import Trainer
 from .trainer_module import TrainerModule
 
 if TYPE_CHECKING:
-    from .trainer_logger import TrainerLogger
+    from ..trainer.trainer_logger import TrainerLogger
 
 
 class UpdateLossTermWeightsW21(TrainerModule):

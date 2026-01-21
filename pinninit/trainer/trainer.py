@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ..loss.loss_term_group import LossTermGroup
     from ..nn.neural_network import NeuralNetwork
     from ..optimizer.optimizer import Optimizer
-    from .trainer_module import TrainerModule
+    from ..trainer_modules.trainer_module import TrainerModule
 
 
 class Trainer:
