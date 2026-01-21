@@ -66,7 +66,9 @@ class UpdateOptimizer(TrainerModule):
         if trainer.iter >= self.min_iter:
             # Get validation losses
             if trainer.logger.unweighted_val_losses.has_value:
-                unweighted_val_losses = trainer.logger.unweighted_val_losses.value
+                unweighted_val_losses = (
+                    trainer.logger.unweighted_val_losses.value.values()
+                )
             else:
                 raise RuntimeError(
                     f"Validation losses have not been recorded for iter {trainer.iter}."

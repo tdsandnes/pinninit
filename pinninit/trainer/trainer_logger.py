@@ -27,9 +27,9 @@ class TrainerLogger:
         self.loss_term_weights = PointInStepRecorder(PointInStep.FIRST)
 
         # Logs of recorded quantities
-        self.pre_step_train_losses_log: list[list[float]] = []
-        self.post_step_val_losses_log: list[list[float]] = []
-        self.loss_term_weights_log: list[list[float]] = []
+        self.pre_step_train_losses_log: list[dict[str, float]] = []
+        self.post_step_val_losses_log: list[dict[str, float]] = []
+        self.loss_term_weights_log: list[dict[str, float]] = []
 
     def on_step_start(self) -> None:
         # Reset recorders
@@ -56,19 +56,19 @@ class TrainerLogger:
         else:
             raise RuntimeError("Loss term weights were not recorded during step.")
 
-    def record_train_losses(self, losses: list[torch.Tensor]) -> None:
+    def record_train_losses(self, losses: dict[str, torch.Tensor]) -> None:
         self.unweighted_train_losses.record(
-            [loss.detach().cpu().item() for loss in losses]
+            {label: loss.detach().cpu().item() for label, loss in losses.items()}
         )
 
-    def record_val_losses(self, losses: list[torch.Tensor]) -> None:
+    def record_val_losses(self, losses: dict[str, torch.Tensor]) -> None:
         self.unweighted_val_losses.record(
-            [loss.detach().cpu().item() for loss in losses]
+            {label: loss.detach().cpu().item() for label, loss in losses.items()}
         )
 
-    def record_loss_term_weights(self, weights: list[torch.Tensor]) -> None:
+    def record_loss_term_weights(self, weights: dict[str, torch.Tensor]) -> None:
         self.loss_term_weights.record(
-            [weight.detach().cpu().item() for weight in weights]
+            {label: weight.detach().cpu().item() for label, weight in weights.items()}
         )
 
     def log_event(self, event: str, iter: int) -> None:
@@ -114,17 +114,23 @@ class TrainerLogger:
         weighted_sum_train_loss = sum(
             [
                 weight * loss
-                for weight, loss in zip(loss_term_weights, train_losses, strict=True)
+                for weight, loss in zip(
+                    loss_term_weights.values(), train_losses.values(), strict=True
+                )
             ]
         )
         weighted_sum_val_loss = sum(
             [
                 weight * loss
-                for weight, loss in zip(loss_term_weights, val_losses, strict=True)
+                for weight, loss in zip(
+                    loss_term_weights.values(), val_losses.values(), strict=True
+                )
             ]
         )
-        weighted_avg_train_loss = weighted_sum_train_loss / sum(loss_term_weights)
-        weighted_avg_val_loss = weighted_sum_val_loss / sum(loss_term_weights)
+        weighted_avg_train_loss = weighted_sum_train_loss / sum(
+            loss_term_weights.values()
+        )
+        weighted_avg_val_loss = weighted_sum_val_loss / sum(loss_term_weights.values())
 
         print(
             "-------------------------------------------------------------------\n"

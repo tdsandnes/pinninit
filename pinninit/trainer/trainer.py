@@ -127,13 +127,15 @@ class Trainer:
 
     def compute_train_loss(self) -> torch.Tensor:
         #  Compute training loss
-        group_unweighted_train_losses = [
-            group.compute_unweighted_loss_train(self.model)
-            for group in self.loss_groups.values()
-        ]
+        group_unweighted_train_losses = {
+            label: group.compute_unweighted_loss_train(self.model)
+            for label, group in self.loss_groups.items()
+        }
 
         # Get loss term weights
-        loss_term_weights = [group.weight for group in self.loss_groups.values()]
+        loss_term_weights = {
+            label: group.weight for label, group in self.loss_groups.items()
+        }
 
         # Log losses and weights
         self.logger.record_train_losses(group_unweighted_train_losses)
@@ -143,7 +145,9 @@ class Trainer:
         group_weighted_train_losses = [
             weight * loss
             for weight, loss in zip(
-                loss_term_weights, group_unweighted_train_losses, strict=True
+                loss_term_weights.values(),
+                group_unweighted_train_losses.values(),
+                strict=True,
             )
         ]
         train_loss = torch.stack(group_weighted_train_losses).sum()
@@ -152,13 +156,15 @@ class Trainer:
 
     def compute_val_loss(self) -> torch.Tensor:
         #  Compute validation loss
-        group_unweighted_val_losses = [
-            group.compute_unweighted_loss_val(self.model)
-            for group in self.loss_groups.values()
-        ]
+        group_unweighted_val_losses = {
+            label: group.compute_unweighted_loss_val(self.model)
+            for label, group in self.loss_groups.items()
+        }
 
         # Get loss term weights
-        loss_term_weights = [group.weight for group in self.loss_groups.values()]
+        loss_term_weights = {
+            label: group.weight for label, group in self.loss_groups.items()
+        }
 
         # Log losses and weights
         self.logger.record_val_losses(group_unweighted_val_losses)
@@ -168,7 +174,9 @@ class Trainer:
         group_weighted_val_losses = [
             weight * loss
             for weight, loss in zip(
-                loss_term_weights, group_unweighted_val_losses, strict=True
+                loss_term_weights.values(),
+                group_unweighted_val_losses.values(),
+                strict=True,
             )
         ]
         val_loss = torch.stack(group_weighted_val_losses).sum()
@@ -178,7 +186,7 @@ class Trainer:
     @property
     def weighted_avg_val_loss(self) -> float:
         return self.post_step_val_loss.detach().cpu().item() / float(
-            sum(self.logger.loss_term_weights.value)
+            sum(self.logger.loss_term_weights.value.values())
         )
 
     def update_best_model(
