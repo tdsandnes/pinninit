@@ -24,7 +24,11 @@ class EarlyStopping(TrainerModule):
     def on_train_start(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        self.plateau_detector = LossPlateauDetector(self.patience, self.frac_tol)
+        # Initialise plateau detector for each loss term group
+        self.plateau_detectors = [
+            LossPlateauDetector(self.patience, self.frac_tol)
+            for group in trainer.loss_groups.values()
+        ]
 
     def on_train_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
@@ -39,14 +43,24 @@ class EarlyStopping(TrainerModule):
     def on_step_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        # Wait until min_iter to update plateau detector
+        # Wait until min_iter to update plateau detectors
         if trainer.iter >= self.min_iter:
-            # Update loss plateau detector
-            plateau_quantity = trainer.weighted_avg_val_loss
-            self.plateau_detector.step(plateau_quantity)
+            # Get validation losses
+            if trainer.logger.unweighted_val_losses.has_value:
+                unweighted_val_losses = trainer.logger.unweighted_val_losses.value
+            else:
+                raise RuntimeError(
+                    f"Validation losses have not been recorded for iter {trainer.iter}."
+                )
+
+            # Update loss plateau detectors
+            for plateau_detector, val_loss in zip(
+                self.plateau_detectors, unweighted_val_losses, strict=True
+            ):
+                plateau_detector.step(val_loss)
 
             # If validation loss has plateaued, request stop
-            if self.plateau_detector.plateau_detected:
+            if all(detector.plateau_detected for detector in self.plateau_detectors):
                 trainer.state.stop_requested = True
 
                 # Log early stopping request
@@ -57,4 +71,5 @@ class EarlyStopping(TrainerModule):
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
         # Reset counter if another module changed trainer state
-        self.plateau_detector.reset()
+        for plateau_detector in self.plateau_detectors:
+            plateau_detector.reset()

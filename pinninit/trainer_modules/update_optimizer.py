@@ -36,7 +36,11 @@ class UpdateOptimizer(TrainerModule):
     def on_train_start(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        self.plateau_detector = LossPlateauDetector(self.patience, self.frac_tol)
+        # Initialise plateau detector for each loss term group
+        self.plateau_detectors = [
+            LossPlateauDetector(self.patience, self.frac_tol)
+            for group in trainer.loss_groups.values()
+        ]
 
         # Training can only stop after optimizer has been updated
         trainer.state.init_stop_barrier(self.stop_barrier_label)
@@ -60,12 +64,22 @@ class UpdateOptimizer(TrainerModule):
 
         # Wait until min_iter to update plateau detector
         if trainer.iter >= self.min_iter:
-            # Update loss plateau detector
-            plateau_quantity = trainer.weighted_avg_val_loss
-            self.plateau_detector.step(plateau_quantity)
+            # Get validation losses
+            if trainer.logger.unweighted_val_losses.has_value:
+                unweighted_val_losses = trainer.logger.unweighted_val_losses.value
+            else:
+                raise RuntimeError(
+                    f"Validation losses have not been recorded for iter {trainer.iter}."
+                )
+
+            # Update loss plateau detectors
+            for plateau_detector, val_loss in zip(
+                self.plateau_detectors, unweighted_val_losses, strict=True
+            ):
+                plateau_detector.step(val_loss)
 
             # If validation loss has plateaued, update optimizer
-            if self.plateau_detector.plateau_detected:
+            if all(detector.plateau_detected for detector in self.plateau_detectors):
                 # Reload the best model before switching optimizer
                 trainer.load_best_model()
 
@@ -105,4 +119,5 @@ class UpdateOptimizer(TrainerModule):
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
         # Reset counter if another module changed trainer state
-        self.plateau_detector.reset()
+        for plateau_detector in self.plateau_detectors:
+            plateau_detector.reset()

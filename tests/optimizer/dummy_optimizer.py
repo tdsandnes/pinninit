@@ -7,7 +7,7 @@ import torch.nn as nn
 from torch.optim import Optimizer as TorchOptimizer
 
 from pinninit.optimizer.optimizer import Optimizer as PinninitOptimizer
-from pinninit.training.trainer import Trainer
+from pinninit.trainer.trainer import Trainer
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -59,7 +59,7 @@ class DummyPinninitOptimizer(PinninitOptimizer):
 
         # Backprop
         self.optimizer.zero_grad()
-        train_loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
+        train_loss.backward(retain_graph=True)
 
         return float(train_loss)
 

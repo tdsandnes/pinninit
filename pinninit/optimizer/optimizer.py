@@ -85,7 +85,7 @@ class Adam(Optimizer):
 
         # Backprop
         self.optimizer.zero_grad()
-        train_loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
+        train_loss.backward(retain_graph=True)
 
 
 class LBFGS(Optimizer):
@@ -108,7 +108,7 @@ class LBFGS(Optimizer):
 
         # Backprop
         self.optimizer.zero_grad()
-        train_loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
+        train_loss.backward(retain_graph=True)
 
         return float(train_loss)
 
