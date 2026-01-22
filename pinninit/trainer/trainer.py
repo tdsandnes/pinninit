@@ -45,7 +45,7 @@ class Trainer:
         self.best_model_iter: int | None = None
         self.best_model_state: dict[str, torch.Tensor] | None = None
         self.best_loss_group_weights: dict[str, torch.Tensor] | None = None
-        self.best_weighted_avg_val_loss: float | None = None
+        self.best_weighted_avg_val_loss: torch.Tensor | None = None
 
         # Logger
         self.logger = TrainerLogger(self, print_freq=print_freq)
@@ -184,10 +184,12 @@ class Trainer:
         return val_loss
 
     @property
-    def weighted_avg_val_loss(self) -> float:
-        return self.post_step_val_loss.detach().cpu().item() / float(
-            sum(self.logger.loss_term_weights.value.values())
-        )
+    def weighted_avg_val_loss(self) -> torch.Tensor:
+        loss_term_weight_sum = torch.stack(
+            [group.weight.detach() for group in self.loss_groups.values()]
+        ).sum()
+
+        return self.post_step_val_loss.detach() / loss_term_weight_sum
 
     def update_best_model(
         self,
@@ -205,7 +207,9 @@ class Trainer:
                 k: v.detach().clone() for k, v in self.model.state_dict().items()
             }
             # Save loss term group weights
-            self.best_loss_group_weights = self.logger.loss_term_weights.value
+            self.best_loss_group_weights = {
+                label: group.weight for label, group in self.loss_groups.items()
+            }
 
     def load_best_model(
         self,
