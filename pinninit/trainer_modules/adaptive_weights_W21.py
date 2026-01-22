@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from ..trainer.trainer_logger import TrainerLogger
 
 
-class UpdateLossTermWeightsW21(TrainerModule):
+class AdaptiveWeightsW21(TrainerModule):
     """
     Adaptive loss term weights following Wang et al. (2021).
     """
