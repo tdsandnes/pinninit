@@ -17,6 +17,7 @@ from ..nn.layers import LAYER_TYPE_REGISTRY
 from ..nn.neural_network import NeuralNetwork
 from ..optimizer.optimizer import OPTIMIZER_REGISTRY, OptimizerLabels
 from ..trainer.trainer import Trainer
+from ..trainer_modules.adaptive_weights_grad_balance import AdaptiveWeightsGradBalance
 from ..trainer_modules.adaptive_weights_W21 import AdaptiveWeightsW21
 from ..trainer_modules.early_stopping import EarlyStopping
 from ..trainer_modules.update_optimizer import UpdateOptimizer
@@ -421,13 +422,25 @@ class PINN:
                     update_frequency = weight_method.get("update_frequency", 1)
                     min_iter = weight_method.get("min_iter", 0)
 
-                    update_weights = AdaptiveWeightsW21(
+                    adaptive_weights_W21 = AdaptiveWeightsW21(
                         reference_group_label=reference_group_label,
                         alpha=alpha,
                         update_frequency=update_frequency,
                         min_iter=min_iter,
                     )
-                    trainer_modules.append(update_weights)
+                    trainer_modules.append(adaptive_weights_W21)
+
+                if weight_method["label"] == "adaptive_grad_balance":
+                    alpha = weight_method["alpha"]
+                    update_frequency = weight_method.get("update_frequency", 1)
+                    min_iter = weight_method.get("min_iter", 0)
+
+                    adaptive_weights_grad_balance = AdaptiveWeightsGradBalance(
+                        alpha=alpha,
+                        update_frequency=update_frequency,
+                        min_iter=min_iter,
+                    )
+                    trainer_modules.append(adaptive_weights_grad_balance)
 
         # Init trainer
         max_iter = getattr(self.pinn_params.training_params, "max_epochs", None)
