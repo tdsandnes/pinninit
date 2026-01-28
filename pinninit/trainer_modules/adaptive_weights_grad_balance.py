@@ -32,7 +32,7 @@ class AdaptiveWeightsGradBalance(TrainerModule):
         self.min_iter = min_iter
 
         # Maps weight_group_label to LossTermGroup
-        self.adaptive_groups: dict[str, LossTermGroup] = {}
+        self.adaptive_groups: dict[str, list[LossTermGroup]] = {}
 
     def on_train_start(
         self, trainer: Trainer, logger: TrainerLogger | None = None
@@ -45,7 +45,9 @@ class AdaptiveWeightsGradBalance(TrainerModule):
                 if group.weight_group_label is None:
                     raise ValueError("Parameter 'weight_group_label' not given.")
 
-                self.adaptive_groups[group.weight_group_label] = group
+                self.adaptive_groups.setdefault(group.weight_group_label, []).append(
+                    group
+                )
                 if group.initial_weight is None:
                     raise ValueError(
                         f"Initial weight for group "
@@ -79,24 +81,30 @@ class AdaptiveWeightsGradBalance(TrainerModule):
     def _update_weights(self, trainer: Trainer) -> None:
         # Compute norm of each adaptive group
         group_grad_norms: dict[str, torch.Tensor] = {}
-        for label, group in self.adaptive_groups.items():
-            group_loss = group.compute_unweighted_loss_train(trainer.model)
-            grads = torch.autograd.grad(
-                group_loss,
-                list(trainer.model.parameters()),
-                retain_graph=True,
-                allow_unused=True,
-            )
-            grads_flat = torch.cat(
-                [g.detach().reshape(-1) for g in grads if g is not None]
-            )
-            group_grad_norms[label] = torch.norm(grads_flat, p=2)
+        for label, group_list in self.adaptive_groups.items():
+            all_grads_flat_list = []
+            for group in group_list:
+                group_loss = group.compute_unweighted_loss_train(trainer.model)
+                grads = torch.autograd.grad(
+                    group_loss,
+                    list(trainer.model.parameters()),
+                    retain_graph=True,
+                    allow_unused=True,
+                )
+                grads_flat = torch.cat(
+                    [g.detach().reshape(-1) for g in grads if g is not None]
+                )
+                all_grads_flat_list.append(grads_flat)
+
+            all_grads_flat = torch.cat(all_grads_flat_list)
+            group_grad_norms[label] = torch.norm(all_grads_flat, p=2)
 
         # Set loss term weights
         sum_of_grad_norms = torch.stack(list(group_grad_norms.values())).sum()
-        for label, group in self.adaptive_groups.items():
+        for label, group_list in self.adaptive_groups.items():
             # Wang et al. (2023) Eqns. 2.12--2.14
             lambda_hat = sum_of_grad_norms / group_grad_norms[label]
 
-            # Wang et al. (2023) Eqn. 2.15
-            group.weight = (1 - self.alpha) * group.weight + self.alpha * lambda_hat
+            for group in group_list:
+                # Wang et al. (2023) Eqn. 2.15
+                group.weight = (1 - self.alpha) * group.weight + self.alpha * lambda_hat

@@ -33,7 +33,7 @@ class AdaptiveWeightsW21(TrainerModule):
         self.min_iter = min_iter
 
         # Maps weight_group_label to LossTermGroup
-        self.adaptive_groups: dict[str, LossTermGroup] = {}
+        self.adaptive_groups: dict[str, list[LossTermGroup]] = {}
         self.reference_group: LossTermGroup | None = None
 
     def on_train_start(
@@ -47,7 +47,9 @@ class AdaptiveWeightsW21(TrainerModule):
                 if group.weight_group_label is None:
                     raise ValueError("Parameter 'weight_group_label' not given.")
 
-                self.adaptive_groups[group.weight_group_label] = group
+                self.adaptive_groups.setdefault(group.weight_group_label, []).append(
+                    group
+                )
                 if group.initial_weight is None:
                     raise ValueError(
                         f"Initial weight for group "
@@ -112,21 +114,27 @@ class AdaptiveWeightsW21(TrainerModule):
         ref_max_abs = torch.max(ref_grads_flat.abs())
 
         # Compute and update adaptive groups
-        for group in self.adaptive_groups.values():
-            group_loss = group.compute_unweighted_loss_train(trainer.model)
-            grads = torch.autograd.grad(
-                group_loss,
-                list(trainer.model.parameters()),
-                retain_graph=True,
-                allow_unused=True,
-            )
-            grads_flat = torch.cat(
-                [g.detach().reshape(-1) for g in grads if g is not None]
-            )
-            group_mean_abs = torch.mean(grads_flat.abs())
+        for group_list in self.adaptive_groups.values():
+            all_grads_flat_list = []
+            for group in group_list:
+                group_loss = group.compute_unweighted_loss_train(trainer.model)
+                grads = torch.autograd.grad(
+                    group_loss,
+                    list(trainer.model.parameters()),
+                    retain_graph=True,
+                    allow_unused=True,
+                )
+                grads_flat = torch.cat(
+                    [g.detach().reshape(-1) for g in grads if g is not None]
+                )
+                all_grads_flat_list.append(grads_flat)
+
+            all_grads_flat = torch.cat(all_grads_flat_list)
+            group_mean_abs = torch.mean(all_grads_flat.abs())
 
             # Wang et al. (2021) Eqn. 40
             lambda_hat = ref_max_abs / group_mean_abs
 
             # Wang et al. (2021) Eqn. 41
-            group.weight = (1 - self.alpha) * group.weight + self.alpha * lambda_hat
+            for group in group_list:
+                group.weight = (1 - self.alpha) * group.weight + self.alpha * lambda_hat
