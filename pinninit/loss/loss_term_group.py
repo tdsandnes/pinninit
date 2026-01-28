@@ -42,6 +42,7 @@ class LossTermGroup:
         shuffle_val: bool = False,
         num_workers_train: int = 0,
         num_workers_val: int = 0,
+        staggering: int = 0,
     ) -> None:
         self.train_coords = train_coords
         self.val_coords = val_coords
@@ -97,6 +98,9 @@ class LossTermGroup:
         self.num_workers_val = self._default_num_workers_val
         self._set_train_val_data_loaders()
         self.is_default_batching = True
+
+        # Init staggering
+        self.staggering = staggering
 
         # Init loss terms as empty group
         self.loss_terms: list[LossTerm] = []

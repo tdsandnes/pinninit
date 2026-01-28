@@ -27,7 +27,7 @@ class Trainer:
     ) -> None:
         self.model = model
         self.optimizer = optimizer
-        self.loss_groups = loss_groups
+        self._loss_groups = loss_groups
         self.trainer_modules = trainer_modules
         self.max_iter = max_iter
 
@@ -49,6 +49,9 @@ class Trainer:
 
         # Logger
         self.logger = TrainerLogger(self, print_freq=print_freq)
+
+        # Loss term group staggering
+        self.loss_term_stagger_counter = 0
 
     def step(self) -> None:
         # Update trainer state for current step
@@ -124,6 +127,15 @@ class Trainer:
         # Execute all trainer modules at end of training
         for module in self.trainer_modules:
             module.on_train_end(self, self.logger)
+
+    @property
+    def loss_groups(self) -> dict[str, LossTermGroup]:
+        """Active loss groups"""
+        return {
+            label: group
+            for label, group in self._loss_groups.items()
+            if group.staggering <= self.loss_term_stagger_counter
+        }
 
     def compute_train_loss(self) -> torch.Tensor:
         #  Compute training loss

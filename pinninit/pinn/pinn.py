@@ -200,6 +200,7 @@ class PINN:
                 device=self.device,
                 requires_grad=False,
             )
+            staggering = loss_term.get("staggering", 0)
 
             batch_size_train = getattr(
                 self.pinn_params.training_params, "batch_size_train", None
@@ -239,6 +240,7 @@ class PINN:
                 shuffle_val=shuffle_val,
                 num_workers_train=num_workers_train,
                 num_workers_val=num_workers_val,
+                staggering=staggering,
             )
 
             # Initialise loss terms in the group
