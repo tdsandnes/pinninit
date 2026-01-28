@@ -173,7 +173,7 @@ class PINN:
 
         for loss_term in loss_terms_params:
             # Get training and validation coords
-            loss_term_label = loss_term["field_label"]
+            loss_term_label = loss_term["loss_term_label"]
             dataset_label = loss_term["data_set_label"]
             coords = self.dataset_coords[dataset_label]
             train_coord = self.Coords(
