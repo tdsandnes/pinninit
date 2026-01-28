@@ -36,9 +36,13 @@ class AdaptiveWeightsW21(TrainerModule):
         self.adaptive_groups: dict[str, list[LossTermGroup]] = {}
         self.reference_group: LossTermGroup | None = None
 
+        # Keep track of the previous weight update
+        self._prev_update_iter: int | None = None
+
     def on_train_start(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
+        self._prev_update_iter = None
         self.adaptive_groups.clear()
 
         for group in trainer.loss_groups.values():
@@ -76,8 +80,15 @@ class AdaptiveWeightsW21(TrainerModule):
     def on_step_start(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        if trainer.iter >= self.min_iter and trainer.iter % self.update_frequency == 0:
+        if trainer.iter < self.min_iter:
+            return
+
+        if (
+            self._prev_update_iter is None
+            or (trainer.iter - self._prev_update_iter) >= self.update_frequency
+        ):
             self._update_weights(trainer)
+            self._prev_update_iter = trainer.iter
 
     def on_step_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
@@ -92,7 +103,11 @@ class AdaptiveWeightsW21(TrainerModule):
     def on_state_change(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        pass
+        if trainer.iter < self.min_iter:
+            return
+
+        self._update_weights(trainer)
+        self._prev_update_iter = trainer.iter
 
     def _update_weights(self, trainer: Trainer) -> None:
         if self.reference_group is None:
