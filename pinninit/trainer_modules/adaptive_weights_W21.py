@@ -22,19 +22,19 @@ class AdaptiveWeightsW21(TrainerModule):
 
     def __init__(
         self,
-        reference_group_label: str,
+        reference_weight_group_label: str,
         alpha: float = 0.1,  # NOTE: outdated arxiv version of W+21 has incorrect value
         update_frequency: int = 1,
         min_iter: int = 0,
     ):
-        self.reference_group_label = reference_group_label
+        self.reference_weight_group_label = reference_weight_group_label
         self.alpha = alpha
         self.update_frequency = update_frequency
         self.min_iter = min_iter
 
         # Maps weight_group_label to LossTermGroup
         self.adaptive_groups: dict[str, list[LossTermGroup]] = {}
-        self.reference_group: LossTermGroup | None = None
+        self.reference_weight_group: list[LossTermGroup] = []
 
         # Keep track of the previous weight update
         self._prev_update_iter: int | None = None
@@ -44,6 +44,7 @@ class AdaptiveWeightsW21(TrainerModule):
     ) -> None:
         self._prev_update_iter = None
         self.adaptive_groups.clear()
+        self.reference_weight_group.clear()
 
         for group in trainer.loss_groups.values():
             # Initialise adaptive groups
@@ -64,17 +65,18 @@ class AdaptiveWeightsW21(TrainerModule):
                 group.weight = group.initial_weight
 
             # Identify reference group
-            if group.weight_group_label == self.reference_group_label:
-                self.reference_group = group
+            if group.weight_group_label == self.reference_weight_group_label:
+                self.reference_weight_group.append(group)
                 if group.weight_method_label != "constant":  ### Make this enum
                     raise ValueError(
-                        f"Reference group '{self.reference_group_label}' must use "
-                        f"constant weighting, not '{group.weight_method_label}'."
+                        f"Reference group '{self.reference_weight_group_label}' must "
+                        f"use constant weighting, not '{group.weight_method_label}'."
                     )
 
-        if self.reference_group is None:
+        if self.reference_weight_group == []:
             raise ValueError(
-                f"Reference weight group '{self.reference_group_label}' not found."
+                f"Reference weight group '{self.reference_weight_group_label}' not "
+                "found."
             )
 
     def on_step_start(
@@ -121,7 +123,7 @@ class AdaptiveWeightsW21(TrainerModule):
                     self.adaptive_groups.setdefault(label, []).append(group)
                     if group.initial_weight is None:
                         raise ValueError(
-                            f"Initial weight for group {label}' is not given."
+                            f"Initial weight for group '{label}' is not given."
                         )
 
                     # Set group weight
@@ -134,23 +136,28 @@ class AdaptiveWeightsW21(TrainerModule):
     def _update_weights(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        if self.reference_group is None:
+        if self.reference_weight_group == []:
             raise RuntimeError(
-                f"Reference group '{self.reference_group_label}' not set."
+                f"Reference group '{self.reference_weight_group_label}' not set."
             )
 
         # Compute gradients for the reference group
-        ref_loss = self.reference_group.compute_unweighted_loss_train(trainer.model)
-        ref_grads = torch.autograd.grad(
-            ref_loss,
-            list(trainer.model.parameters()),
-            retain_graph=True,
-            allow_unused=True,
-        )
-        ref_grads_flat = torch.cat(
-            [g.detach().reshape(-1) for g in ref_grads if g is not None]
-        )
-        ref_max_abs = torch.max(ref_grads_flat.abs())
+        all_ref_group_grads_flat_list = []
+        for group in self.reference_weight_group:
+            ref_loss = group.compute_unweighted_loss_train(trainer.model)
+            ref_grads = torch.autograd.grad(
+                ref_loss,
+                list(trainer.model.parameters()),
+                retain_graph=True,
+                allow_unused=True,
+            )
+            ref_grads_flat = torch.cat(
+                [g.detach().reshape(-1) for g in ref_grads if g is not None]
+            )
+            all_ref_group_grads_flat_list.append(ref_grads_flat)
+
+        all_ref_group_grads_flat = torch.cat(all_ref_group_grads_flat_list)
+        ref_max_abs = torch.max(all_ref_group_grads_flat.abs())
 
         # Compute and update adaptive groups
         for group_list in self.adaptive_groups.values():

@@ -433,13 +433,15 @@ class PINN:
         if hasattr(self.pinn_params.loss_terms_params, "weight_methods"):
             for weight_method in self.pinn_params.loss_terms_params.weight_methods:
                 if weight_method["label"] == "adaptive_W21":
-                    reference_group_label = weight_method["reference_weight_group"]
+                    reference_weight_group_label = weight_method[
+                        "reference_weight_group"
+                    ]
                     alpha = weight_method["alpha"]
                     update_frequency = weight_method.get("update_frequency", 1)
                     min_iter = weight_method.get("min_iter", 0)
 
                     adaptive_weights_W21 = AdaptiveWeightsW21(
-                        reference_group_label=reference_group_label,
+                        reference_weight_group_label=reference_weight_group_label,
                         alpha=alpha,
                         update_frequency=update_frequency,
                         min_iter=min_iter,
