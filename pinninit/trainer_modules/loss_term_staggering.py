@@ -32,7 +32,7 @@ class LossTermStaggering(TrainerModule):
 
         self.staggering_group_dict: dict[int, list[str]] = {}
         self.current_stagger_idx = 0
-        self.base_stop_barrier_label = self.__class__.__name__
+        self.stop_barrier_label = self.__class__.__name__
         self.completed = False
 
     def on_train_start(
@@ -58,10 +58,8 @@ class LossTermStaggering(TrainerModule):
         # Initialise plateau detectors
         self._init_plateau_detectors(trainer)
 
-        # Training can only stop after optimizer has been updated
-        for staggering in self.staggering_group_dict:
-            stop_barrier_label = self.base_stop_barrier_label + "_" + str(staggering)
-            trainer.state.init_stop_barrier(stop_barrier_label)
+        # Training can only stop after all loss terms have been activated
+        trainer.state.init_stop_barrier(self.stop_barrier_label)
 
     def on_step_start(
         self, trainer: Trainer, logger: TrainerLogger | None = None
@@ -123,14 +121,12 @@ class LossTermStaggering(TrainerModule):
             # Init new plateu detectors, including the newly activated groups
             self._init_plateau_detectors(trainer)
 
-            # Remove stop barrier
-            stop_barrier_label = f"{self.base_stop_barrier_label}_{current_stagger}"
-            trainer.state.update_stop_barrier(stop_barrier_label, True)
-
             # Check if all loss terms are now active
-            self.completed = (
-                self.current_stagger_idx == len(self.staggering_group_dict) - 1
-            )
+            if self.current_stagger_idx == len(self.staggering_group_dict) - 1:
+                self.completed = True
+
+                # Remove stop barrier
+                trainer.state.update_stop_barrier(self.stop_barrier_label, True)
 
             # Notify trainer that its state has changed
             trainer.state.state_updated = True
