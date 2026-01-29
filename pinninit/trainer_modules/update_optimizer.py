@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from ..optimizer.optimizer import Optimizer
 from ..trainer.trainer import Trainer
+from .loss_term_staggering import LossTermStaggering
 from .trainer_module import TrainerModule
 from .trainer_module_utils import LossPlateauDetector
 
@@ -68,63 +69,73 @@ class UpdateOptimizer(TrainerModule):
             return
 
         # Wait until min_iter to update plateau detector
-        if trainer.iter >= self.min_iter:
-            # Get validation losses
-            if trainer.logger.unweighted_val_losses.has_value:
-                unweighted_val_losses = trainer.logger.unweighted_val_losses.value
+        if trainer.iter < self.min_iter:
+            return
+
+        # Do nothing until all loss terms are active
+        ### Probably a more general way to do this
+        for module in trainer.trainer_modules:
+            if isinstance(module, LossTermStaggering) and not module.completed:
+                return
+
+        # Get validation losses
+        if trainer.logger.unweighted_val_losses.has_value:
+            unweighted_val_losses = trainer.logger.unweighted_val_losses.value
+        else:
+            raise RuntimeError(
+                f"Validation losses have not been recorded for iter {trainer.iter}."
+            )
+
+        # Update loss plateau detectors
+        for label, plateau_detector in self.plateau_detectors.items():
+            if label in unweighted_val_losses:
+                plateau_detector.step(unweighted_val_losses[label])
+            elif label == self.weighted_avg_label:
+                plateau_detector.step(float(trainer.weighted_avg_val_loss))
             else:
-                raise RuntimeError(
-                    f"Validation losses have not been recorded for iter {trainer.iter}."
+                raise KeyError(f"No loss value found for label {label}")
+
+        # If validation loss has plateaued, update optimizer
+        if all(
+            detector.plateau_detected for detector in self.plateau_detectors.values()
+        ):
+            # Reload the best model before switching optimizer
+            trainer.load_best_model()
+
+            # Reset the best model tracker
+            trainer.reset_best_model()
+
+            # Update optimizer
+            trainer.optimizer = self.new_optimizer
+            trainer.optimizer.attach_trainer(trainer)
+            self.updated = True
+            print(f"Optimizer updated on iteration {trainer.iter}.")
+
+            # Set batching of loss term groups if needed
+            if self.new_optimizer.requires_full_batch:
+                for group in trainer.loss_groups.values():
+                    group.set_batching(batch_size_train=None, batch_size_val=None)
+            else:
+                for group in trainer.loss_groups.values():
+                    if not group.is_default_batching:
+                        group.reset_to_default_batching()
+
+            # Log optimizer update
+            if logger is not None:
+                logger.log_event("optimizer_update", trainer.iter)
+
+            # Notify trainer that its state has changed
+            trainer.state.state_updated = True
+
+            # Set coast phase for a number of iterations
+            if self.coast_iters_after_update > 0:
+                trainer.state.coast_until_iter = max(
+                    trainer.state.coast_until_iter,
+                    trainer.iter + self.coast_iters_after_update,
                 )
 
-            # Update loss plateau detectors
-            for label, plateau_detector in self.plateau_detectors.items():
-                if label in unweighted_val_losses:
-                    plateau_detector.step(unweighted_val_losses[label])
-                elif label == self.weighted_avg_label:
-                    plateau_detector.step(float(trainer.weighted_avg_val_loss))
-                else:
-                    raise KeyError(f"No loss value found for label {label}")
-
-            # If validation loss has plateaued, update optimizer
-            if all(
-                detector.plateau_detected
-                for detector in self.plateau_detectors.values()
-            ):
-                # Reload the best model before switching optimizer
-                trainer.load_best_model()
-
-                # Update optimizer
-                trainer.optimizer = self.new_optimizer
-                trainer.optimizer.attach_trainer(trainer)
-                self.updated = True
-                print(f"Optimizer updated on iteration {trainer.iter}.")
-
-                # Set batching of loss term groups if needed
-                if self.new_optimizer.requires_full_batch:
-                    for group in trainer.loss_groups.values():
-                        group.set_batching(batch_size_train=None, batch_size_val=None)
-                else:
-                    for group in trainer.loss_groups.values():
-                        if not group.is_default_batching:
-                            group.reset_to_default_batching()
-
-                # Log optimizer update
-                if logger is not None:
-                    logger.log_event("optimizer_update", trainer.iter)
-
-                # Notify trainer that its state has changed
-                trainer.state.state_updated = True
-
-                # Set coast phase for a number of iterations
-                if self.coast_iters_after_update > 0:
-                    trainer.state.coast_until_iter = max(
-                        trainer.state.coast_until_iter,
-                        trainer.iter + self.coast_iters_after_update,
-                    )
-
-                # Remove stop barrier
-                trainer.state.update_stop_barrier(self.stop_barrier_label, True)
+            # Remove stop barrier
+            trainer.state.update_stop_barrier(self.stop_barrier_label, True)
 
     def on_state_change(
         self, trainer: Trainer, logger: TrainerLogger | None = None

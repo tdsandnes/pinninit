@@ -71,7 +71,7 @@ class AdaptiveWeightsGradBalance(TrainerModule):
             self._prev_update_iter is None
             or (trainer.iter - self._prev_update_iter) >= self.update_frequency
         ):
-            self._update_weights(trainer)
+            self._update_weights(trainer, logger)
             self._prev_update_iter = trainer.iter
 
     def on_step_end(
@@ -90,10 +90,34 @@ class AdaptiveWeightsGradBalance(TrainerModule):
         if trainer.iter < self.min_iter:
             return
 
-        self._update_weights(trainer)
+        # Add new adaptive groups
+        for group in trainer.loss_groups.values():
+            # Initialise adaptive groups
+            if group.weight_method_label == "adaptive_grad_balance":  ### Make this enum
+                if group.weight_group_label is None:
+                    raise ValueError("Parameter 'weight_group_label' not given.")
+
+                label = group.weight_group_label
+                if (
+                    label not in self.adaptive_groups
+                    or group not in self.adaptive_groups[label]
+                ):
+                    self.adaptive_groups.setdefault(label, []).append(group)
+                    if group.initial_weight is None:
+                        raise ValueError(
+                            f"Initial weight for group {label}' is not given."
+                        )
+
+                    # Set group weight
+                    group.weight = group.initial_weight
+
+        # Update weights
+        self._update_weights(trainer, logger)
         self._prev_update_iter = trainer.iter
 
-    def _update_weights(self, trainer: Trainer) -> None:
+    def _update_weights(
+        self, trainer: Trainer, logger: TrainerLogger | None = None
+    ) -> None:
         # Compute norm of each adaptive group
         group_grad_norms: dict[str, torch.Tensor] = {}
         for label, group_list in self.adaptive_groups.items():
@@ -123,3 +147,7 @@ class AdaptiveWeightsGradBalance(TrainerModule):
             for group in group_list:
                 # Wang et al. (2023) Eqn. 2.15
                 group.weight = (1 - self.alpha) * group.weight + self.alpha * lambda_hat
+
+        # Log weight update
+        if logger is not None:
+            logger.log_event("weight_update_W21", trainer.iter)

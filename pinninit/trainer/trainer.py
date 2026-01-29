@@ -27,9 +27,17 @@ class Trainer:
     ) -> None:
         self.model = model
         self.optimizer = optimizer
-        self._loss_groups = loss_groups
         self.trainer_modules = trainer_modules
         self.max_iter = max_iter
+
+        # All loss groups
+        self._loss_groups = loss_groups
+        # Active loss groups
+        self.loss_groups = {
+            label: group
+            for label, group in loss_groups.items()
+            if group.staggering == 0
+        }
 
         # Initialise iterations at 0
         self.iter = 0
@@ -49,9 +57,6 @@ class Trainer:
 
         # Logger
         self.logger = TrainerLogger(self, print_freq=print_freq)
-
-        # Loss term group staggering
-        self.loss_term_stagger_counter = 0
 
     def step(self) -> None:
         # Update trainer state for current step
@@ -127,15 +132,6 @@ class Trainer:
         # Execute all trainer modules at end of training
         for module in self.trainer_modules:
             module.on_train_end(self, self.logger)
-
-    @property
-    def loss_groups(self) -> dict[str, LossTermGroup]:
-        """Active loss groups"""
-        return {
-            label: group
-            for label, group in self._loss_groups.items()
-            if group.staggering <= self.loss_term_stagger_counter
-        }
 
     def compute_train_loss(self) -> torch.Tensor:
         #  Compute training loss
@@ -251,3 +247,12 @@ class Trainer:
             self.state.state_updated = True
         else:
             raise ValueError("No best model state to load.")
+
+    def reset_best_model(self) -> None:
+        self.best_model_iter = None
+        self.best_model_state = None
+        self.best_loss_group_weights = None
+        self.best_weighted_avg_val_loss = None
+
+        # Log event
+        self.logger.log_event("reset_best_model", self.iter)

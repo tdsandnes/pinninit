@@ -87,7 +87,7 @@ class AdaptiveWeightsW21(TrainerModule):
             self._prev_update_iter is None
             or (trainer.iter - self._prev_update_iter) >= self.update_frequency
         ):
-            self._update_weights(trainer)
+            self._update_weights(trainer, logger)
             self._prev_update_iter = trainer.iter
 
     def on_step_end(
@@ -106,10 +106,34 @@ class AdaptiveWeightsW21(TrainerModule):
         if trainer.iter < self.min_iter:
             return
 
-        self._update_weights(trainer)
+        # Add new adaptive groups
+        for group in trainer.loss_groups.values():
+            # Initialise adaptive groups
+            if group.weight_method_label == "adaptive_W21":  ### Make this enum
+                if group.weight_group_label is None:
+                    raise ValueError("Parameter 'weight_group_label' not given.")
+
+                label = group.weight_group_label
+                if (
+                    label not in self.adaptive_groups
+                    or group not in self.adaptive_groups[label]
+                ):
+                    self.adaptive_groups.setdefault(label, []).append(group)
+                    if group.initial_weight is None:
+                        raise ValueError(
+                            f"Initial weight for group {label}' is not given."
+                        )
+
+                    # Set group weight
+                    group.weight = group.initial_weight
+
+        # Update weights
+        self._update_weights(trainer, logger)
         self._prev_update_iter = trainer.iter
 
-    def _update_weights(self, trainer: Trainer) -> None:
+    def _update_weights(
+        self, trainer: Trainer, logger: TrainerLogger | None = None
+    ) -> None:
         if self.reference_group is None:
             raise RuntimeError(
                 f"Reference group '{self.reference_group_label}' not set."
@@ -153,3 +177,7 @@ class AdaptiveWeightsW21(TrainerModule):
             # Wang et al. (2021) Eqn. 41
             for group in group_list:
                 group.weight = (1 - self.alpha) * group.weight + self.alpha * lambda_hat
+
+        # Log weight update
+        if logger is not None:
+            logger.log_event("weight_update_W21", trainer.iter)

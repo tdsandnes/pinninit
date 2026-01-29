@@ -20,6 +20,7 @@ from ..trainer.trainer import Trainer
 from ..trainer_modules.adaptive_weights_grad_balance import AdaptiveWeightsGradBalance
 from ..trainer_modules.adaptive_weights_W21 import AdaptiveWeightsW21
 from ..trainer_modules.early_stopping import EarlyStopping
+from ..trainer_modules.loss_term_staggering import LossTermStaggering
 from ..trainer_modules.update_optimizer import UpdateOptimizer
 
 
@@ -414,6 +415,19 @@ class PINN:
             patience=patience, frac_tol=frac_tol, min_iter=min_iter
         )
         trainer_modules.append(early_stopping)
+
+        ### Loss term staggering
+        patience = 500
+        frac_tol = 1e-2
+        min_iter = 0
+        coast_iters_after_update = 1000
+        loss_term_staggering = LossTermStaggering(
+            patience=patience,
+            frac_tol=frac_tol,
+            min_iter=min_iter,
+            coast_iters_after_update=coast_iters_after_update,
+        )
+        trainer_modules.append(loss_term_staggering)
 
         ### Hardcode this for now
         if hasattr(self.pinn_params.loss_terms_params, "weight_methods"):

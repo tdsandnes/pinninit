@@ -49,34 +49,35 @@ class EarlyStopping(TrainerModule):
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
         # Wait until min_iter to update plateau detectors
-        if trainer.iter >= self.min_iter:
-            # Get validation losses
-            if trainer.logger.unweighted_val_losses.has_value:
-                unweighted_val_losses = trainer.logger.unweighted_val_losses.value
+        if trainer.iter < self.min_iter:
+            return
+
+        # Get validation losses
+        if trainer.logger.unweighted_val_losses.has_value:
+            unweighted_val_losses = trainer.logger.unweighted_val_losses.value
+        else:
+            raise RuntimeError(
+                f"Validation losses have not been recorded for iter {trainer.iter}."
+            )
+
+        # Update loss plateau detectors
+        for label, plateau_detector in self.plateau_detectors.items():
+            if label in unweighted_val_losses:
+                plateau_detector.step(unweighted_val_losses[label])
+            elif label == self.weighted_avg_label:
+                plateau_detector.step(float(trainer.weighted_avg_val_loss))
             else:
-                raise RuntimeError(
-                    f"Validation losses have not been recorded for iter {trainer.iter}."
-                )
+                raise KeyError(f"No loss value found for label {label}")
 
-            # Update loss plateau detectors
-            for label, plateau_detector in self.plateau_detectors.items():
-                if label in unweighted_val_losses:
-                    plateau_detector.step(unweighted_val_losses[label])
-                elif label == self.weighted_avg_label:
-                    plateau_detector.step(float(trainer.weighted_avg_val_loss))
-                else:
-                    raise KeyError(f"No loss value found for label {label}")
+        # If validation loss has plateaued, request stop
+        if all(
+            detector.plateau_detected for detector in self.plateau_detectors.values()
+        ):
+            trainer.state.stop_requested = True
 
-            # If validation loss has plateaued, request stop
-            if all(
-                detector.plateau_detected
-                for detector in self.plateau_detectors.values()
-            ):
-                trainer.state.stop_requested = True
-
-                # Log early stopping request
-                if logger is not None:
-                    logger.log_event("early_stopping_requested", trainer.iter)
+            # Log early stopping request
+            if logger is not None:
+                logger.log_event("early_stopping_requested", trainer.iter)
 
     def on_state_change(
         self, trainer: Trainer, logger: TrainerLogger | None = None
