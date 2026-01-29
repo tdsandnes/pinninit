@@ -129,6 +129,18 @@ class AdaptiveWeightsW21(TrainerModule):
                     # Set group weight
                     group.weight = group.initial_weight
 
+            # Add new reference groups
+            if group.weight_group_label == self.reference_weight_group_label:
+                if group.weight_method_label != "constant":  ### Make this enum
+                    raise ValueError(
+                        f"Reference group '{self.reference_weight_group_label}' must "
+                        f"use constant weighting, not '{group.weight_method_label}'."
+                    )
+
+                label = group.weight_group_label
+                if group not in self.reference_weight_group:
+                    self.reference_weight_group.append(group)
+
         # Update weights
         self._update_weights(trainer, logger)
         self._prev_update_iter = trainer.iter

@@ -24,16 +24,8 @@ class EarlyStopping(TrainerModule):
     def on_train_start(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        # Initialise plateau detector for each loss term group
-        self.plateau_detectors = {
-            group_label: LossPlateauDetector(self.patience, self.frac_tol)
-            for group_label in trainer.loss_groups
-        }
-        # Add plateau detector for weighted average val loss
-        self.weighted_avg_label = "weighted_avg"
-        self.plateau_detectors[self.weighted_avg_label] = LossPlateauDetector(
-            self.patience, self.frac_tol
-        )
+        # Initialise plateau detectors
+        self._init_plateau_detectors(trainer)
 
     def on_train_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
@@ -82,6 +74,17 @@ class EarlyStopping(TrainerModule):
     def on_state_change(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        # Reset counter if another module changed trainer state
-        for plateau_detector in self.plateau_detectors.values():
-            plateau_detector.reset()
+        # Fully re-initialise plateau detectors in case new loss groups have been added
+        self._init_plateau_detectors(trainer)
+
+    def _init_plateau_detectors(self, trainer: Trainer) -> None:
+        # Initialise plateau detector for each loss term group
+        self.plateau_detectors = {
+            group_label: LossPlateauDetector(self.patience, self.frac_tol)
+            for group_label in trainer.loss_groups
+        }
+        # Add plateau detector for weighted average val loss
+        self.weighted_avg_label = "weighted_avg"
+        self.plateau_detectors[self.weighted_avg_label] = LossPlateauDetector(
+            self.patience, self.frac_tol
+        )
