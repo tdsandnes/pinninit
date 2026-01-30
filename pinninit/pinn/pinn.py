@@ -305,7 +305,7 @@ class PINN:
         learnt_consts: dict[str, torch.Tensor] = {}
         for const_label in self.pinn_params.learnt_const_labels:
             learnt_consts[const_label] = nn.Parameter(
-                torch.zeros(1, dtype=torch.float32, device=self.device)
+                torch.zeros(1, device=self.device)
             )
 
         self.learnt_consts = learnt_consts
@@ -527,8 +527,8 @@ class PINN:
     ###  )
 
     # self.lambda_1 = torch.tensor(
-    #     checkpoint["lambda_1"], requires_grad=True, dtype=torch.float32
+    #     checkpoint["lambda_1"], requires_grad=True
     # )
     # self.lambda_2 = torch.tensor(
-    #     checkpoint["lambda_2"], requires_grad=True, dtype=torch.float32
+    #     checkpoint["lambda_2"], requires_grad=True
     # )

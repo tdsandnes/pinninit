@@ -77,7 +77,6 @@ def load_coords(
 
             coords_dict[coord_label] = torch.tensor(
                 data,
-                dtype=torch.float32,
                 device=device,
                 requires_grad=True,
             )
@@ -154,7 +153,6 @@ def load_fields(
 
                 fields_dict[field_label] = torch.tensor(
                     data[sample_mask],
-                    dtype=torch.float32,
                     device=device,
                 )
             else:
@@ -186,7 +184,6 @@ def load_fields(
 
                     component_dict[component] = torch.tensor(
                         data[sample_mask],
-                        dtype=torch.float32,
                         device=device,
                     )
 

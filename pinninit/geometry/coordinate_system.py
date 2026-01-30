@@ -115,9 +115,9 @@ class CoordSystem(ABC):
             and axis_label in self.fixed_axes
         ):
             idx = self.fixed_axes.index(axis_label)
-            return torch.tensor(self.fixed_axes_values[idx]).float()
+            return torch.tensor(self.fixed_axes_values[idx])
         elif default is not None:
-            return torch.tensor(default).float()
+            return torch.tensor(default)
         else:
             raise ValueError(f"Missing required axis: {axis_label}")
 
