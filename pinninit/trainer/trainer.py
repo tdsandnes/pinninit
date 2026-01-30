@@ -92,8 +92,7 @@ class Trainer:
         # Notify all modules of any state change
         if self.state.state_updated:
             for module in self.trainer_modules:
-                if not self.state.is_coasting or module.runs_during_coast:
-                    module.on_state_change(self, self.logger)
+                module.on_state_change(self, self.logger)
 
         # Update trainer state for next step
         self.state.on_step_end(self, self.logger)
