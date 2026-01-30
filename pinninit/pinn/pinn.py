@@ -29,6 +29,9 @@ class PINN:
         # Store device
         self.device = device
 
+        # Set default dtype to higher precision
+        torch.set_default_dtype(torch.float64)
+
         # Read PINN parameters from yaml file
         self.pinn_params = PINNParameters(param_file_path)
 
