@@ -80,9 +80,6 @@ def _coords_post_init(self: CoordsProtocol) -> None:
     self.internal_label_to_index = {
         label: i for i, label in enumerate(self.internal_labels)
     }
-
-    for label in internal_geometric_coords_dict:
-        setattr(self, label, internal_geometric_coords_dict[label])
     self.internal_coord_dim = len(self.internal_labels)
 
     # Batch state flag

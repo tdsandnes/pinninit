@@ -147,8 +147,8 @@ class CoordSystem(ABC):
             )
 
         # Check value of dim_geometry
-        if dim_geometry < 2:
-            raise ValueError(f"dim_geometry must be >= 2, got {dim_geometry}")
+        if dim_geometry < 1:
+            raise ValueError(f"dim_geometry must be >= 1, got {dim_geometry}")
         if dim_geometry > max_dim_geometry:
             raise ValueError(
                 f"{name} only implemented for dim_geometry<={max_dim_geometry}, "

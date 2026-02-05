@@ -151,10 +151,12 @@ def load_fields(
                         f" got {data.shape}"
                     )
 
-                fields_dict[field_label] = torch.tensor(
-                    data[sample_mask],
-                    device=device,
-                )
+                fields_dict[field_label] = {
+                    "value": torch.tensor(
+                        data[sample_mask],
+                        device=device,
+                    )
+                }
             else:
                 # Expect group for rank >=1
                 if not isinstance(item, h5py.Group):
