@@ -158,6 +158,10 @@ class AdaptiveWeightsGradBalance(TrainerModule):
         # Set loss term weights
         sum_of_grad_norms = torch.stack(list(group_grad_norms.values())).sum()
         for label, group_list in self.adaptive_groups.items():
+            # Skip if we get 0 grads
+            if group_grad_norms[label] == 0:
+                continue
+
             # Wang et al. (2023) Eqns. 2.12--2.14
             lambda_hat = sum_of_grad_norms / group_grad_norms[label]
 
