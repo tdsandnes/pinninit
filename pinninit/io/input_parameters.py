@@ -50,7 +50,7 @@ class CoordinatesParams:
 class FieldsParams:
     def __init__(self, input_params: dict[str, Any]):
         # input_fields
-        self.input_fields = load_compulsory(
+        self.input_fields = load_optional(
             "input_fields", "Fields", input_params, data_type=list
         )
         # output_fields
