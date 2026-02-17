@@ -97,7 +97,8 @@ def validate_list_of_tensors(
     # Validate coords_geometry tensor type and shape
     if len(vector) != list_length:
         raise ValueError(
-            f"Expected vector to have length {list_length}, " f"got {len(vector)}"
+            f"[validate_list_of_tensors] Expected vector to have length {list_length}, "
+            f"got {len(vector)}"
         )
 
     for i in range(list_length):
