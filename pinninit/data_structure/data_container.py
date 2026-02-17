@@ -54,6 +54,12 @@ class CoordDataContainer:
         # Fields that will be accessed (e.g., by loss terms)
         self._required_fields: set[str] = set()
 
+        # Output to equation lookup dict
+        self._output_to_equation: dict[str, dict[str, Any]] = {}
+        for eq in self.available_equations_params.equations:
+            for output in eq["output_args"]:
+                self._output_to_equation[output] = eq
+
     def get_field(self, field_label: str) -> FieldProtocol:
         # If field doesn't exist or if it's derived and dirty, compute it
         if field_label not in self._fields or (
@@ -90,6 +96,11 @@ class CoordDataContainer:
             raise KeyError(f"Field {label} not found.")
         return self._fields[label]
 
+    def _clear_derived_fields(self) -> None:
+        for label in self._derived_field_labels:
+            self._fields.pop(label, None)
+        self._derived_field_labels.clear()
+
     def _set_field(
         self, field_label: str, update: Callable[[FieldProtocol], None]
     ) -> None:
@@ -115,9 +126,7 @@ class CoordDataContainer:
     ) -> None:
         # Clear derived fields that depend on this field
         if field_label not in self._derived_field_labels:
-            for label in list(self._derived_field_labels):
-                self._fields.pop(label, None)
-            self._derived_field_labels.clear()
+            self._clear_derived_fields()
 
         self._set_field(
             field_label, lambda f: f.update_from_component_dict(field_component_dict)
@@ -128,9 +137,7 @@ class CoordDataContainer:
     ) -> None:
         # Clear derived fields that depend on this field
         if field_label not in self._derived_field_labels:
-            for label in list(self._derived_field_labels):
-                self._fields.pop(label, None)
-            self._derived_field_labels.clear()
+            self._clear_derived_fields()
 
         self._set_field(
             field_label,
@@ -142,9 +149,7 @@ class CoordDataContainer:
     ) -> None:
         # Clear derived fields that depend on this field
         if field_label not in self._derived_field_labels:
-            for label in list(self._derived_field_labels):
-                self._fields.pop(label, None)
-            self._derived_field_labels.clear()
+            self._clear_derived_fields()
 
         self._set_field(field_label, lambda f: f.update_from_tensor(field_tensor))
 
@@ -164,9 +169,7 @@ class CoordDataContainer:
         self.coords.set_batch(indices)
 
         # Clear derived fields (need recomputation with new batch)
-        for label in self._derived_field_labels:
-            self._fields.pop(label, None)
-        self._derived_field_labels.clear()
+        self._clear_derived_fields()
 
         # Remove any batch-only fields that don't match current batch
         fields_to_remove = []
@@ -207,9 +210,7 @@ class CoordDataContainer:
                             and their dependencies. If None, compute all possible.
         """
         # Clear previously derived fields
-        for label in self._derived_field_labels:
-            self._fields.pop(label, None)
-        self._derived_field_labels.clear()
+        self._clear_derived_fields()
 
         # Labels of all coords, fields, and consts
         currently_available_labels = (
@@ -324,12 +325,6 @@ class CoordDataContainer:
         fields_to_compute = set()
         fields_to_check = list(required_fields)
 
-        # Build equation lookup
-        output_to_equation = {}
-        for eq in self.available_equations_params.equations:
-            for output in eq["output_args"]:
-                output_to_equation[output] = eq
-
         # Iteratively find dependencies
         while fields_to_check:
             field = fields_to_check.pop()
@@ -339,7 +334,7 @@ class CoordDataContainer:
                 continue
 
             # Check if this field can be derived
-            if field not in output_to_equation:
+            if field not in self._output_to_equation:
                 # Field cannot be derived, skip
                 continue
 
@@ -347,7 +342,7 @@ class CoordDataContainer:
             fields_to_compute.add(field)
 
             # Add its dependencies to check
-            equation = output_to_equation[field]
+            equation = self._output_to_equation[field]
             for input_field in equation["input_args"]:
                 if input_field not in available_labels:
                     fields_to_check.append(input_field)
