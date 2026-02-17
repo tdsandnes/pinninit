@@ -3,6 +3,10 @@ from __future__ import annotations
 import numpy as np
 from datasets import DataSets
 
+### Generates and saves datasets for the simple harmonic oscillator example.
+### Should use internal data structures and classes for this. But for now this is fine
+### to get the example working while internal and external API is still changing.
+
 
 def compute_f(x: float | np.ndarray) -> float | np.ndarray:
     return np.sin(x)

@@ -12,6 +12,12 @@ FieldComponents = dict[str, np.ndarray]
 Fields = dict[str, FieldComponents] | FieldComponents
 
 
+### DataSets class for managing datasets and saving to HDF5
+### This is temporary, since it should be possible to do this using the data structure
+### and classes that exist within the code. But for now this is a simple implementation
+### to get the example working while internal and external API is still changing.
+
+
 class DataSets:
     def __init__(self) -> None:
         self.datasets: dict[str, dict[str, dict[str, Any]]] = {}

@@ -12,8 +12,8 @@ def velocity_from_psi_2d(psi: torch.Tensor, operators: Operators) -> torch.Tenso
     """Calculate velocity from stream function in 2D"""
 
     grad_psi = operators.grad(psi)
-    ### temp: ideally only want to use operators and not torch.
-    ### curl might be tricky do define when z is not in coord system
+    ### temp: ideally only want to use operators and not torch directly.
+    ### curl might be tricky to define when z is not in coord system
     v = torch.stack([grad_psi[:, 1], -grad_psi[:, 0]], dim=1)
 
     return v
