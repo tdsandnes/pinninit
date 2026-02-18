@@ -198,15 +198,25 @@ class Operators:
 
         # Term to take derivatives of
         inner_term = self.G.sqrt_det_times_vec(contra_v)
-        derivatives = torch.autograd.grad(
-            outputs=inner_term,
-            inputs=self.coords.geometric,
-            grad_outputs=torch.ones_like(inner_term),
-            create_graph=True,
-            retain_graph=True,
-        )[0]  # shape: (n_points, dim_geometry)
 
-        contra_div_v = self.G.inv_sqrt_det_times_scalar(derivatives.sum(dim=1))
+        div_terms = []
+
+        for i, coord_label in enumerate(self.geometric_labels):
+            coord = self.coords.get_coord(coord_label)
+
+            derivative = torch.autograd.grad(
+                outputs=inner_term[:, i],
+                inputs=coord,
+                grad_outputs=torch.ones_like(coord),
+                create_graph=True,
+                retain_graph=True,
+            )[0]
+
+            div_terms.append(derivative)
+
+        sum_derivatives = torch.stack(div_terms, dim=1).sum(dim=1)
+
+        contra_div_v = self.G.inv_sqrt_det_times_scalar(sum_derivatives)
         validate_pytorch_tensor(contra_div_v, (n_points,))
 
         return contra_div_v

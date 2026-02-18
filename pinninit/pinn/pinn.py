@@ -263,8 +263,8 @@ class PINN:
 
         ### Currently hard code this. Only works for feed forward NN
         ### Hardcode this for now
-        internal_coord_dim = 1
-        ###internal_coord_dim = 3
+        ###internal_coord_dim = 1
+        internal_coord_dim = 3
         in_features = [internal_coord_dim] + hidden_layer_widths
         out_features = hidden_layer_widths + [len(output_fields)]
 
