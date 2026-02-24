@@ -8,6 +8,7 @@ import torch.nn as nn
 
 from ..data_structure.coords_dataclass import make_coords_dataclass
 from ..geometry.coordinate_system import COORD_SYSTEM_REGISTRY
+from ..geometry.domain import Domain
 from ..io.input_data import load_coords, load_fields
 from ..io.input_equations import load_functions_from_file_to_registry
 from ..io.input_parameters import PINNParameters
@@ -93,14 +94,26 @@ class PINN:
             self.device,
         )
 
-        """ removed this file until coord treatment is finalised
-        ### Keep these as lists rather than tensors for now because of None
-        self.domain_lb, self.domain_ub = extract_domain_bounds(
-            self.coord_system, self.pinn_params
-        )
-        """
+        # Initialise domains
+        self.domains: dict[str, Domain] = {}
 
-        ### Do boundary conditions here
+        for domain in self.pinn_params.coordinates_params.domains:
+            domain_label = domain["domain_label"]
+
+            # Convert YAML coordinate list to dict[str, (min, max)]
+            bounds_dict: dict[str, tuple[float | None, float | None]] = {}
+
+            for coord in domain.get("coordinates", []):
+                label = coord["label"]
+                lb = coord.get("min", None)
+                ub = coord.get("max", None)
+                bounds_dict[label] = (lb, ub)
+
+            self.domains[domain_label] = Domain(
+                coord_system=self.coord_system,
+                geometric_bounds=bounds_dict,
+                device=self.device,
+            )
 
     def _init_datasets(self) -> None:
         ### Note that eventually this should all be in pytorch Dataset class
@@ -178,12 +191,15 @@ class PINN:
             # Get training and validation coords
             loss_term_label = loss_term["loss_term_label"]
             dataset_label = loss_term["data_set_label"]
+            domain_label = loss_term["domain_label"]
+
+            domain = self.domains[domain_label]
             coords = self.dataset_coords[dataset_label]
             train_coord = self.Coords(
-                coord_system=self.coord_system, **coords["training"]
+                coord_system=self.coord_system, domain=domain, **coords["training"]
             )
             val_coord = self.Coords(
-                coord_system=self.coord_system, **coords["validation"]
+                coord_system=self.coord_system, domain=domain, **coords["validation"]
             )
 
             # Get training and validation fields

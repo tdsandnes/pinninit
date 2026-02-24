@@ -7,6 +7,7 @@ import torch
 
 from ..differential_equations.operators import Operators
 from ..geometry.coordinate_system import CoordSystem
+from ..geometry.domain import Domain
 from .data_structure_utils import convert_to_tensor
 
 
@@ -15,6 +16,7 @@ class CoordsProtocol(Protocol):
     # Input fields
     coord_labels: tuple[str, ...]
     coord_system: CoordSystem
+    domain: Domain
     device: torch.device
 
     # Derived fields
@@ -62,14 +64,14 @@ def _coords_post_init(self: CoordsProtocol) -> None:
     # Geometric coordinates (sorted based on coord system metadata)
     self.geometric_labels = self.coord_system.axes_labels_selected
 
-    # Validate input
-    self._validate_input()
-
     # Set tensors
     self._set_tensors()
 
+    # Validate input
+    self._validate_input()
+
     # Set internal labels and related attributes
-    internal_geometric_coords_dict = self.coord_system.map_coords_to_internal_coords(
+    internal_geometric_coords_dict = self.coord_system.map_geometric_to_internal(
         self.full_geometric
     )
 
@@ -170,7 +172,7 @@ def _set_tensors(self: CoordsProtocol, setting_batch: bool = False) -> None:
     )
 
     # Get internal geometric coords
-    internal_geometric_coords_dict = self.coord_system.map_coords_to_internal_coords(
+    internal_geometric_coords_dict = self.coord_system.map_geometric_to_internal(
         geometric
     )
 
@@ -221,6 +223,12 @@ def _coords_validate_input(self: Any) -> None:
             "Geometric coordinate labels are not a subset of " "coordinate labels"
         )
 
+    # Validate that coordinates lie within domain
+    if self.domain is not None:
+        mask = self.domain.contains_geometric(self.full_geometric)
+        if not torch.all(mask):
+            raise ValueError("Coordinates lie outside of domain.")
+
 
 def make_coords_dataclass(
     coord_labels: set[str], device: torch.device
@@ -240,6 +248,7 @@ def make_coords_dataclass(
                 field(default=tuple(sorted(coord_labels))),
             ),
             ("coord_system", CoordSystem, None),
+            ("domain", Domain, None),
             ("device", torch.device, field(default=device)),
             # Derived fields
             ("geometric_labels", tuple[str, ...], field(init=False)),

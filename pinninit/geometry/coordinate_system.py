@@ -93,11 +93,11 @@ class CoordSystem(ABC):
         pass
 
     @abstractmethod
-    def map_coords_to_internal_coords(
+    def map_geometric_to_internal(
         self, geometric_coords: torch.Tensor
     ) -> dict[str, torch.Tensor]:
-        """Subclasses must implement this method to map coords to internal coords
-        used for a given coordinate system."""
+        """Subclasses must implement this method to map geometric coords to internal
+        coords."""
         pass
 
     def _get_coord(
@@ -299,7 +299,7 @@ class CartesianCoords(CoordSystem):
     ) -> MetricTensor:
         return IdentityMetricTensor()
 
-    def map_coords_to_internal_coords(
+    def map_geometric_to_internal(
         self, geometric_coords: torch.Tensor
     ) -> dict[str, torch.Tensor]:
         # For Cartesian, internal coords are the same as geometric coords
@@ -398,7 +398,7 @@ class CylindricalCoords(CoordSystem):
         diag = diag[:, mask_keep]
         return DiagonalMetricTensor(diag)
 
-    def map_coords_to_internal_coords(
+    def map_geometric_to_internal(
         self, geometric_coords: torch.Tensor
     ) -> dict[str, torch.Tensor]:
         # r must always be available in cylindrical polars
@@ -493,7 +493,7 @@ class SphericalCoords(CoordSystem):
         diag = diag[:, mask_keep]
         return DiagonalMetricTensor(diag)
 
-    def map_coords_to_internal_coords(
+    def map_geometric_to_internal(
         self, geometric_coords: torch.Tensor
     ) -> dict[str, torch.Tensor]:
         # r must always be available in spherical polars

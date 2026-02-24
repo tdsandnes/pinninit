@@ -45,6 +45,10 @@ class CoordinatesParams:
         self.coordinates = load_compulsory(
             "coordinates", "Coordinates", input_params, data_type=list
         )
+        # domains
+        self.domains = load_optional(
+            "domains", "Coordinates", input_params, data_type=list, default=[]
+        )
 
 
 class FieldsParams:
