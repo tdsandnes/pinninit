@@ -16,6 +16,17 @@ Coordinates:
   coordinates:
     - label: x
       is_geometric: 1
+  domains:
+    - domain_label: data_domain
+      coordinates:
+        - label: x
+          min: 0.0
+          max: 12.57
+    - domain_label: phys_domain
+      coordinates:
+        - label: x
+          min: 0.0
+          max: 25.14
 
 Fields:
   input_fields:
@@ -43,6 +54,7 @@ LossTerms:
     - loss_term_label:  f
       field_label:      f
       data_set_label:   data_loss
+      domain_label:     data_domain
       loss_type:        data
       loss_function:    mse
       weight_method:    adaptive_grad_balance
@@ -51,6 +63,7 @@ LossTerms:
     - loss_term_label:  pde_residual
       field_label:      pde_residual
       data_set_label:   phys_loss
+      domain_label:     phys_domain
       loss_type:        physics
       loss_function:    mse
       weight_method:    adaptive_grad_balance
