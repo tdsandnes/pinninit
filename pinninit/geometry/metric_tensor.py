@@ -8,6 +8,23 @@ import torch
 class MetricTensor(ABC):
     """Base class for metric tensors."""
 
+    def __init__(self, n_points: int, device: torch.device):
+        self.n_points = n_points
+        self.device = device
+
+    @property
+    @abstractmethod
+    def sqrt_det(self) -> torch.Tensor:
+        """
+        Square root of determinant of metric tensor.
+
+        Returns
+        -------
+        torch.Tensor
+            Shape: (n_points,)
+        """
+        pass
+
     @abstractmethod
     def inv_metric_times_vec(self, v: torch.Tensor) -> torch.Tensor:
         """Multiply a vector by the inverse of the metric tensor.
@@ -57,6 +74,13 @@ class MetricTensor(ABC):
 class IdentityMetricTensor(MetricTensor):
     """Identity metric tensor representation."""
 
+    def __init__(self, n_points: int, device: torch.device):
+        super().__init__(n_points, device)
+
+    @property
+    def sqrt_det(self) -> torch.Tensor:
+        return torch.ones(self.n_points, device=self.device)
+
     def inv_metric_times_vec(self, v: torch.Tensor) -> torch.Tensor:
         return v
 
@@ -83,6 +107,7 @@ class DiagonalMetricTensor(MetricTensor):
         diag : torch.Tensor
             Diagonal elements of the metric tensor. Shape: (n_points, dim)
         """
+        super().__init__(n_points=diag.shape[0], device=diag.device)
         self.diag = diag
         self._sqrt_diag: torch.Tensor | None = None
         self._sqrt_det: torch.Tensor | None = None
@@ -125,6 +150,7 @@ class FullMetricTensor(MetricTensor):
         G : torch.Tensor
             Full metric tensor. Shape: (n_points, dim, dim)
         """
+        super().__init__(n_points=G.shape[0], device=G.device)
         self.G = G
         self._inv: torch.Tensor | None = None
         self._sqrt_det: torch.Tensor | None = None

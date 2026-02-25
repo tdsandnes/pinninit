@@ -297,7 +297,7 @@ class CartesianCoords(CoordSystem):
         n_points: int,
         geometric_coords: torch.Tensor | None = None,
     ) -> MetricTensor:
-        return IdentityMetricTensor()
+        return IdentityMetricTensor(n_points, self.device)
 
     def map_geometric_to_internal(
         self, geometric_coords: torch.Tensor
