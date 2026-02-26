@@ -124,7 +124,7 @@ class VolumeRejectionSampler:
                 n_accepted = 0
 
             accepted = proposed[
-                torch.rand(n_propose, device=self.device, generator=self.rng)
+                torch.rand(proposed.shape[0], device=self.device, generator=self.rng)
                 < sqrt_det / sqrt_det_approx_upper_bound
             ]
             accepted = accepted[: n_points - n_accepted]

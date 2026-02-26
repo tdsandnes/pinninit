@@ -49,6 +49,9 @@ class Optimizer(ABC):
         else:
             self.optimizer.step()
 
+    def clear(self) -> None:
+        self.optimizer.state.clear()
+
     @property
     def requires_full_batch(self) -> bool:
         return self.__class__._requires_full_batch
@@ -110,7 +113,7 @@ class LBFGS(Optimizer):
         self.optimizer.zero_grad()
         train_loss.backward(retain_graph=True)
 
-        return float(train_loss)
+        return float(train_loss.detach().item())
 
 
 # Mapping from optimizer labels to classes

@@ -506,7 +506,7 @@ class LossTermGroup:
                 for label, res in batch_residuals.items():
                     if label not in all_residuals:
                         all_residuals[label] = []
-                    all_residuals[label].append(res.detach().cpu())
+                    all_residuals[label].append(res.detach())
 
             input_data.clear_batch()
             output_data.clear_batch()
@@ -521,9 +521,7 @@ class LossTermGroup:
             residuals = self._compute_residuals(input_data, output_data)
 
             # detach tensors before returning
-            detached_res = {
-                label: val.detach().cpu() for label, val in residuals.items()
-            }
+            detached_res = {label: val.detach() for label, val in residuals.items()}
 
             input_data.clear_batch()
             output_data.clear_batch()

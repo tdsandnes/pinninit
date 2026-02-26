@@ -54,7 +54,7 @@ def convert_to_tensor(
         return torch.tensor(value, device=device, requires_grad=requires_grad)
     elif isinstance(value, torch.Tensor):
         # Already tensor, but make sure on correct device and requires grad
-        return value.to(device).requires_grad_(requires_grad)
+        return value.detach().clone().to(device).requires_grad_(requires_grad)
     else:
         raise TypeError(
             f"Component must be a torch.Tensor, np.ndarray, list, or tuple, "

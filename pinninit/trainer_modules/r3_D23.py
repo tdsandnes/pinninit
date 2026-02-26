@@ -119,7 +119,8 @@ class R3D23(TrainerModule):
             detector.plateau_detected for detector in self.plateau_detectors.values()
         ):
             # Reload the best model before switching optimizer
-            trainer.load_best_model()
+            ### Does loading best model cause more issues?
+            ###  trainer.load_best_model()
 
             # Reset the best model tracker
             trainer.reset_best_model()
@@ -129,6 +130,9 @@ class R3D23(TrainerModule):
             self._prev_resample_iter = trainer.iter
             self._resamples_completed += 1
             print(f"R3 resample on iteration {trainer.iter}.")
+
+            # Clear optimizer state
+            trainer.optimizer.clear()
 
             # Log resampling update
             if logger is not None:
@@ -171,7 +175,9 @@ class R3D23(TrainerModule):
             coords = group.train_coords
 
             # Compute residuals at current collocation points
-            residual_dict = group.compute_residuals_at_coords(model, coords)
+            residual_dict = group.compute_residuals_at_coords(
+                model, coords, shuffle=False
+            )
 
             # Aggregate residual magnitude per point
             residual_components = torch.stack(
@@ -195,9 +201,13 @@ class R3D23(TrainerModule):
             if n_new > 0:
                 new_coords = self.sampler.sample(n_new)
                 new_tensor = new_coords.full_tensor
-                merged_tensor = torch.cat([retained_tensor, new_tensor], dim=0)
+                merged_tensor = (
+                    torch.cat([retained_tensor, new_tensor], dim=0)
+                    .detach()
+                    .requires_grad_(True)
+                )
             else:
-                merged_tensor = retained_tensor
+                merged_tensor = retained_tensor.detach().requires_grad_(True)
 
             # Build new coords object
             coords_dict = {

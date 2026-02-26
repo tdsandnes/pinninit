@@ -416,7 +416,7 @@ class PINN:
         patience = 500
         frac_tol = 1e-2
         min_iter = 0
-        coast_iters_after_update = 100  # 1000
+        coast_iters_after_update = 1000
         update_optimizer = UpdateOptimizer(
             new_optimizer=new_optimizer,
             patience=patience,
@@ -448,17 +448,16 @@ class PINN:
         )
         trainer_modules.append(loss_term_staggering)
         """
-
-        ### R3 resampling
         """
-        n_resample_events = 3
-        n_sample_size = 10
+        ### R3 resampling
+        n_resample_events = 10 # 10 # 3
+        n_sample_size = 20 # 40
         sampler = VolumeRejectionSampler(coord_system=self.coord_system,
         domain = self.domains["phys_domain"], device = self.device,
         seed=12345)
         patience = 500
         frac_tol = 1e-2
-        coast_iters_after_update = 100#1000
+        coast_iters_after_update = 100
 
         r3_D23 = R3D23(
             n_sample_size=n_sample_size,
@@ -504,7 +503,7 @@ class PINN:
 
         # Init trainer
         max_iter = getattr(self.pinn_params.training_params, "max_epochs", None)
-        warmup_iters = 100  # 1000
+        warmup_iters = 1000
         self.trainer = Trainer(
             model=self.model,
             optimizer=self.optimizer,
