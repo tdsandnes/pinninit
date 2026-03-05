@@ -19,6 +19,8 @@ class R3D23(TrainerModule):
     Retain-Resample-Release (R3) sampling of collocation points (Daw et al. 2023).
     """
 
+    ### See Subramanian+ 2022 for L-BFGS resampling
+
     runs_during_coast = False
 
     def __init__(
@@ -118,13 +120,6 @@ class R3D23(TrainerModule):
         if all(
             detector.plateau_detected for detector in self.plateau_detectors.values()
         ):
-            # Reload the best model before switching optimizer
-            ### Does loading best model cause more issues?
-            ###  trainer.load_best_model()
-
-            # Reset the best model tracker
-            trainer.reset_best_model()
-
             # Resample points
             self._resample(trainer)
             self._prev_resample_iter = trainer.iter
@@ -186,6 +181,19 @@ class R3D23(TrainerModule):
             )
 
             F = torch.sqrt((residual_components**2).sum(dim=1))
+
+            """
+            ### Residual gradient based resampling
+
+            # Compute gradient of F wrt coordinates
+            grads = coords.operators.grad(F)
+
+            # Magnitude of gradient per point
+            G = torch.sqrt((grads**2).sum(dim=1))
+
+            tau = G.mean()
+            retain_mask = G > tau
+            """
 
             # Compute threshold
             tau = F.mean()

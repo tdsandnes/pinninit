@@ -70,6 +70,7 @@ class VolumeRejectionSampler:
         device: torch.device,
         safety_factor: float = 2.0,
         n_propose_factor: float = 10.0,
+        with_sobol: bool = False,
         seed: int | None = None,
     ) -> None:
         self.coord_system = coord_system
@@ -77,18 +78,27 @@ class VolumeRejectionSampler:
         self.device = device
         self.safety_factor = safety_factor
         self.n_propose_factor = n_propose_factor
-
-        # Create dedicated RNG
-        self.rng = torch.Generator(device=device)
-        if seed is not None:
-            self.rng.manual_seed(seed)
-        else:
-            self.rng.seed()
+        self.with_sobol = with_sobol
 
         self.Coords: type[Any] = make_coords_dataclass(
             set(coord_system.axes_labels_selected),
             device=device,
         )
+
+        if with_sobol:
+            self.seed = seed
+            self.sobol = torch.quasirandom.SobolEngine(
+                dimension=self.coord_system.dim_geometry,
+                scramble=True,
+                seed=self.seed,
+            )  # type: ignore[no-untyped-call]
+        else:
+            # Create dedicated RNG
+            self.rng = torch.Generator(device=device)
+            if seed is not None:
+                self.rng.manual_seed(seed)
+            else:
+                self.rng.seed()
 
     def sample(self, n_points: int) -> Any:
         accepted_points: list[torch.Tensor] = []
@@ -101,12 +111,15 @@ class VolumeRejectionSampler:
             remaining = n_points - n_accepted
             n_propose = int(self.n_propose_factor * remaining)
 
-            proposed = lb + (ub - lb) * torch.rand(
-                n_propose,
-                self.coord_system.dim_geometry,
-                device=self.device,
-                generator=self.rng,
-            )
+            if self.with_sobol:
+                proposed = lb + (ub - lb) * self.sobol.draw(n_propose).to(self.device)
+            else:
+                proposed = lb + (ub - lb) * torch.rand(
+                    n_propose,
+                    self.coord_system.dim_geometry,
+                    device=self.device,
+                    generator=self.rng,
+                )
 
             sqrt_det = self.coord_system.metric_tensor(n_propose, proposed).sqrt_det
             in_domain = self.domain.contains_geometric(proposed)
@@ -125,7 +138,7 @@ class VolumeRejectionSampler:
 
             accepted = proposed[
                 torch.rand(proposed.shape[0], device=self.device, generator=self.rng)
-                < sqrt_det / sqrt_det_approx_upper_bound
+                <= sqrt_det / sqrt_det_approx_upper_bound
             ]
             accepted = accepted[: n_points - n_accepted]
 

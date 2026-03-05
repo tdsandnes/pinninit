@@ -227,8 +227,9 @@ class Trainer:
             and self.best_loss_group_weights is not None
         ):
             print(
-                f"Loading best model, corresponding to iter {self.best_model_iter}, "
-                f"on iteration {self.iter}"
+                f"Loading best model on iteration {self.iter}: "
+                f"best model iter = {self.best_model_iter}, "
+                f"weighted_avg_val_loss = {self.best_weighted_avg_val_loss})"
             )
 
             # Log event

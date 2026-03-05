@@ -411,12 +411,13 @@ class PINN:
         optimizer_label = OptimizerLabels.LBFGS
         new_optimizer = OPTIMIZER_REGISTRY[optimizer_label](
             list(self.model.parameters()) + list(self.learnt_consts.values()),
-            ### Currently just use defaults here
+            line_search_fn="strong_wolfe",
+            ### Currently just use default lr etc.
         )
         patience = 500
         frac_tol = 1e-2
         min_iter = 0
-        coast_iters_after_update = 1000
+        coast_iters_after_update = 500
         update_optimizer = UpdateOptimizer(
             new_optimizer=new_optimizer,
             patience=patience,
@@ -450,12 +451,12 @@ class PINN:
         """
         """
         ### R3 resampling
-        n_resample_events = 10 # 10 # 3
-        n_sample_size = 20 # 40
+        n_resample_events = 10
+        n_sample_size = 60
         sampler = VolumeRejectionSampler(coord_system=self.coord_system,
         domain = self.domains["phys_domain"], device = self.device,
-        seed=12345)
-        patience = 500
+        seed=12345, with_sobol=True)
+        patience = 200
         frac_tol = 1e-2
         coast_iters_after_update = 100
 

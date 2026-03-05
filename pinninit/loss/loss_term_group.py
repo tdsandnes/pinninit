@@ -486,9 +486,6 @@ class LossTermGroup:
         shuffle: bool = True,
         num_workers: int = 0,
     ) -> dict[str, torch.Tensor]:
-        # Disable weight gradients for analysis
-        model.requires_grad_(False)
-
         input_data, output_data = self._init_data_containers(coords, input_fields)
         n_points = coords.full_tensor.shape[0]
         loader = self._set_data_loader(n_points, batch_size, shuffle, num_workers)
@@ -506,7 +503,7 @@ class LossTermGroup:
                 for label, res in batch_residuals.items():
                     if label not in all_residuals:
                         all_residuals[label] = []
-                    all_residuals[label].append(res.detach())
+                    all_residuals[label].append(res)
 
             input_data.clear_batch()
             output_data.clear_batch()
@@ -520,12 +517,9 @@ class LossTermGroup:
             self._apply_model_at_coords(model, coords, output_data)
             residuals = self._compute_residuals(input_data, output_data)
 
-            # detach tensors before returning
-            detached_res = {label: val.detach() for label, val in residuals.items()}
-
             input_data.clear_batch()
             output_data.clear_batch()
 
             # Cleanup for full-batch case
             model.requires_grad_(True)
-            return detached_res
+            return residuals
