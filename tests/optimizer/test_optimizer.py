@@ -4,7 +4,7 @@ import pytest
 import torch
 from torch import nn
 
-from pinninit.optimizer.optimizer import OPTIMIZER_REGISTRY, OptimizerLabels
+from pinninit.optimizer.optimizer_registry import OPTIMIZER_REGISTRY, OptimizerLabels
 
 from .dummy_optimizer import DummyOptimizerTrainer
 

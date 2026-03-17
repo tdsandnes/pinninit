@@ -72,10 +72,10 @@ LossTerms:
   weight_methods:
     - label:                  adaptive_grad_balance
       alpha:                  0.1 # NOTE: outdated arxiv version of W+21 paper has incorrect value (0.9)
-      update_frequency:       10
+      update_frequency:       1
 
 Optimizer:
-  optimizer:      adam
+  optimizer:      soap
   learning_rate:  0.001
 
 Layers:

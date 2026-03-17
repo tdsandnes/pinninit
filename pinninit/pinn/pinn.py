@@ -16,12 +16,11 @@ from ..loss.loss_term import LossTermLabels
 from ..loss.loss_term_group import LossTermGroup
 from ..nn.layers import LAYER_TYPE_REGISTRY
 from ..nn.neural_network import NeuralNetwork
-from ..optimizer.optimizer import OPTIMIZER_REGISTRY, OptimizerLabels
+from ..optimizer.optimizer_registry import OPTIMIZER_REGISTRY
 from ..trainer.trainer import Trainer
 from ..trainer_modules.adaptive_weights_grad_balance import AdaptiveWeightsGradBalance
 from ..trainer_modules.adaptive_weights_W21 import AdaptiveWeightsW21
 from ..trainer_modules.early_stopping import EarlyStopping
-from ..trainer_modules.update_optimizer import UpdateOptimizer
 
 
 class PINN:
@@ -407,6 +406,7 @@ class PINN:
         ### Hardcode these for now
         trainer_modules: list[Any] = []
 
+        """
         ### Update optimizer
         optimizer_label = OptimizerLabels.LBFGS
         new_optimizer = OPTIMIZER_REGISTRY[optimizer_label](
@@ -426,6 +426,7 @@ class PINN:
             coast_iters_after_update=coast_iters_after_update,
         )
         trainer_modules.append(update_optimizer)
+        """
 
         ### Early stopping
         patience = 500

@@ -13,7 +13,7 @@ from ..nn.activation_function import ActivationFuncLabels
 from ..nn.initialise_biases import BiasInitLabels
 from ..nn.initialise_weights import WeightInitLabels
 from ..nn.layers import LayerTypeLabels
-from ..optimizer.optimizer import OptimizerLabels
+from ..optimizer.optimizer_registry import OptimizerLabels
 from .io_utils import (
     expand_if_alias,
     get_enum_label_from_value,
