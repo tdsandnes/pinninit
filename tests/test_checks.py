@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from validate_data import validate_numpy_array
+from pinninit.checks.validate_data import validate_numpy_array
 
 
 def test_validate_numpy_array_correct() -> None:
