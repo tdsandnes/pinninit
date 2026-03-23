@@ -100,12 +100,12 @@ class torch_SOAP(optim.Optimizer):
     def __init__(
         self,
         params,
-        lr: float = 3e-3,
-        betas=(0.95, 0.95),
+        lr: float = 1e-3, ### Wang+2025 uses 1e-3 # SOAP default 3e-3,
+        betas=(0.99, 0.999), ### Wang+2025 uses (0.99, 0.999), but Wang+2025 (Simulating three-dimensional turbulence...) uses (0.9, 0.999) which are Adam defaults # SOAP default (0.95, 0.95),
         shampoo_beta: float = -1,
         eps: float = 1e-8,
-        weight_decay: float = 0.01,
-        precondition_frequency: int = 10,
+        weight_decay: float = 0.0, ### 0 based on comment in Wang+2023 and how they use it in jaxpi # SOAP default 0.01,
+        precondition_frequency: int = 1, ### Wang+2025 uses 2, # SOAP default 10,
         max_precond_dim: int = 10000,  #
         merge_dims: bool = False,  # Merge dimensions till the product of the dimensions is less than or equal to max_precond_dim.
         precondition_1d: bool = False,
