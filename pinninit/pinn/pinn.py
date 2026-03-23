@@ -277,9 +277,9 @@ class PINN:
         output_fields = self.pinn_params.fields_params.output_fields
 
         ### Currently hard code this. Only works for feed forward NN
-        ### Hardcode this for now
-        internal_coord_dim = 1
-        ###internal_coord_dim = 3
+        ### Hardcode this for now. Won't work if internal coord dim is different
+        ### e.g. spherical shell embedded in 3D cartesian
+        internal_coord_dim = self.coord_dim
         in_features = [internal_coord_dim] + hidden_layer_widths
         out_features = hidden_layer_widths + [len(output_fields)]
 
@@ -430,7 +430,7 @@ class PINN:
 
         ### Early stopping
         patience = 500
-        frac_tol = 1e-2
+        frac_tol = 0  # 1e-2
         min_iter = 0
         early_stopping = EarlyStopping(
             patience=patience, frac_tol=frac_tol, min_iter=min_iter
