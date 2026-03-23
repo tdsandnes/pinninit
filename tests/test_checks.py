@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+
 from pinninit.checks.validate_data import validate_numpy_array
 
 

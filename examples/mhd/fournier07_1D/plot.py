@@ -127,5 +127,5 @@ if __name__ == "__main__":
     plt.tight_layout()
     plots_dir = Path("plots")
     plots_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(plots_dir / "u_b_snapshots_pinn.png", dpi=300)
+    plt.savefig(plots_dir / "fournier07_pinn.png", dpi=300)
     plt.show()
