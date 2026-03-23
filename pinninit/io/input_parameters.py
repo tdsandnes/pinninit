@@ -119,13 +119,16 @@ class LayersParams:
     # Aliases
     alias_layer_types = {
         "all_linear": lambda num_layers: ["linear"] * num_layers,
+        "siren": lambda num_layers: ["siren_first"] + ["siren"] * (num_layers - 1),
     }
     alias_activation_functions_raw = {
         "all_tanh": lambda num_layers: ["tanh"] * (num_layers - 1) + ["none"],
         "all_silu": lambda num_layers: ["silu"] * (num_layers - 1) + ["none"],
+        "siren": lambda num_layers: ["sin"] * (num_layers - 1) + ["none"],
     }
     alias_init_weights = {
         "all_xavier": lambda num_layers: ["xavier"] * num_layers,
+        "siren": lambda num_layers: ["siren_first"] + ["siren"] * (num_layers - 1),
     }
     alias_init_biases = {
         "all_zeros": lambda num_layers: ["zeros"] * num_layers,

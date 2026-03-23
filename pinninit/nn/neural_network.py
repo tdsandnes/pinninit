@@ -35,7 +35,7 @@ class NeuralNetwork(nn.Module):
         self.output_field_label_to_rank = output_field_label_to_rank
         self.layers = nn.ModuleList(layers)  # registers layers as submodules
         activation_function_labels = layers_params.activation_functions
-        init_weight_lables = layers_params.init_weights
+        init_weight_labels = layers_params.init_weights
         init_bias_labels = layers_params.init_biases
 
         # Lower and Upper bounds
@@ -43,7 +43,6 @@ class NeuralNetwork(nn.Module):
         self.register_buffer("ub", ub.view(1, -1))
 
         # Set activation functions and inital weights and biases for each layer
-        activation_funcs = []
         for i, layer in enumerate(self.layers):
             ### Maybe have to do this differently in case for general layer that might
             ### not have weights and biases
@@ -53,18 +52,15 @@ class NeuralNetwork(nn.Module):
             assert isinstance(
                 layer.bias, torch.Tensor
             ), f"Expected layer bias to be torch.Tensor, got {type(layer.bias)}"
-
-            # Look up activation function in registry
-            activation_function_object = ACTIVATION_FUNC_REGISTRY[
-                activation_function_labels[i]
-            ]()
-            activation_funcs.append(activation_function_object)
-
-            # Define weights and biases as trainable parameters
-            WEIGHT_INIT_REGISTRY[init_weight_lables[i]](layer.weight)
+            WEIGHT_INIT_REGISTRY[init_weight_labels[i]](layer.weight)
             BIAS_INIT_REGISTRY[init_bias_labels[i]](layer.bias)
 
-        self.activation_funcs = activation_funcs
+        self.activation_funcs = nn.ModuleList(
+            [
+                ACTIVATION_FUNC_REGISTRY[activation_function_labels[i]]()
+                for i in range(len(self.layers))
+            ]
+        )
 
     def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         # Normalisation ### temp hardcoded for now, but should add a normalisation.py
