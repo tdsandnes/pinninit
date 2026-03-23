@@ -57,7 +57,7 @@ def load_test_coords(
 if __name__ == "__main__":
     PARAM_FILE = "./param_fournier07_1D.yml"
     MODEL_PATH = "./models/fournier07_1D.pth"
-    TEST_DATA_FILE = Path("./data/mhd_1d_test.hdf5")
+    TEST_DATA_FILE = Path("./data/fournier07_1D_test.hdf5")
     SNAPSHOT_DIR = Path("./data/snapshots")
 
     device = torch.device("cpu")
