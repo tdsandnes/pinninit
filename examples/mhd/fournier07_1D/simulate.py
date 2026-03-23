@@ -13,10 +13,6 @@ class MHDSolver1D:
         # Config
         self.cfg = cfg
 
-        # Indices
-        self.idx_interior = np.arange(1, cfg.N, dtype=int)
-        self.idx_boundary = np.array([0, cfg.N], dtype=int)
-
         # GLL grid
         self.x_gll, self.w_gll = self.gll_points_weights(cfg.N)
 
@@ -37,26 +33,24 @@ class MHDSolver1D:
         # Stiffness matrix
         self.K = self.D.T @ self.M @ self.D
 
-        # Interior terms
-        M_i = self.M[np.ix_(self.idx_interior, self.idx_interior)]
-        K_i = self.K[np.ix_(self.idx_interior, self.idx_interior)]
-
         # Helmholtz operators (Fournier+2007 Eqs 24, 25)
-        self.H_u = M_i / cfg.dt + cfg.Pm * K_i
-        self.H_b = M_i / cfg.dt + K_i
-
-        # Interior--boundary coupling
-        self.K_ib = self.K[np.ix_(self.idx_interior, self.idx_boundary)]
+        self.H_u = self.M / cfg.dt + cfg.Pm * self.K
+        self.H_b = self.M / cfg.dt + self.K
 
         # Set ICs
         self.u = self.cfg.u_initial(self.x)
         self.b = self.cfg.b_initial(self.x)
 
         # Enforce BCs
-        self.u[0] = self.cfg.u_left
-        self.u[-1] = self.cfg.u_right
-        self.b[0] = self.cfg.b_left
-        self.b[-1] = self.cfg.b_right
+        self.u[0] = cfg.u_left
+        self.u[-1] = cfg.u_right
+        self.b[0] = cfg.b_left
+        self.b[-1] = cfg.b_right
+        for H in [self.H_u, self.H_b]:
+            H[0, :] = 0.0
+            H[0, 0] = 1.0
+            H[-1, :] = 0.0
+            H[-1, -1] = 1.0
 
     # Gauss–Lobatto–Legendre (GLL) points
     def gll_points_weights(self, N: int) -> tuple[np.ndarray, np.ndarray]:
@@ -124,11 +118,21 @@ class MHDSolver1D:
             self.b / cfg.dt - cfg.S * self.u * Db + cfg.S * self.b * Du
         )  # Fournier+2007 Eq. 27
 
-        # Solve, including coupling with boundary (Fournier+2007 Eq. 23)
-        self.u[self.idx_interior] = np.linalg.solve(self.H_u, f_u[self.idx_interior])
-        self.b[self.idx_interior] = np.linalg.solve(
-            self.H_b, f_b[self.idx_interior] - self.K_ib @ self.b[[0, -1]]
-        )
+        # Enforce BCs
+        f_u[0] = cfg.u_left
+        f_u[-1] = cfg.u_right
+        f_b[0] = cfg.b_left
+        f_b[-1] = cfg.b_right
+
+        # Solve (Fournier+2007 Eq. 23)
+        self.u = np.linalg.solve(self.H_u, f_u)
+        self.b = np.linalg.solve(self.H_b, f_b)
+
+        # Reset BC exact values to avoid error accumulation
+        self.u[0] = cfg.u_left
+        self.u[-1] = cfg.u_right
+        self.b[0] = cfg.b_left
+        self.b[-1] = cfg.b_right
 
     def run(self) -> None:
         cfg = self.cfg
@@ -167,8 +171,6 @@ class MHDSolver1D:
 
 
 if __name__ == "__main__":
-    cfg = Config(snapshot_times=list(np.linspace(0, 0.2, 100)))
-
+    cfg = Config()
     solver = MHDSolver1D(cfg)
-
     solver.run()

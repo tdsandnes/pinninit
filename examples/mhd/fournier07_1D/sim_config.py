@@ -27,7 +27,7 @@ class Config:
     b_right: float = 1.0
 
     # Snapshots
-    snapshot_times: list[float] | None = None
+    snapshot_times: tuple[float, ...] | None = tuple(np.linspace(0, 0.2, 101))
     snapshot_dir: str = "data/snapshots"
 
     # Initial conditions
