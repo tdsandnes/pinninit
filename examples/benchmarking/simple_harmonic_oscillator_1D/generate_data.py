@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import numpy as np
+
+sys.path.append(str(Path(__file__).resolve().parents[2]))
 from datasets import DataSets
 
 ### Generates and saves datasets for the simple harmonic oscillator example.

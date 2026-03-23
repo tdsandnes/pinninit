@@ -11,7 +11,6 @@ Coords = dict[str, np.ndarray]
 FieldComponents = dict[str, np.ndarray]
 Fields = dict[str, FieldComponents] | FieldComponents
 
-
 ### DataSets class for managing datasets and saving to HDF5
 ### This is temporary, since it should be possible to do this using the data structure
 ### and classes that exist within the code. But for now this is a simple implementation
