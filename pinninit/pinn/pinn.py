@@ -21,6 +21,7 @@ from ..trainer.trainer import Trainer
 from ..trainer_modules.adaptive_weights_grad_balance import AdaptiveWeightsGradBalance
 from ..trainer_modules.adaptive_weights_W21 import AdaptiveWeightsW21
 from ..trainer_modules.early_stopping import EarlyStopping
+from ..trainer_modules.learning_rate_schedule import LearningRateSchedule
 
 
 class PINN:
@@ -471,6 +472,19 @@ class PINN:
         )
         trainer_modules.append(r3_D23)
         """
+        # Learning rate schedule with optional warmup
+        lr_schedule = LearningRateSchedule(
+            decay_factor=0.1,
+            n_events=5,
+            patience=1000,
+            frac_tol=0.0,  # 1e-2,
+            min_iter=0,
+            warmup_iters=1000,
+            lr_init=0,
+            lr_after_warmup=1e-3,
+            coast_iters_after_update=100,
+        )
+        trainer_modules.append(lr_schedule)
 
         ### Hardcode this for now
         if hasattr(self.pinn_params.loss_terms_params, "weight_methods"):
