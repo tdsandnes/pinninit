@@ -108,6 +108,10 @@ class LearningRateSchedule(TrainerModule):
 
             return
 
+        # Return if coasting
+        if trainer.state.is_coasting:
+            return
+
         # Get validation losses
         if trainer.logger.unweighted_val_losses.has_value:
             unweighted_val_losses = trainer.logger.unweighted_val_losses.value
@@ -129,8 +133,8 @@ class LearningRateSchedule(TrainerModule):
         if all(
             detector.plateau_detected for detector in self.plateau_detectors.values()
         ):
-            # Reload the best model
-            trainer.load_best_model()
+            # Reset the best model tracker
+            trainer.reset_best_model()
 
             # Decay lr
             for group in trainer.optimizer.optimizer.param_groups:

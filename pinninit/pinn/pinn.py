@@ -430,7 +430,7 @@ class PINN:
         """
 
         ### Early stopping
-        patience = 500
+        patience = 1000
         frac_tol = 0  # 1e-2
         min_iter = 0
         early_stopping = EarlyStopping(
@@ -474,7 +474,7 @@ class PINN:
         """
         # Learning rate schedule with optional warmup
         lr_schedule = LearningRateSchedule(
-            decay_factor=0.1,
+            decay_factor=0.5,
             n_events=5,
             patience=1000,
             frac_tol=0.0,  # 1e-2,
@@ -482,7 +482,7 @@ class PINN:
             warmup_iters=1000,
             lr_init=0,
             lr_after_warmup=1e-3,
-            coast_iters_after_update=100,
+            coast_iters_after_update=1000,
         )
         trainer_modules.append(lr_schedule)
 
