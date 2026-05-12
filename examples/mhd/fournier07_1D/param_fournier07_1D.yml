@@ -142,3 +142,4 @@ Layers:
   activation_functions: siren
   init_weights:         siren
   init_biases:          all_zeros
+  input_scaling:        scale_linear

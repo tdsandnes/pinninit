@@ -311,7 +311,7 @@ class LossTermGroup:
         """Applies NN model stores output in output data container"""
 
         # Get model output
-        output_fields = model(coords.internal)
+        output_fields = model.evaluate(coords)
 
         # Add output fields
         idx = 0

@@ -84,3 +84,4 @@ Layers:
   activation_functions: all_tanh
   init_weights:         all_xavier
   init_biases:          all_zeros
+  input_scaling:        scale_linear

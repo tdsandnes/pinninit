@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from .coordinate_system import CoordSystem
+from .coordinate_system import CoordSystem, CoordSystemLabels
 
 
 class Domain:
@@ -11,6 +11,7 @@ class Domain:
         self,
         coord_system: CoordSystem,
         geometric_bounds: dict[str, tuple[float | None, float | None]] | None,
+        periodic_coords: set[str] | None,
         device: torch.device,
     ):
         self.coord_system = coord_system
@@ -18,6 +19,7 @@ class Domain:
         self.device = device
 
         self._set_bounds(geometric_bounds)
+        self._set_periodic_coords(periodic_coords)
 
     def _set_bounds(
         self,
@@ -40,7 +42,7 @@ class Domain:
 
             meta_lb, meta_ub = metadata_bounds_dict[axis]
 
-            # Use user-provided bounds if available; else fall back to metadata
+            # Use user-provided bounds if available, else fall back to metadata
             if geometric_bounds is None or axis not in geometric_bounds:
                 lb, ub = meta_lb, meta_ub
             else:
@@ -77,3 +79,44 @@ class Domain:
         return (
             (geometric >= self.geometric_lb) & (geometric <= self.geometric_ub)
         ).all(dim=1)
+
+    def _set_periodic_coords(
+        self,
+        periodic_coords: set[str] | None,
+    ) -> None:
+        """
+        Validate and store periodic coordinate labels.
+
+        Only supported for Cartesian coordinate systems. For each periodic axis,
+        the period is inferred as (ub - lb) from the domain bounds set by _set_bounds.
+
+        Parameters
+        ----------
+        periodic_coords : set[str] | None
+            Set of geometric axis labels to treat as periodic. None means no
+            periodicity.
+        """
+        if periodic_coords is None:
+            self.periodic_coords: dict[str, float] = {}
+            return
+
+        if self.coord_system.metadata.internal_coords != CoordSystemLabels.CARTESIAN:
+            raise ValueError(
+                "Periodic boundary conditions are currently only supported for "
+                f"Cartesian coordinate systems, got "
+                f"'{self.coord_system.metadata.name}'."
+            )
+
+        for label in periodic_coords:
+            if label not in self.geometric_labels:
+                raise ValueError(
+                    f"Periodic coord '{label}' is not a geometric axis of this domain. "
+                    f"Available axes: {list(self.geometric_labels)}"
+                )
+
+        # Infer period from domain bounds for each periodic axis
+        self.periodic_coords = {
+            label: (self.geometric_ub[i] - self.geometric_lb[i]).item()
+            for i, label in enumerate(self.geometric_labels)
+            if label in periodic_coords
+        }

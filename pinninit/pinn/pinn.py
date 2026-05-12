@@ -14,6 +14,12 @@ from ..io.input_equations import load_functions_from_file_to_registry
 from ..io.input_parameters import PINNParameters
 from ..loss.loss_term import LossTermLabels
 from ..loss.loss_term_group import LossTermGroup
+from ..nn.input_transformation import (
+    InputTransformation,
+    InputTransformationLabels,
+    PeriodicW23,
+    ScaleLinear,
+)
 from ..nn.layers import LAYER_TYPE_REGISTRY
 from ..nn.neural_network import NeuralNetwork
 from ..optimizer.optimizer_registry import OPTIMIZER_REGISTRY
@@ -21,7 +27,6 @@ from ..trainer.trainer import Trainer
 from ..trainer_modules.adaptive_weights_grad_balance import AdaptiveWeightsGradBalance
 from ..trainer_modules.adaptive_weights_W21 import AdaptiveWeightsW21
 from ..trainer_modules.early_stopping import EarlyStopping
-from ..trainer_modules.learning_rate_schedule import LearningRateSchedule
 
 
 class PINN:
@@ -102,16 +107,20 @@ class PINN:
 
             # Convert YAML coordinate list to dict[str, (min, max)]
             bounds_dict: dict[str, tuple[float | None, float | None]] = {}
+            periodic_coords: set[str] = set()
 
             for coord in domain.get("coordinates", []):
                 label = coord["label"]
                 lb = coord.get("min", None)
                 ub = coord.get("max", None)
                 bounds_dict[label] = (lb, ub)
+                if coord.get("periodic", 0) == 1:
+                    periodic_coords.add(label)
 
             self.domains[domain_label] = Domain(
                 coord_system=self.coord_system,
                 geometric_bounds=bounds_dict,
+                periodic_coords=periodic_coords if periodic_coords else None,
                 device=self.device,
             )
 
@@ -268,36 +277,14 @@ class PINN:
             )
 
     def _init_nn(self) -> None:
-        # Extract params
         layers_params = self.pinn_params.layers_params
         hidden_layer_widths = layers_params.hidden_layer_widths
         layer_types = layers_params.layer_types
         self.num_layers = len(hidden_layer_widths) + 1
 
-        ### Make this more general
         output_fields = self.pinn_params.fields_params.output_fields
-
-        ### Currently hard code this. Only works for feed forward NN
-        ### Hardcode this for now. Won't work if internal coord dim is different
-        ### e.g. spherical shell embedded in 3D cartesian
         internal_coord_dim = self.coord_dim
-        in_features = [internal_coord_dim] + hidden_layer_widths
-        out_features = hidden_layer_widths + [len(output_fields)]
 
-        self.layers = [
-            LAYER_TYPE_REGISTRY[layer_types[i]](
-                in_features=in_features[i],
-                out_features=out_features[i],
-            )
-            for i in range(self.num_layers)
-        ]
-
-        output_fields_params = self.pinn_params.fields_params.output_fields
-        output_field_label_to_rank = {
-            f["label"]: f["rank"] for f in output_fields_params
-        }
-
-        # get lower and upper bounds of all training points
         lbs = torch.stack(
             [
                 group.train_coords.internal_lb.detach()
@@ -313,8 +300,59 @@ class PINN:
         lb = torch.min(lbs, dim=0).values
         ub = torch.max(ubs, dim=0).values
 
+        # Collect periodic coords across all domains
+        periodic_coords: dict[str, float] = {}
+        for _, domain in self.domains.items():
+            for label, period in domain.periodic_coords.items():
+                if label in periodic_coords:
+                    raise ValueError(
+                        f"Periodic coordinate '{label}' defined in multiple domains."
+                    )
+
+                periodic_coords[label] = period
+
+        scaling_label = getattr(layers_params, "input_scaling", None)
+        has_scaling = scaling_label == InputTransformationLabels.SCALE_LINEAR.value
+        has_periodic = bool(periodic_coords)
+
+        input_transformation: InputTransformation | None = None
+        if has_periodic:
+            input_transformation = PeriodicW23(
+                internal_labels=list(self.pinn_params.coord_axes_labels),
+                periodic_coords=periodic_coords,
+                lb=lb,
+                ub=ub,
+                scale_non_periodic=has_scaling,
+            )
+        elif has_scaling:
+            input_transformation = ScaleLinear(lb=lb, ub=ub)
+
+        first_in = (
+            input_transformation.out_features
+            if input_transformation is not None
+            else internal_coord_dim
+        )
+
+        in_features = [first_in] + hidden_layer_widths
+        out_features = hidden_layer_widths + [len(output_fields)]
+
+        self.layers = [
+            LAYER_TYPE_REGISTRY[layer_types[i]](
+                in_features=in_features[i],
+                out_features=out_features[i],
+            )
+            for i in range(self.num_layers)
+        ]
+
+        output_field_label_to_rank = {f["label"]: f["rank"] for f in output_fields}
+
         self.model = NeuralNetwork(
-            output_field_label_to_rank, self.layers, layers_params, lb, ub
+            output_field_label_to_rank,
+            self.layers,
+            layers_params,
+            lb,
+            ub,
+            input_transformation=input_transformation,
         ).to(self.device)
 
     def _init_learnt_parameters(self) -> None:
@@ -343,7 +381,7 @@ class PINN:
         # Initialise coord dataclass object
         test_coords = self.Coords(coord_system=self.coord_system, **coords)
         with torch.no_grad():
-            output = self.model(test_coords.internal).detach()
+            output = self.model.evaluate(test_coords).detach()
 
         return output
 
@@ -472,6 +510,8 @@ class PINN:
         )
         trainer_modules.append(r3_D23)
         """
+
+        """
         # Learning rate schedule with optional warmup
         lr_schedule = LearningRateSchedule(
             decay_factor=0.5,
@@ -485,7 +525,7 @@ class PINN:
             coast_iters_after_update=1000,
         )
         trainer_modules.append(lr_schedule)
-
+        """
         ### Hardcode this for now
         if hasattr(self.pinn_params.loss_terms_params, "weight_methods"):
             for weight_method in self.pinn_params.loss_terms_params.weight_methods:

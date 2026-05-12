@@ -8,8 +8,10 @@ import torch.nn as nn
 from .activation_function import ACTIVATION_FUNC_REGISTRY
 from .initialise_biases import BIAS_INIT_REGISTRY
 from .initialise_weights import WEIGHT_INIT_REGISTRY
+from .input_transformation import InputTransformation
 
 if TYPE_CHECKING:
+    from ..data_structure.coords_dataclass import CoordsProtocol
     from ..io.input_parameters import LayersParams
 
 ### Maybe eventually add multiple NN subclasses if we want multiple options
@@ -30,6 +32,7 @@ class NeuralNetwork(nn.Module):
         layers_params: LayersParams,
         lb: torch.Tensor,
         ub: torch.Tensor,
+        input_transformation: InputTransformation | None = None,
     ):
         super().__init__()
         self.output_field_label_to_rank = output_field_label_to_rank
@@ -62,11 +65,17 @@ class NeuralNetwork(nn.Module):
             ]
         )
 
-    def forward(self, tensor: torch.Tensor) -> torch.Tensor:
-        # Normalisation ### temp hardcoded for now, but should add a normalisation.py
-        ### that selects methods and then the method function in set in __init__
-        tensor = 2.0 * (tensor - self.lb) / (self.ub - self.lb) - 1.0
+        # Input transformations
+        self.input_transformation = input_transformation
 
+    def evaluate(self, coords: CoordsProtocol) -> torch.Tensor:
+        if self.input_transformation is not None:
+            tensor = self.input_transformation.transform(coords)
+        else:
+            tensor = coords.internal
+        return self.forward(tensor)
+
+    def forward(self, tensor: torch.Tensor) -> torch.Tensor:
         for i, layer in enumerate(self.layers):
             tensor = layer(tensor)  # call each layer's forward
             tensor = self.activation_funcs[i](tensor)  # Call activation function

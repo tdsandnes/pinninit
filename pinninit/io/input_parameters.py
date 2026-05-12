@@ -192,6 +192,10 @@ class LayersParams:
             get_enum_label_from_value(x, BiasInitLabels) for x in init_biases_raw
         ]
 
+        self.input_scaling = load_optional(
+            "input_scaling", "Layers", input_params, data_type=str, default=None
+        )
+
 
 class TrainingParams:
     def __init__(self, input_params: dict[str, Any]):
