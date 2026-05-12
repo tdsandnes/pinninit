@@ -1,0 +1,94 @@
+model_name: simple_harmonic_oscillator_1D
+
+DataSets:
+  data_sets:
+    - data_set_label: data_loss
+      from_file:      1
+      file_path:      ./data/simple_harmonic_oscillator_1D_train_val.hdf5
+      sampling:       none
+    - data_set_label: phys_loss
+      from_file:      1
+      file_path:      ./data/simple_harmonic_oscillator_1D_train_val.hdf5
+      sampling:       none
+
+Coordinates:
+  coordinate_system:  cartesian
+  coordinates:
+    - label: x
+      is_geometric: 1
+  domains:
+    - domain_label: data_domain
+      coordinates:
+        - label: x
+          min: 0.0
+          max: 12.57
+    - domain_label: phys_domain
+      coordinates:
+        - label: x
+          min: 0.0
+          max: 25.14
+    
+    - domain_label: full_domain
+      coordinates:
+        - label: x
+          min: 0.0
+          max: 37.70
+          periodic: 1
+
+Fields:
+  input_fields:
+    - label: f
+      rank: 0
+  output_fields:
+    - label: f
+      rank: 0
+  derivable_fields:
+    - label: pde_residual
+      rank: 0
+
+Equations:
+  equations:
+    - label: pde_residual
+      function_name: simple_harmonic_oscillator_1D_pde_residual
+      file_path: ./simple_harmonic_oscillator_1D_equations.py
+      input_args:
+        - f
+      output_args:
+        - pde_residual
+
+LossTerms:
+  terms:
+    - loss_term_label:  f
+      field_label:      f
+      data_set_label:   data_loss
+      domain_label:     data_domain
+      loss_type:        data
+      loss_function:    mse
+      weight_method:    adaptive_grad_balance
+      weight_value:     1.0
+      weight_group:     f_data
+    - loss_term_label:  pde_residual
+      field_label:      pde_residual
+      data_set_label:   phys_loss
+      domain_label:     phys_domain
+      loss_type:        physics
+      loss_function:    mse
+      weight_method:    adaptive_grad_balance
+      weight_value:     1.0
+      weight_group:     pde_residual_phys
+  weight_methods:
+    - label:                  adaptive_grad_balance
+      alpha:                  0.1 # NOTE: outdated arxiv version of W+21 paper has incorrect value (0.9)
+      update_frequency:       1000
+
+Optimizer:
+  optimizer:      soap
+  learning_rate:  0.001
+
+Layers:
+  hidden_layer_widths:  [60, 60, 60, 60, 60, 60]
+  layer_types:          all_linear
+  activation_functions: all_tanh
+  init_weights:         all_xavier
+  init_biases:          all_zeros
+  input_scaling:        scale_linear
