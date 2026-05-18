@@ -285,6 +285,30 @@ class PINN:
         output_fields = self.pinn_params.fields_params.output_fields
         internal_coord_dim = self.coord_dim
 
+        group_internal_labels = [
+            group.train_coords.internal_labels
+            for group in self.loss_term_groups.values()
+        ]
+        if not group_internal_labels:
+            raise ValueError(
+                "No loss term groups available to initialise neural network."
+            )
+
+        normalised_internal_labels = [
+            tuple(sorted(labels)) for labels in group_internal_labels
+        ]
+        internal_labels = normalised_internal_labels[0]
+        if any(labels != internal_labels for labels in normalised_internal_labels[1:]):
+            raise ValueError(
+                "Inconsistent internal coordinate ordering across loss term groups: "
+                f"{group_internal_labels}"
+            )
+        if any(labels != internal_labels for labels in group_internal_labels):
+            raise ValueError(
+                "Internal coordinate labels are not sorted consistently across "
+                f"loss term groups: {group_internal_labels}"
+            )
+
         lbs = torch.stack(
             [
                 group.train_coords.internal_lb.detach()
@@ -318,7 +342,7 @@ class PINN:
         input_transformation: InputTransformation | None = None
         if has_periodic:
             input_transformation = PeriodicW23(
-                internal_labels=list(self.pinn_params.coord_axes_labels),
+                internal_labels=list(internal_labels),
                 periodic_coords=periodic_coords,
                 lb=lb,
                 ub=ub,

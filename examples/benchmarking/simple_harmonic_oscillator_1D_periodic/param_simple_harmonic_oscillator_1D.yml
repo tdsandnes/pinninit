@@ -27,7 +27,7 @@ Coordinates:
         - label: x
           min: 0.0
           max: 25.14
-    
+
     - domain_label: full_domain
       coordinates:
         - label: x

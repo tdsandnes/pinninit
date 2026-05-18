@@ -11,27 +11,29 @@ if TYPE_CHECKING:
     from ..data_structure.coords_dataclass import CoordsProtocol
 
 
-
 class InputTransformationLabels(str, Enum):
     """Enumeration of input transformation labels."""
 
     SCALE_LINEAR = "scale_linear"
     PERIODIC_W23 = "periodic_w23"
 
+
 class InputTransformation:
     """Base class for input transformations."""
 
     def transform(self, coords: CoordsProtocol) -> torch.Tensor:
         raise NotImplementedError
-    
+
     @property
     def out_features(self) -> int:
         raise NotImplementedError
+
 
 class ScaleLinear(InputTransformation):
     """
     Maps coordinates linearly from [lb, ub] to [out_lb, out_ub].
     """
+
     def __init__(
         self,
         lb: torch.Tensor,
@@ -49,7 +51,9 @@ class ScaleLinear(InputTransformation):
         return self.lb.shape[-1]
 
     def transform(self, coords: CoordsProtocol) -> torch.Tensor:
-        return self.out_lb + (self.out_ub - self.out_lb) * ((coords.internal - self.lb) / (self.ub - self.lb))
+        return self.out_lb + (self.out_ub - self.out_lb) * (
+            (coords.internal - self.lb) / (self.ub - self.lb)
+        )
 
 
 class PeriodicW23(InputTransformation):
@@ -109,7 +113,9 @@ class PeriodicW23(InputTransformation):
         return torch.cat(embeddings, dim=-1)
 
 
-INPUT_TRANSFORMATION_REGISTRY: dict[InputTransformationLabels, Callable[..., InputTransformation]] = {
+INPUT_TRANSFORMATION_REGISTRY: dict[
+    InputTransformationLabels, Callable[..., InputTransformation]
+] = {
     InputTransformationLabels.SCALE_LINEAR: ScaleLinear,
     InputTransformationLabels.PERIODIC_W23: PeriodicW23,
 }

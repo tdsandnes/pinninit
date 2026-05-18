@@ -74,11 +74,17 @@ def _coords_post_init(self: CoordsProtocol) -> None:
     internal_geometric_coords_dict = self.coord_system.map_geometric_to_internal(
         self.full_geometric
     )
+    non_geometric_internal_labels = [
+        label for label in self.coord_labels if label not in self.geometric_labels
+    ]
+    internal_labels = tuple(
+        sorted([*non_geometric_internal_labels, *internal_geometric_coords_dict.keys()])
+    )
 
     self.internal_lb = torch.min(self.full_internal, dim=0).values
     self.internal_ub = torch.max(self.full_internal, dim=0).values
 
-    self.internal_labels = tuple(sorted(internal_geometric_coords_dict.keys()))
+    self.internal_labels = internal_labels
     self.internal_label_to_index = {
         label: i for i, label in enumerate(self.internal_labels)
     }
