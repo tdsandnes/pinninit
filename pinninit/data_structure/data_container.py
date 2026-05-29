@@ -8,8 +8,11 @@ import torch
 from ..io.input_equations import EQUATION_REGISTRY
 from ..io.input_parameters import EquationsParams, FieldsParams
 from .coords_dataclass import CoordsProtocol
-from .data_structure_utils import generate_tensor_component_labels
-from .field_dataclass import FieldProtocol, make_field_dataclass
+from .field_dataclass import (
+    FieldProtocol,
+    generate_tensor_component_labels,
+    make_field_dataclass,
+)
 
 
 class CoordDataContainer:
@@ -82,7 +85,7 @@ class CoordDataContainer:
         )
 
         # Components use coords.n_points which respects batching
-        labels, _ = generate_tensor_component_labels(self.coords.geometric_labels, rank)
+        labels = generate_tensor_component_labels(self.coords.geometric_labels, rank)
         init_field_dict = {
             label: torch.zeros(self.coords.n_points, device=self.device)
             for label in labels

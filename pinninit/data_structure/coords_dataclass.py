@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import field, make_dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import torch
 
-from ..differential_equations.operators import Operators
 from ..geometry.coordinate_system import CoordSystem
 from ..geometry.domain import Domain
-from .data_structure_utils import convert_to_tensor
 
 
 class CoordsProtocol(Protocol):
@@ -16,7 +14,7 @@ class CoordsProtocol(Protocol):
     # Input fields
     coord_labels: tuple[str, ...]
     coord_system: CoordSystem
-    domain: Domain
+    domain: Domain | None
     device: torch.device
 
     # Derived fields
@@ -31,219 +29,240 @@ class CoordsProtocol(Protocol):
     internal_coord_dim: int
     internal_lb: torch.Tensor
     internal_ub: torch.Tensor
-    full_tensor: torch.Tensor
-    full_geometric: torch.Tensor
-    full_internal: torch.Tensor
-    operators: Operators
-    is_batch: bool
-    batch_indices: slice | torch.Tensor
-    _batch_tensor: torch.Tensor
-    _batch_geometric: torch.Tensor
-    _batch_internal: torch.Tensor
+    parent: CoordsProtocol | None
+    parent_idx: torch.Tensor | None
 
     # Methods
     def __post_init__(self) -> None: ...
-    def set_batch(self: CoordsProtocol, indices: slice | torch.Tensor) -> None: ...
-    def clear_batch(self: CoordsProtocol) -> None: ...
-    def get_coord(self: CoordsProtocol, label: str) -> torch.Tensor: ...
-    def _set_tensors(self: CoordsProtocol, setting_batch: bool = False) -> None: ...
+    def _init_from_parent(self) -> None: ...
+    def _init_from_scratch(self) -> None: ...
+    def get_coord(self, label: str) -> torch.Tensor: ...
+    def get_batch(self, idx: torch.Tensor) -> CoordsProtocol: ...
+    def _set_tensors(self) -> None: ...
+    def _validate_domain(self) -> None: ...
     def _validate_input(self) -> None: ...
+
+    @property
+    def is_batch(self) -> bool: ...
 
 
 def _coords_post_init(self: CoordsProtocol) -> None:
-    # Sort labels and store dict for coord label ordering
-    self.coord_labels = tuple(sorted(self.coord_labels))
-    self.label_to_index = {label: i for i, label in enumerate(self.coord_labels)}
-
-    # Convert inputs to tensors if not already
-    for label in self.coord_labels:
-        value = getattr(self, label)
-        value_tensor = convert_to_tensor(value, self.device, requires_grad=True)
-        setattr(self, label, value_tensor)
-
-    # Geometric coordinates (sorted based on coord system metadata)
-    self.geometric_labels = self.coord_system.axes_labels_selected
+    # Set up based it is a batch or full dataset
+    if self.is_batch:
+        self._init_from_parent()
+    else:
+        self._init_from_scratch()
 
     # Set tensors
     self._set_tensors()
+    self.n_points = self.tensor.shape[0]
 
-    # Validate input
+    # From scratch setup that requires tensors
+    if not self.is_batch:
+        self._validate_domain()
+        # Note that these bounds are of the full dataset and are inherited by batches
+        self.internal_lb = torch.min(self.internal, dim=0).values.detach()
+        self.internal_ub = torch.max(self.internal, dim=0).values.detach()
+
+
+def _init_from_scratch(self: CoordsProtocol) -> None:
+    """Set up coordinates from scratch."""
+    self.coord_labels = tuple(sorted(self.coord_labels))
+    self.label_to_index = {label: i for i, label in enumerate(self.coord_labels)}
+
+    # Validate
     self._validate_input()
 
-    # Set internal labels and related attributes
-    internal_geometric_coords_dict = self.coord_system.map_geometric_to_internal(
-        self.full_geometric
-    )
-    non_geometric_internal_labels = [
-        label for label in self.coord_labels if label not in self.geometric_labels
+    # Geometric coord labels
+    self.geometric_labels = self.coord_system.axes_labels_selected
+    if not set(self.geometric_labels).issubset(set(self.coord_labels)):
+        raise ValueError(
+            "Geometric coordinate labels are not a subset of coordinate labels"
+        )
+
+    # Internal coord labels
+    coords_dict = {label: getattr(self, label) for label in self.coord_labels}
+    geometric = torch.stack([coords_dict[lbl] for lbl in self.geometric_labels], dim=1)
+    internal_geometric_dict = self.coord_system.map_geometric_to_internal(geometric)
+    non_geometric = [
+        lbl for lbl in self.coord_labels if lbl not in self.geometric_labels
     ]
-    internal_labels = tuple(
-        sorted([*non_geometric_internal_labels, *internal_geometric_coords_dict.keys()])
+
+    self.internal_labels = tuple(
+        sorted([*non_geometric, *internal_geometric_dict.keys()])
     )
-
-    self.internal_lb = torch.min(self.full_internal, dim=0).values
-    self.internal_ub = torch.max(self.full_internal, dim=0).values
-
-    self.internal_labels = internal_labels
     self.internal_label_to_index = {
-        label: i for i, label in enumerate(self.internal_labels)
+        lbl: i for i, lbl in enumerate(self.internal_labels)
     }
     self.internal_coord_dim = len(self.internal_labels)
 
-    # Batch state flag
-    self.is_batch = False
-
-    # Set operators
-    self.operators = Operators(self)
-
-
-def set_batch(self: CoordsProtocol, indices: slice | torch.Tensor) -> None:
-    """Set batch view into coordinates."""
-    self.batch_indices = indices
-
-    # Store individual batch coordinates for derivatives
-    for label in self.coord_labels:
-        coord = getattr(self, label)
-        setattr(self, f"_batch_{label}", coord[indices])
-
-    # Set batch tensors
-    self._set_tensors(setting_batch=True)
-
-    self.is_batch = True
-    self.operators.set_quantities()
+    if self.parent is not None:
+        raise ValueError("parent should be None when coords not batched")
+    if self.parent_idx is not None:
+        raise ValueError("parent_idx should be None when coords not batched")
 
 
-def clear_batch(self: CoordsProtocol) -> None:
-    # Delete batch attributes
-    for attr in (
-        "batch_indices",
-        "_batch_tensor",
-        "_batch_geometric",
-        "_batch_internal",
-    ):
-        if hasattr(self, attr):
-            delattr(self, attr)
+def _init_from_parent(self: CoordsProtocol) -> None:
+    """Fast initialisation inheriting static metadata from parent."""
+    assert self.parent is not None
+    assert self.parent_idx is not None
 
-    # Delete individual batch coordinates
-    for label in self.coord_labels:
-        batch_attr = f"_batch_{label}"
-        if hasattr(self, batch_attr):
-            delattr(self, batch_attr)
+    parent = self.parent
+    self.coord_labels = parent.coord_labels
+    self.label_to_index = parent.label_to_index
+    self.geometric_labels = parent.geometric_labels
+    self.internal_labels = parent.internal_labels
+    self.internal_label_to_index = parent.internal_label_to_index
+    self.internal_coord_dim = parent.internal_coord_dim
+    self.domain = parent.domain
 
-    self.is_batch = False
-    self.operators.set_quantities()
+    # Inherit system bounds
+    self.internal_lb = parent.internal_lb.detach()
+    self.internal_ub = parent.internal_ub.detach()
+
+    # Fast validation specific to the slice array size
+    first_coord = getattr(self, self.coord_labels[0])
+    if self.parent_idx.shape != (first_coord.shape[0],):
+        raise ValueError("parent_idx must match number of points")
 
 
 def get_coord(self: CoordsProtocol, label: str) -> torch.Tensor:
-    """Get a coordinate, respecting batch mode."""
-    coord = getattr(self, f"_batch_{label}" if self.is_batch else label)
-    assert isinstance(coord, torch.Tensor)
+    """Get a coordinate"""
+    coord: torch.Tensor = getattr(self, label)
     return coord
 
 
-def n_points(self: CoordsProtocol) -> int:
-    """Return number of points, respecting batch mode."""
-    return self._batch_tensor.shape[0] if self.is_batch else self.full_tensor.shape[0]
+def _compute_tensors(
+    coord_labels: tuple[str, ...],
+    geometric_labels: tuple[str, ...],
+    internal_labels: tuple[str, ...],
+    coord_system: CoordSystem,
+    coords_dict: dict[str, torch.Tensor],
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Compute tensor, geometric, and internal from a dict of coord tensors"""
+    tensor = torch.stack([coords_dict[label] for label in coord_labels], dim=1)
 
+    geometric = torch.stack([coords_dict[label] for label in geometric_labels], dim=1)
 
-def tensor(self: CoordsProtocol) -> torch.Tensor:
-    """Get coord tensor, respecting batch mode."""
-    return self._batch_tensor if self.is_batch else self.full_tensor
+    internal_geometric_coords_dict = coord_system.map_geometric_to_internal(geometric)
 
-
-def geometric(self: CoordsProtocol) -> torch.Tensor:
-    """Get gemoetric coord tensor, respecting batch mode."""
-    return self._batch_geometric if self.is_batch else self.full_geometric
-
-
-def internal(self: CoordsProtocol) -> torch.Tensor:
-    """Get internal coord tensor, respecting batch mode."""
-    return self._batch_internal if self.is_batch else self.full_internal
-
-
-def _set_tensors(self: CoordsProtocol, setting_batch: bool = False) -> None:
-    """Set coordinate tensors with optional prefix for batch mode."""
-    coord_prefix = "_batch_" if setting_batch else ""
-    tensor_prefix = "_batch_" if setting_batch else "full_"
-
-    # Stack full coordinate tensor
-    tensor = torch.stack(
-        [getattr(self, f"{coord_prefix}{label}") for label in self.coord_labels], dim=1
-    )
-
-    # Stack geometric coordinate tensor
-    geometric = torch.stack(
-        [getattr(self, f"{coord_prefix}{label}") for label in self.geometric_labels],
-        dim=1,
-    )
-
-    # Get internal geometric coords
-    internal_geometric_coords_dict = self.coord_system.map_geometric_to_internal(
-        geometric
-    )
-
-    # Replace geometric coords with internal geometric coords
     internal_coords_dict = {
-        label: getattr(self, f"{coord_prefix}{label}")
-        for label in self.coord_labels
-        if label not in self.geometric_labels
+        label: coords_dict[label]
+        for label in coord_labels
+        if label not in geometric_labels
     }
     internal_coords_dict.update(internal_geometric_coords_dict)
 
-    # Sort alphabetically and stack into tensor
-    internal_labels = sorted(internal_coords_dict)
     internal = torch.stack(
         [internal_coords_dict[label] for label in internal_labels], dim=1
     )
 
-    # Set tensors
-    setattr(self, f"{tensor_prefix}tensor", tensor)
-    setattr(self, f"{tensor_prefix}geometric", geometric)
-    setattr(self, f"{tensor_prefix}internal", internal)
+    return tensor, geometric, internal
 
 
-def _coords_validate_input(self: Any) -> None:
+def _set_tensors(self: CoordsProtocol) -> None:
+    coords_dict = {label: getattr(self, label) for label in self.coord_labels}
+
+    self.tensor, self.geometric, self.internal = _compute_tensors(
+        self.coord_labels,
+        self.geometric_labels,
+        self.internal_labels,
+        self.coord_system,
+        coords_dict,
+    )
+
+
+def get_batch(self: CoordsProtocol, idx: torch.Tensor) -> CoordsProtocol:
+    if idx.dtype not in (torch.long, torch.int64):
+        raise TypeError("idx must be integer tensor")
+    if idx.ndim != 1:
+        raise ValueError("idx must be 1D")
+
+    batch_coords_dict = {
+        label: getattr(self, label)[idx].detach().requires_grad_(True)
+        for label in self.coord_labels
+    }
+
+    Coords: Any = self.__class__
+    batch_instance = Coords(
+        **batch_coords_dict,
+        coord_system=self.coord_system,
+        domain=self.domain,
+        device=self.device,
+        parent=self,
+        parent_idx=idx,
+    )
+
+    return cast(CoordsProtocol, batch_instance)
+
+
+def _validate_input(self: Any) -> None:
+    # Validate coordinate system
+    if not isinstance(self.coord_system, CoordSystem):
+        raise TypeError(
+            "coord_system must be a CoordSystem instance, "
+            f"got {type(self.coord_system)}"
+        )
+
     # Validate coord components
     lengths = []
     for label in self.coord_labels:
-        tensor = getattr(self, label)
-        if not isinstance(tensor, torch.Tensor):
+        if not hasattr(self, label):
+            raise ValueError(f"Coordinate label '{label}' not found")
+
+        coord = getattr(self, label)
+
+        if not isinstance(coord, torch.Tensor):
             raise TypeError(f"Coordinate {label} is not a torch.Tensor")
-        if tensor.dim() != 1:
+        if coord.dim() != 1:
+            raise ValueError(f"Coordinate {label} must be 1D, got shape {coord.shape}")
+
+        # Move coordinate to correct device
+        if coord.device != self.device:
             raise ValueError(
-                f"Coordinate {label} must be 1D, got shape " f"{tensor.shape}"
+                f"Coordinate {label} on {coord.device}, expected {self.device}"
             )
-        lengths.append(tensor.size(0))
+
+        lengths.append(coord.size(0))
 
     if not lengths:
         raise ValueError("No coordinates provided")
 
     if len(set(lengths)) > 1:
-        raise ValueError(
-            f"All coordinates must have the same length, " f"got {lengths}"
-        )
+        raise ValueError(f"All coordinates must have the same length, got {lengths}")
 
-    # Validate that geometric coords are subset of all coords
-    if not set(self.geometric_labels).issubset(set(self.coord_labels)):
-        raise ValueError(
-            "Geometric coordinate labels are not a subset of " "coordinate labels"
-        )
 
-    # Validate that coordinates lie within domain
+def _validate_domain(self: CoordsProtocol) -> None:
+    """Isolate domain verification boundaries."""
     if self.domain is not None:
-        mask = self.domain.contains_geometric(self.full_geometric)
+        mask = self.domain.contains_geometric(self.geometric)
         if not torch.all(mask):
-            raise ValueError("Coordinates lie outside of domain.")
+            raise ValueError("Geometric coordinates lie outside of domain.")
 
 
 def make_coords_dataclass(
-    coord_labels: set[str], device: torch.device
+    coord_labels: set[str] | list[str] | tuple[str, ...], device: torch.device
 ) -> type[CoordsProtocol]:
     components: list[tuple[str, Any, Any | None]] = []
 
+    # Check for duplicate coordinate labels
+    labels_list = list(coord_labels)
+    if len(labels_list) != len(set(labels_list)):
+        seen: set[str] = set()
+        duplicates: set[str] = set()
+        for item in labels_list:
+            if item in seen:
+                duplicates.add(item)
+            else:
+                seen.add(item)
+        raise ValueError(f"Duplicate coordinate labels provided: {duplicates}")
+
+    # Sort labels and store dict for coord label ordering
+    coord_labels_sorted = tuple(sorted(labels_list))
+
     # Each coordinate
-    for label in coord_labels:
-        components.append((label, Any, None))
+    for label in coord_labels_sorted:
+        components.append((label, torch.Tensor, None))
 
     # Input fields
     components.extend(
@@ -251,12 +270,15 @@ def make_coords_dataclass(
             (
                 "coord_labels",
                 tuple[str, ...],
-                field(default=tuple(sorted(coord_labels))),
+                field(default=coord_labels_sorted),
             ),
             ("coord_system", CoordSystem, None),
-            ("domain", Domain, None),
+            ("domain", Domain | None, None),
             ("device", torch.device, field(default=device)),
+            ("parent", CoordsProtocol | None, field(default=None)),
+            ("parent_idx", torch.Tensor | None, field(default=None)),
             # Derived fields
+            ("n_points", int, field(init=False)),
             ("geometric_labels", tuple[str, ...], field(init=False)),
             ("internal_labels", tuple[str, ...], field(init=False)),
             ("label_to_index", dict[str, int], field(init=False)),
@@ -264,15 +286,9 @@ def make_coords_dataclass(
             ("internal_coord_dim", int, field(init=False)),
             ("internal_lb", torch.Tensor, field(init=False)),
             ("internal_ub", torch.Tensor, field(init=False)),
-            ("full_tensor", torch.Tensor, field(init=False)),
-            ("full_geometric", torch.Tensor, field(init=False)),
-            ("full_internal", torch.Tensor, field(init=False)),
-            ("operators", Operators, field(init=False)),
-            ("is_batch", bool, field(init=False)),
-            ("batch_indices", slice | torch.Tensor, field(init=False)),
-            ("_batch_tensor", torch.Tensor, field(init=False)),
-            ("_batch_geometric", torch.Tensor, field(init=False)),
-            ("_batch_internal", torch.Tensor, field(init=False)),
+            ("tensor", torch.Tensor, field(init=False)),
+            ("geometric", torch.Tensor, field(init=False)),
+            ("internal", torch.Tensor, field(init=False)),
         ]
     )
 
@@ -282,15 +298,14 @@ def make_coords_dataclass(
         components,
         namespace={
             "__post_init__": _coords_post_init,
-            "set_batch": set_batch,
-            "clear_batch": clear_batch,
+            "_init_from_scratch": _init_from_scratch,
+            "_init_from_parent": _init_from_parent,
             "get_coord": get_coord,
-            "n_points": property(n_points),
-            "tensor": property(tensor),
-            "geometric": property(geometric),
-            "internal": property(internal),
+            "get_batch": get_batch,
             "_set_tensors": _set_tensors,
-            "_validate_input": _coords_validate_input,
+            "_validate_input": _validate_input,
+            "_validate_domain": _validate_domain,
+            "is_batch": property(lambda self: self.parent is not None),
         },
     )
 
