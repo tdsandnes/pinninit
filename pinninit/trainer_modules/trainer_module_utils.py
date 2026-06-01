@@ -88,7 +88,7 @@ class VolumeRejectionSampler:
         if with_sobol:
             self.seed = seed
             self.sobol = torch.quasirandom.SobolEngine(
-                dimension=self.coord_system.dim_geometry,
+                dimension=self.coord_system.dim_geometric,
                 scramble=True,
                 seed=self.seed,
             )  # type: ignore[no-untyped-call]
@@ -116,7 +116,7 @@ class VolumeRejectionSampler:
             else:
                 proposed = lb + (ub - lb) * torch.rand(
                     n_propose,
-                    self.coord_system.dim_geometry,
+                    self.coord_system.dim_geometric,
                     device=self.device,
                     generator=self.rng,
                 )

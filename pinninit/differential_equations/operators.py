@@ -16,7 +16,7 @@ class Operators:
         self.coords = coords
         self.coord_system = coords.coord_system
         self.geometric_labels = coords.geometric_labels
-        self.dim_geometry = self.coord_system.dim_geometry
+        self.dim_geometric = self.coord_system.dim_geometric
         self.device = self.coords.device
 
         # Initial computation
@@ -74,16 +74,16 @@ class Operators:
         Returns
         -------
         torch.Tensor
-            Contravarient gradient of the function: (n_points, dim_geometry)
+            Contravarient gradient of the function: (n_points, dim_geometric)
         """
         # Coordinate system dimensions
-        dim_geometry = self.dim_geometry
+        dim_geometric = self.dim_geometric
         coords_geometric = self.coords.geometric
 
         # Validate input tensors
         n_points = self.coords.n_points
         validate_pytorch_tensor(f, (n_points,))
-        validate_pytorch_tensor(coords_geometric, (n_points, dim_geometry))
+        validate_pytorch_tensor(coords_geometric, (n_points, dim_geometric))
 
         # List of derivatives wrt geometric coordinates
         derivative_f = torch.autograd.grad(
@@ -93,11 +93,11 @@ class Operators:
             create_graph=True,
             retain_graph=True,
         )[0]
-        validate_pytorch_tensor(derivative_f, (n_points, dim_geometry))
+        validate_pytorch_tensor(derivative_f, (n_points, dim_geometric))
 
         # Batch matrix multiplication with inverse metric tensor
         contra_grad_f = self.G.inv_metric_times_vec(derivative_f)
-        validate_pytorch_tensor(contra_grad_f, (n_points, dim_geometry))
+        validate_pytorch_tensor(contra_grad_f, (n_points, dim_geometric))
 
         return contra_grad_f
 
@@ -116,7 +116,7 @@ class Operators:
         Returns
         -------
         torch.Tensor
-            Gradient of the function: (n_points, dim_geometry)
+            Gradient of the function: (n_points, dim_geometric)
         """
         return self.G.scale_factors_times_vec(self.contravariant_grad(f))
 
@@ -132,39 +132,39 @@ class Operators:
         ----------
         v1 : torch.Tensor
             The vector field used in dot product with grad.
-            Shape (n_points, dim_geometry)
+            Shape (n_points, dim_geometric)
         v2 : torch.Tensor
             The vector field that the operator (v1 dot grad) acts on.
-            Shape (n_points, dim_geometry)
+            Shape (n_points, dim_geometric)
 
         Returns
         -------
         torch.Tensor
             The vector computed from (v1 dot grad)(v2).
-            Shape (n_points, dim_geometry)
+            Shape (n_points, dim_geometric)
         """
         # Coordinate system dimensions
-        dim_geometry = self.dim_geometry
+        dim_geometric = self.dim_geometric
         coords_geometric = self.coords.geometric
         n_points = self.coords.n_points
 
         # Validate inputs
-        validate_pytorch_tensor(v1, (n_points, dim_geometry))
-        validate_pytorch_tensor(v2, (n_points, dim_geometry))
-        validate_pytorch_tensor(coords_geometric, (n_points, dim_geometry))
+        validate_pytorch_tensor(v1, (n_points, dim_geometric))
+        validate_pytorch_tensor(v2, (n_points, dim_geometric))
+        validate_pytorch_tensor(coords_geometric, (n_points, dim_geometric))
 
         # Calculate components
         v1_dot_grad_v2 = []
-        for i in range(dim_geometry):
+        for i in range(dim_geometric):
             grad_v2_i = self.grad(v2[:, i])
-            validate_pytorch_tensor(grad_v2_i, (n_points, dim_geometry))
+            validate_pytorch_tensor(grad_v2_i, (n_points, dim_geometric))
             v1_dot_grad_v2_i = (v1 * grad_v2_i).sum(dim=1)
             v1_dot_grad_v2.append(v1_dot_grad_v2_i)
 
         v1_dot_grad_v2_tensor = torch.stack(
             v1_dot_grad_v2, dim=1
-        )  # shape: (n_points, dim_geometry)
-        validate_pytorch_tensor(v1_dot_grad_v2_tensor, (n_points, dim_geometry))
+        )  # shape: (n_points, dim_geometric)
+        validate_pytorch_tensor(v1_dot_grad_v2_tensor, (n_points, dim_geometric))
 
         return v1_dot_grad_v2_tensor
 
@@ -179,7 +179,7 @@ class Operators:
         ----------
         contra_v : torch.Tensor
             The vector field, given in contravariant basis.
-            Shape (n_points, dim_geometry)
+            Shape (n_points, dim_geometric)
 
         Returns
         -------
@@ -188,13 +188,13 @@ class Operators:
             Shape (n_points,)
         """
         # Coordinate system dimensions
-        dim_geometry = self.dim_geometry
+        dim_geometric = self.dim_geometric
         coords_geometric = self.coords.geometric
         n_points = self.coords.n_points
 
         # Validate inputs
-        validate_pytorch_tensor(contra_v, (n_points, dim_geometry))
-        validate_pytorch_tensor(coords_geometric, (n_points, dim_geometry))
+        validate_pytorch_tensor(contra_v, (n_points, dim_geometric))
+        validate_pytorch_tensor(coords_geometric, (n_points, dim_geometric))
 
         # Term to take derivatives of
         inner_term = self.G.sqrt_det_times_vec(contra_v)
@@ -232,7 +232,7 @@ class Operators:
         ----------
         v : torch.Tensor
             The vector field, given in physical basis.
-            Shape (n_points, dim_geometry)
+            Shape (n_points, dim_geometric)
 
         Returns
         -------
@@ -241,12 +241,12 @@ class Operators:
             Shape (n_points,)
         """
         # Coordinate system dimensions
-        dim_geometry = self.dim_geometry
+        dim_geometric = self.dim_geometric
         coords_geometric = self.coords.geometric
 
         # Validate inputs
-        validate_pytorch_tensor(v, (self.coords.n_points, dim_geometry))
-        validate_pytorch_tensor(coords_geometric, (self.coords.n_points, dim_geometry))
+        validate_pytorch_tensor(v, (self.coords.n_points, dim_geometric))
+        validate_pytorch_tensor(coords_geometric, (self.coords.n_points, dim_geometric))
 
         # Get v in contravariant basis
         contra_v = self.G.inv_scale_factors_times_vec(v)
@@ -274,10 +274,10 @@ class Operators:
             Laplacian of the function. Shape (n_points,)
         """
         # Validate input tensors
-        dim_geometry = self.dim_geometry
+        dim_geometric = self.dim_geometric
         coords_geometric = self.coords.geometric
         validate_pytorch_tensor(f, (self.coords.n_points,))
-        validate_pytorch_tensor(coords_geometric, (self.coords.n_points, dim_geometry))
+        validate_pytorch_tensor(coords_geometric, (self.coords.n_points, dim_geometric))
 
         # Get contravariant grad of f
         contra_grad_f = self.contravariant_grad(f)
@@ -297,24 +297,24 @@ class Operators:
         ----------
         v : torch.Tensor
             The vector field.
-            Shape (n_points, dim_geometry)
+            Shape (n_points, dim_geometric)
 
         Returns
         -------
         torch.Tensor
             Vector laplacian of the function and same basis as input vector
-            field (n_points, dim_geometry)
+            field (n_points, dim_geometric)
         """
         # Validate input tensors
-        dim_geometry = self.dim_geometry
+        dim_geometric = self.dim_geometric
         coords_geometric = self.coords.geometric
-        validate_pytorch_tensor(v, (self.coords.n_points, dim_geometry))
-        validate_pytorch_tensor(coords_geometric, (self.coords.n_points, dim_geometry))
+        validate_pytorch_tensor(v, (self.coords.n_points, dim_geometric))
+        validate_pytorch_tensor(coords_geometric, (self.coords.n_points, dim_geometric))
 
         # Compute Laplacian component-wise
         laplacian_v = torch.stack(
-            [self.laplacian(v[:, i]) for i in range(dim_geometry)],
+            [self.laplacian(v[:, i]) for i in range(dim_geometric)],
             dim=1,
-        )  # shape: (n_points, dim_geometry)
+        )  # shape: (n_points, dim_geometric)
 
         return laplacian_v

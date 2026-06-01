@@ -3,13 +3,15 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 
-from ..checks.validate_data import validate_pytorch_tensor
-from .geometry_utils import select_coord_system_axes
-from .metric_tensor import DiagonalMetricTensor, IdentityMetricTensor, MetricTensor
+from .metric_tensor import DiagonalMetricTensor, IdentityMetricTensor
+
+if TYPE_CHECKING:
+    from .metric_tensor import MetricTensor
 
 
 class CoordSystemLabels(str, Enum):
@@ -27,13 +29,13 @@ class CoordSystemMetadata:
     name: str
     is_orthogonal: bool
     axes_labels: tuple[str, ...]
-    required_or_fixed_axes: tuple[str, ...]
-    required_fields: tuple[str, ...]
-    required_consts: tuple[str, ...]
     axes_bounds: tuple[tuple[float, float], ...]
-    internal_coords: CoordSystemLabels
-    max_dim_geometry: int
-    coord_redirections: dict[tuple[int, tuple[str, ...]], CoordSystemLabels] | None
+    max_dim_geometric: int
+    internal_coord_system: CoordSystemLabels
+    required_axes: set[str]
+    coord_system_redirections: (
+        dict[frozenset[str], tuple[CoordSystemLabels, set[str]]] | None
+    )
 
 
 class CoordSystem(ABC):
@@ -44,221 +46,132 @@ class CoordSystem(ABC):
 
     def __init__(
         self,
-        dim_geometry: int,
-        coord_axes: tuple[str, ...],
-        fixed_axes: tuple[str, ...],
-        fixed_axes_values: tuple[float, ...],
-        device: torch.device,
+        dim_geometric: int,  # Number of geometric dimensions
+        coord_axes: set[str],  # Labels of coordinate axes to use (not including fixed)
+        device: torch.device,  # device
+        fixed_axes: dict[str, float] | None = None,  # {Labels: vlaue} of fixed axes
     ):
-        self.dim_geometry = dim_geometry
+        # Validate input
+        self._validate_selected_dimensions(dim_geometric)
+        self._validate_selected_axes(coord_axes, fixed_axes)
+
+        # Store values
+        self.dim_geometric = dim_geometric
         self.device = device
 
-        # Ensure coordinate system metadata exists and is of correct type
-        metadata = getattr(self, "metadata", None)
-        if metadata is None:
-            raise NotImplementedError(
-                f"{type(self).__name__} lacks a 'metadata' class attribute"
-            )
-
-        if not isinstance(metadata, CoordSystemMetadata):
-            raise TypeError(
-                f"'metadata' must be of type CoordSystemMetadata, got {type(metadata)}"
-            )
-
-        (
-            self.axes_labels_selected,
-            self.axes_bounds_selected,
-            self.indices_selected,
-        ) = select_coord_system_axes(
-            self.metadata.axes_labels,
-            self.metadata.axes_bounds,
-            coord_axes,
+        # Sort axes based on their order in self.metadata.axes_labels
+        self.indices_selected = tuple(
+            i
+            for i, label in enumerate(self.metadata.axes_labels)
+            if label in coord_axes
         )
-        self.fixed_axes = fixed_axes
-        self.fixed_axes_values = fixed_axes_values
-
-        # Ensure coordinate system is valid
-        self._validate_selected_dimensions()
-        self._validate_selected_axes()
-        self._validate_required_or_fixed_axes()
-        self._validate_selected_bounds()
+        self.axes_labels_selected = tuple(
+            self.metadata.axes_labels[i] for i in self.indices_selected
+        )
+        self.axes_bounds_selected = tuple(
+            self.metadata.axes_bounds[i] for i in self.indices_selected
+        )
+        self.fixed_axes = (
+            {
+                label: fixed_axes[label]
+                for label in self.metadata.axes_labels
+                if label in fixed_axes
+            }
+            if fixed_axes is not None
+            else None
+        )
 
     @abstractmethod
     def metric_tensor(
         self,
         n_points: int,
-        geometric_coords: torch.Tensor,
+        geometric_coords: dict[str, torch.Tensor],
     ) -> MetricTensor:
-        """Subclasses must implement this method to return the metric tensor(s)."""
+        pass
+
+    @property
+    @abstractmethod
+    def internal_geometric_labels(self) -> tuple[str, ...]:
         pass
 
     @abstractmethod
-    def map_geometric_to_internal(
-        self, geometric_coords: torch.Tensor
+    def map_geometric_to_internal_geometric(
+        self, geometric_coords: dict[str, torch.Tensor]
     ) -> dict[str, torch.Tensor]:
-        """Subclasses must implement this method to map geometric coords to internal
-        coords."""
         pass
 
     def _get_coord(
         self,
         axis_label: str,
-        geometric_coords: torch.Tensor,
+        geometric_coords: dict[str, torch.Tensor],
         default: float | None = None,
     ) -> torch.Tensor:
         if axis_label in self.axes_labels_selected:
-            idx = self.axes_labels_selected.index(axis_label)
-            return geometric_coords[:, idx]
-        elif (
-            self.fixed_axes is not None
-            and self.fixed_axes_values is not None
-            and axis_label in self.fixed_axes
-        ):
-            idx = self.fixed_axes.index(axis_label)
-            return torch.tensor(self.fixed_axes_values[idx])
+            return geometric_coords[axis_label]
+        elif self.fixed_axes is not None and axis_label in self.fixed_axes:
+            return torch.tensor(self.fixed_axes[axis_label])
         elif default is not None:
             return torch.tensor(default)
         else:
             raise ValueError(f"Missing required axis: {axis_label}")
 
-    def _validate_selected_dimensions(self) -> None:
-        """
-        Validate that the coordinate system supports the given number of dimensions.
-
-        Raises
-        ------
-        TypeError
-            If dim_geometry is not an integer.
-        ValueError
-            If coordinate system is incompatible with the given number of dimensions.
-        """
-        # Extract metadata
-        name = self.metadata.name
-        max_dim_geometry = self.metadata.max_dim_geometry
-
-        # Coordinate system dimensions
-        dim_geometry = self.dim_geometry
-
-        # Check type of dim_geometry
-        if not isinstance(dim_geometry, int):
-            raise TypeError(
-                "Expected dim_geometry to be an integer, "
-                f"got {type(dim_geometry).__name__}"
-            )
-
-        # Check value of dim_geometry
-        if dim_geometry < 1:
-            raise ValueError(f"dim_geometry must be >= 1, got {dim_geometry}")
-        if dim_geometry > max_dim_geometry:
+    def _validate_selected_dimensions(self, dim_geometric: int) -> None:
+        # Check value of dim_geometric
+        if dim_geometric < 1:
+            raise ValueError(f"dim_geometric must be >= 1, got {dim_geometric}")
+        if dim_geometric > self.metadata.max_dim_geometric:
             raise ValueError(
-                f"{name} only implemented for dim_geometry<={max_dim_geometry}, "
-                f"got dim_geometry={dim_geometry}"
+                f"{self.metadata.name} only implemented for dim_geometric <="
+                f"{self.metadata.max_dim_geometric}, got dim_geometric={dim_geometric}"
             )
 
-    def _validate_selected_axes(self) -> None:
-        """
-        Validate that the selected axes are compatible coordinate system.
-
-        In cases where two coord systems behave the same, we raise an error in one of
-        them to enforce consistent coordinate system labelling i.e. (r, z) cylindrical
-        polars redirects you to (x, y) Cartesian.
-
-        Raises
-        ------
-        ValueError
-            If selected axes are not compatible.
-        """
-
-        # Extract metadata
-        name = self.metadata.name
-        coord_redirections = self.metadata.coord_redirections
-
-        # Coordinate system dimensions
-        dim_geometry = self.dim_geometry
-        axes_labels_selected = self.axes_labels_selected
-
-        # Error to redirect user to alternative coordinate system if necessary
-        if (
-            coord_redirections
-            and (dim_geometry, axes_labels_selected) in coord_redirections
-        ):
-            alt_coord_system_label = coord_redirections[
-                (dim_geometry, axes_labels_selected)
-            ]
-            alt_coord_system_class = COORD_SYSTEM_REGISTRY[alt_coord_system_label]
-            alt_coord_system_name = alt_coord_system_class.metadata.name
+    def _validate_selected_axes(
+        self, coord_axes: set[str], fixed_axes: dict[str, float] | None = None
+    ) -> None:
+        # In cases where two coord systems behave the same, we raise an error
+        # to enforce consistent coordinate system labelling i.e. (r, z) cylindrical
+        # polars redirects you to (x, y) Cartesian.
+        redirections = self.metadata.coord_system_redirections
+        if redirections is not None and frozenset(coord_axes) in redirections:
+            alt_coord_system_label = redirections[frozenset(coord_axes)][0]
+            alt_coord_system_axes = redirections[frozenset(coord_axes)][1]
+            alt_coord_system_name = COORD_SYSTEM_REGISTRY[
+                alt_coord_system_label
+            ].metadata.name
 
             raise ValueError(
                 f"To enforce consistent coordinate system labelling, use "
-                f"{alt_coord_system_name} instead of {name} when using "
-                f"dim_geometry={dim_geometry} with axes {axes_labels_selected}"
+                f"{alt_coord_system_name} with axes {alt_coord_system_axes}, instead "
+                f"of {self.metadata.name} with axes {coord_axes}"
             )
 
-    def _validate_required_or_fixed_axes(self) -> None:
-        """
-        Validate axes that are required either as selected axis or a fixed value.
-
-        Raises
-        ------
-        ValueError
-            If required axes are not given.
-        """
-
-        # Extract metadata
-        required_or_fixed_axes = self.metadata.required_or_fixed_axes
-
-        # Check lengths of fixed_axes and fixed_axes_values
-        if self.fixed_axes is not None and self.fixed_axes_values is not None:
-            if len(self.fixed_axes) != len(self.fixed_axes_values):
-                raise ValueError(
-                    "fixed_axes and fixed_axes_values must be of the same length."
-                )
-        elif self.fixed_axes is not None or self.fixed_axes_values is not None:
-            raise ValueError(
-                "fixed_axes and fixed_axes_values must both be None if one is."
-            )
-
-        # Check that all required axes are given
-        for axis_label in required_or_fixed_axes:
-            if (axis_label not in self.axes_labels_selected) and (
-                self.fixed_axes is None or axis_label not in self.fixed_axes
+        # If a coordinate system has any required axes, make sure these have been given
+        for axis_label in self.metadata.required_axes:
+            if (axis_label not in coord_axes) and (
+                fixed_axes is None or axis_label not in fixed_axes
             ):
                 raise ValueError(f"Missing required axis: {axis_label}")
 
-    def _validate_selected_bounds(self) -> None:
-        """
-        Validate the bounds of axes in the coordinate system.
-
-        Raises
-        ------
-        ValueError
-            If axes bounds are inconsistent.
-        """
-        # Extract metadata
-        dim_geometry = self.dim_geometry
-        axes_labels = self.axes_labels_selected
-        axes_bounds = self.axes_bounds_selected
-
-        # Check that axes_bounds has correct shape
-        if np.shape(axes_bounds) != (dim_geometry, 2):
+        # Both coord_axes and fixed_axes must be in the coordinate system's axes_labels
+        valid_axes = set(self.metadata.axes_labels)
+        invalid_coord_axes = coord_axes - valid_axes
+        if invalid_coord_axes:
             raise ValueError(
-                f"axes_bounds must be of shape ({dim_geometry}, 2) , got "
-                f"{np.shape(axes_bounds)}."
+                f"Invalid axes for {self.metadata.name}: {invalid_coord_axes}"
             )
 
-        # Separate lower and upper bounds
-        lower_bounds, upper_bounds = zip(*axes_bounds, strict=True)
-
-        for i in range(dim_geometry):
-            axis_label = axes_labels[i]
-            lb = lower_bounds[i]
-            ub = upper_bounds[i]
-
-            # Check that lower bound is less than upper bound
-            if lower_bounds[i] >= upper_bounds[i]:
+        if fixed_axes is not None:
+            invalid_fixed_axes = set(fixed_axes) - valid_axes
+            if invalid_fixed_axes:
                 raise ValueError(
-                    f"Coordinate system lower bound must be lower than upper bound, "
-                    f"got {lb = } and {ub = } for {axis_label}."
+                    f"Invalid fixed axes for {self.metadata.name}: {invalid_fixed_axes}"
+                )
+
+            # coord_axes and fixed_axes cannot share labels
+            overlap = coord_axes & set(fixed_axes)
+            if overlap:
+                raise ValueError(
+                    f"Axes {overlap} cannot appear in both coord_axes and fixed_axes"
                 )
 
 
@@ -270,71 +183,51 @@ class CartesianCoords(CoordSystem):
         name="Cartesian Coordinates",
         is_orthogonal=True,
         axes_labels=("x", "y", "z"),
-        required_or_fixed_axes=(),
-        required_fields=(),
-        required_consts=(),
         axes_bounds=((-np.inf, np.inf), (-np.inf, np.inf), (-np.inf, np.inf)),
-        internal_coords=CoordSystemLabels.CARTESIAN,
-        max_dim_geometry=3,
-        coord_redirections=None,
+        max_dim_geometric=3,
+        internal_coord_system=CoordSystemLabels.CARTESIAN,
+        required_axes=set(),
+        coord_system_redirections={
+            frozenset({"y"}): (CoordSystemLabels.CARTESIAN, {"x"}),
+            frozenset({"z"}): (CoordSystemLabels.CARTESIAN, {"x"}),
+            frozenset({"x", "z"}): (CoordSystemLabels.CARTESIAN, {"x", "y"}),
+            frozenset({"y", "z"}): (CoordSystemLabels.CARTESIAN, {"x", "y"}),
+        },
     )
 
     def __init__(
         self,
-        dim_geometry: int,
-        coord_axes: tuple[str, ...],
-        fixed_axes: tuple[str, ...],
-        fixed_axes_values: tuple[float, ...],
+        dim_geometric: int,
+        coord_axes: set[str],
         device: torch.device,
+        fixed_axes: dict[str, float] | None = None,
     ):
         super().__init__(
-            dim_geometry, coord_axes, fixed_axes, fixed_axes_values, device
+            dim_geometric=dim_geometric,
+            coord_axes=coord_axes,
+            device=device,
+            fixed_axes=fixed_axes,
         )
-        self._cartesian_validate_selected_axes()
 
     def metric_tensor(
         self,
         n_points: int,
-        geometric_coords: torch.Tensor | None = None,
+        geometric_coords: dict[str, torch.Tensor] | None = None,
     ) -> MetricTensor:
+        # For Cartesian, metric is identity matrix
         return IdentityMetricTensor(n_points, self.device)
 
-    def map_geometric_to_internal(
-        self, geometric_coords: torch.Tensor
+    @property
+    def internal_geometric_labels(self) -> tuple[str, ...]:
+        # For Cartesian, internal geometric coords are the same as geometric coords
+        return self.axes_labels_selected
+
+    def map_geometric_to_internal_geometric(
+        self,
+        geometric_coords: dict[str, torch.Tensor],
     ) -> dict[str, torch.Tensor]:
-        # For Cartesian, internal coords are the same as geometric coords
-        return {
-            label: geometric_coords[:, i]
-            for i, label in enumerate(self.axes_labels_selected)
-        }
-
-    def _cartesian_validate_selected_axes(self) -> None:
-        """
-        Validate that the selected axes are compatible coordinate system.
-
-        In cases where two combinations of selected geometric_coords behave the same, we
-        raise an error in one of them to enforce consistent coordinate system labelling
-        i.e. (x, y) and (y, z).
-
-        Raises
-        ------
-        ValueError
-            If selected axes are not compatible.
-        """
-
-        # Extract metadata
-        name = self.metadata.name
-        axes_labels = self.metadata.axes_labels
-
-        # Only valid combinations
-        valid_axes = [axes_labels[: self.dim_geometry]]
-
-        if self.axes_labels_selected not in valid_axes:
-            raise ValueError(
-                f"To enforce consistent coordinate system labelling, use "
-                f"axes {valid_axes} instead of {self.axes_labels_selected} "
-                f"when using {name} with dim_geometry={self.dim_geometry}"
-            )
+        # For Cartesian, internal geometric coords are the same as geometric coords
+        return geometric_coords
 
 
 class CylindricalCoords(CoordSystem):
@@ -345,86 +238,100 @@ class CylindricalCoords(CoordSystem):
         name="Cylindrical Polar Coordinates",
         is_orthogonal=True,
         axes_labels=("r", "theta", "z"),
-        required_or_fixed_axes=("r",),
-        required_fields=(),
-        required_consts=(),
         axes_bounds=((0, np.inf), (0, 2 * np.pi), (-np.inf, np.inf)),
-        internal_coords=CoordSystemLabels.CARTESIAN,
-        max_dim_geometry=3,
-        coord_redirections={
-            (1, ("r",)): CoordSystemLabels.CARTESIAN,
-            (1, ("z",)): CoordSystemLabels.CARTESIAN,
-            (2, ("r", "z")): CoordSystemLabels.CARTESIAN,
+        max_dim_geometric=3,
+        internal_coord_system=CoordSystemLabels.CARTESIAN,
+        required_axes={"r"},
+        coord_system_redirections={
+            frozenset({"r"}): (CoordSystemLabels.CARTESIAN, {"x"}),
+            frozenset({"z"}): (CoordSystemLabels.CARTESIAN, {"x"}),
+            frozenset({"r", "z"}): (CoordSystemLabels.CARTESIAN, {"x", "y"}),
         },
     )
 
     def __init__(
         self,
-        dim_geometry: int,
-        coord_axes: tuple[str, ...],
-        fixed_axes: tuple[str, ...],
-        fixed_axes_values: tuple[float, ...],
+        dim_geometric: int,
+        coord_axes: set[str],
         device: torch.device,
+        fixed_axes: dict[str, float] | None = None,
     ):
         super().__init__(
-            dim_geometry, coord_axes, fixed_axes, fixed_axes_values, device
+            dim_geometric=dim_geometric,
+            coord_axes=coord_axes,
+            device=device,
+            fixed_axes=fixed_axes,
         )
 
     def metric_tensor(
         self,
         n_points: int,
-        geometric_coords: torch.Tensor,
+        geometric_coords: dict[str, torch.Tensor],
     ) -> MetricTensor:
-        # Validate geometric_coords
-        validate_pytorch_tensor(geometric_coords, (n_points, self.dim_geometry))
+        # Get coordinates needed in metric tensor
+        r = self._get_coord("r", geometric_coords)
 
-        # Get quantities needed in metric tensor
-        r = self._get_coord(
-            "r",
-            geometric_coords,
-        )
-
+        # Construct metric corrsponding to max_dim_geometric
         diag = torch.ones(
-            (n_points, self.metadata.max_dim_geometry), device=self.device
+            (n_points, self.metadata.max_dim_geometric), device=self.device
         )
         diag[:, 1] = r**2  # theta-theta component
 
         # Only use rows and columns of axes included in geometric_coords
         mask_keep = [
             i
-            for i in range(self.metadata.max_dim_geometry)
+            for i in range(self.metadata.max_dim_geometric)
             if i in self.indices_selected
         ]
         diag = diag[:, mask_keep]
         return DiagonalMetricTensor(diag)
 
-    def map_geometric_to_internal(
-        self, geometric_coords: torch.Tensor
+    @property
+    def internal_geometric_labels(self) -> tuple[str, ...]:
+        # Because of the coord system redirecting, the possible combinations are small
+        # Sort in order of the metadata.axes_labels of the internal coordinate system
+        internal_coord_system = COORD_SYSTEM_REGISTRY[
+            self.metadata.internal_coord_system
+        ]
+
+        # (theta) -> (x, y) and (r, theta) -> (x, y)
+        if set(self.axes_labels_selected) == {"theta"} or set(
+            self.axes_labels_selected
+        ) == {"r", "theta"}:
+            return tuple(
+                label
+                for label in internal_coord_system.metadata.axes_labels
+                if label in {"x", "y"}
+            )
+
+        # (theta, z) -> (x, y, z) and (r, theta, z) -> (x, y, z)
+        elif set(self.axes_labels_selected) == {"theta", "z"} or set(
+            self.axes_labels_selected
+        ) == {"r", "theta", "z"}:
+            return tuple(
+                label
+                for label in internal_coord_system.metadata.axes_labels
+                if label in {"x", "y", "z"}
+            )
+
+        else:
+            raise ValueError(f"Unexpected axes selection: {self.axes_labels_selected}")
+
+    def map_geometric_to_internal_geometric(
+        self,
+        geometric_coords: dict[str, torch.Tensor],
     ) -> dict[str, torch.Tensor]:
-        # r must always be available in cylindrical polars
-        r = self._get_coord(
-            "r",
-            geometric_coords,
-        )
+        # r and theta must always be available in cylindrical polars
+        r = self._get_coord("r", geometric_coords)
+        theta = self._get_coord("theta", geometric_coords)
 
         # Transform
-        internal_geometric_coords: dict[str, torch.Tensor] = {}
-
-        # theta
-        if "theta" in self.axes_labels_selected:
-            theta = self._get_coord("theta", geometric_coords)
-            internal_geometric_coords["x"] = r * torch.cos(theta)
-            internal_geometric_coords["y"] = r * torch.sin(theta)
-        else:
-            # If no theta is given
-            internal_geometric_coords["x"] = r
-
-        # z
+        internal_geometric_coords: dict[str, torch.Tensor] = {
+            "x": r * torch.cos(theta),
+            "y": r * torch.sin(theta),
+        }
         if "z" in self.axes_labels_selected:
-            z = self._get_coord("z", geometric_coords)
-
-            internal_geometric_coords["z"] = z
-
+            internal_geometric_coords["z"] = self._get_coord("z", geometric_coords)
         return internal_geometric_coords
 
 
@@ -436,50 +343,43 @@ class SphericalCoords(CoordSystem):
         name="Spherical Polar Coordinates",
         is_orthogonal=True,
         axes_labels=("r", "theta", "phi"),
-        required_or_fixed_axes=("r", "theta"),
-        required_fields=(),
-        required_consts=(),
         axes_bounds=((0, np.inf), (0, np.pi), (0, 2 * np.pi)),
-        internal_coords=CoordSystemLabels.CARTESIAN,
-        max_dim_geometry=3,
-        coord_redirections={
-            (1, ("r",)): CoordSystemLabels.CARTESIAN,
-            (2, ("r", "phi")): CoordSystemLabels.CYLINDRICAL,
+        max_dim_geometric=3,
+        internal_coord_system=CoordSystemLabels.CARTESIAN,
+        required_axes={"r", "theta"},
+        coord_system_redirections={
+            frozenset({"r"}): (CoordSystemLabels.CARTESIAN, {"x"}),
+            frozenset({"phi"}): (CoordSystemLabels.CYLINDRICAL, {"theta"}),
+            frozenset({"r", "phi"}): (CoordSystemLabels.CYLINDRICAL, {"r", "theta"}),
         },
     )
 
     def __init__(
         self,
-        dim_geometry: int,
-        coord_axes: tuple[str, ...],
-        fixed_axes: tuple[str, ...],
-        fixed_axes_values: tuple[float, ...],
+        dim_geometric: int,
+        coord_axes: set[str],
         device: torch.device,
+        fixed_axes: dict[str, float] | None = None,
     ):
         super().__init__(
-            dim_geometry, coord_axes, fixed_axes, fixed_axes_values, device
+            dim_geometric=dim_geometric,
+            coord_axes=coord_axes,
+            device=device,
+            fixed_axes=fixed_axes,
         )
 
     def metric_tensor(
         self,
         n_points: int,
-        geometric_coords: torch.Tensor,
+        geometric_coords: dict[str, torch.Tensor],
     ) -> MetricTensor:
-        # Validate geometric_coords
-        validate_pytorch_tensor(geometric_coords, (n_points, self.dim_geometry))
+        # Get coordinates needed in metric tensor
+        r = self._get_coord("r", geometric_coords)
+        theta = self._get_coord("theta", geometric_coords)
 
-        # Get quantities needed in metric tensor
-        r = self._get_coord(
-            "r",
-            geometric_coords,
-        )
-        theta = self._get_coord(
-            "theta",
-            geometric_coords,
-        )
-
+        # Construct metric corrsponding to max_dim_geometric
         diag = torch.ones(
-            (n_points, self.metadata.max_dim_geometry), device=self.device
+            (n_points, self.metadata.max_dim_geometric), device=self.device
         )
         diag[:, 1] = r**2  # theta-theta component
         diag[:, 2] = r**2 * torch.sin(theta) ** 2  # phi-phi component
@@ -487,43 +387,64 @@ class SphericalCoords(CoordSystem):
         # Only use rows and columns of axes included in geometric_coords
         mask_keep = [
             i
-            for i in range(self.metadata.max_dim_geometry)
+            for i in range(self.metadata.max_dim_geometric)
             if i in self.indices_selected
         ]
         diag = diag[:, mask_keep]
         return DiagonalMetricTensor(diag)
 
-    def map_geometric_to_internal(
-        self, geometric_coords: torch.Tensor
-    ) -> dict[str, torch.Tensor]:
-        # r must always be available in spherical polars
-        r = self._get_coord(
-            "r",
-            geometric_coords,
-        )
+    @property
+    def internal_geometric_labels(self) -> tuple[str, ...]:
+        # Because of the coord system redirecting, the possible combinations are small
+        # Sort in order of the metadata.axes_labels of the internal coordinate system
+        internal_coord_system = COORD_SYSTEM_REGISTRY[
+            self.metadata.internal_coord_system
+        ]
 
-        # theta must always be available in spherical polars
-        theta = self._get_coord(
-            "theta",
-            geometric_coords,
-        )
-
-        # Transform
-        internal_geometric_coords: dict[str, torch.Tensor] = {}
-        if "phi" in self.axes_labels_selected:
-            phi = self._get_coord(
-                "phi",
-                geometric_coords,
+        # (theta) -> (x, z) and (r, theta) -> (x, z)
+        if set(self.axes_labels_selected) == {"theta"} or set(
+            self.axes_labels_selected
+        ) == {"r", "theta"}:
+            return tuple(
+                label
+                for label in internal_coord_system.metadata.axes_labels
+                if label in {"x", "z"}
             )
-            internal_geometric_coords["x"] = r * torch.sin(theta) * torch.cos(phi)
-            internal_geometric_coords["y"] = r * torch.sin(theta) * torch.sin(phi)
-            internal_geometric_coords["z"] = r * torch.cos(theta)
+
+        # (theta, phi) -> (x, y, z) and (r, theta, phi) -> (x, y, z)
+        elif set(self.axes_labels_selected) == {"theta", "phi"} or set(
+            self.axes_labels_selected
+        ) == {"r", "theta", "phi"}:
+            return tuple(
+                label
+                for label in internal_coord_system.metadata.axes_labels
+                if label in {"x", "y", "z"}
+            )
 
         else:
-            internal_geometric_coords["x"] = r * torch.sin(theta)
-            internal_geometric_coords["z"] = r * torch.cos(theta)
+            raise ValueError(f"Unexpected axes selection: {self.axes_labels_selected}")
 
-        return internal_geometric_coords
+    def map_geometric_to_internal_geometric(
+        self,
+        geometric_coords: dict[str, torch.Tensor],
+    ) -> dict[str, torch.Tensor]:
+        # r and theta must always be available in spherical polars
+        r = self._get_coord("r", geometric_coords)
+        theta = self._get_coord("theta", geometric_coords)
+
+        # Transform
+        if "phi" in self.axes_labels_selected:
+            phi = self._get_coord("phi", geometric_coords)
+            return {
+                "x": r * torch.sin(theta) * torch.cos(phi),
+                "y": r * torch.sin(theta) * torch.sin(phi),
+                "z": r * torch.cos(theta),
+            }
+        else:
+            return {
+                "x": r * torch.sin(theta),
+                "z": r * torch.cos(theta),
+            }
 
 
 # Mapping from coordinate system labels to classes

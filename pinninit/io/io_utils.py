@@ -49,7 +49,7 @@ def load_compulsory(
 
     else:
         raise ValueError(
-            f"Missing compulsory parameter '{section}: {field}' in " "parameter file."
+            f"Missing compulsory parameter '{section}: {field}' in parameter file."
         )
 
 

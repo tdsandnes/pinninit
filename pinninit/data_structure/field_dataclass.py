@@ -2,16 +2,20 @@ from __future__ import annotations
 
 from dataclasses import field, make_dataclass
 from itertools import product
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import torch
 
-from .coords_dataclass import CoordsProtocol
+if TYPE_CHECKING:
+    from typing import Any
+
+    from .coords_dataclass import CoordsProtocol
 
 
 class FieldProtocol(Protocol):
     # Attributes
     # Input fields
+    label: str
     rank: int
     coords: CoordsProtocol  # bound as class attribute in make_field_dataclass
     device: torch.device
@@ -23,7 +27,6 @@ class FieldProtocol(Protocol):
 
     # Methods
     def __post_init__(self) -> None: ...
-    def _validate_input(self) -> None: ...
     def _set_tensors(self) -> None: ...
     def _loop_parent_component_tensor(self, coords: CoordsProtocol) -> torch.Tensor: ...
     def component_tensor(self, coords: CoordsProtocol) -> torch.Tensor: ...
@@ -36,8 +39,17 @@ class FieldProtocol(Protocol):
 
 
 def _field_post_init(self: FieldProtocol) -> None:
-    # Validate input
-    self._validate_input()
+    """__post_init__ executed on initialistion of each field object."""
+
+    # Check componets have right shape
+    for label in self.component_labels:
+        component = getattr(self, label)
+        if component.shape != (self.coords.n_points,):
+            raise ValueError(
+                f"Field component {label} must have shape matching "
+                f"coordinate points ({self.coords.n_points},), got "
+                f"shape {component.shape}"
+            )
 
     # Set tensors
     self._set_tensors()
@@ -48,7 +60,7 @@ def _set_tensors(self: FieldProtocol) -> None:
     operations."""
 
     # Set component tensor
-    self._component_tensor = torch.stack(
+    component_tensor = torch.stack(
         [getattr(self, label) for label in self.component_labels],
         dim=1,
     )
@@ -59,13 +71,25 @@ def _set_tensors(self: FieldProtocol) -> None:
         len(self.coords.geometric_labels),
     ) * self.rank
 
-    # Reshape component_tensor into structured tensor
-    self._tensor = self._component_tensor.reshape(tensor_shape)
+    if self.rank == 0:
+        # Protect rank 0 flattening
+        tensor = component_tensor.squeeze(1)
+    else:
+        # Reshape component_tensor into structured tensor
+        tensor = component_tensor.reshape(tensor_shape)
+
+    # Set attributes
+    # Note: attributes must be set like this rather than self.xxx because of frozen=True
+    object.__setattr__(self, "_component_tensor", component_tensor)
+    object.__setattr__(self, "_tensor", tensor)
 
 
 def _loop_parent_component_tensor(
     self: FieldProtocol, coords: CoordsProtocol
 ) -> torch.Tensor:
+    """Recursively get component_tensor of parent field and slice.
+    This works for nested batches, searching parents of parents."""
+
     # If full original coords
     if coords is self.coords:
         return self._component_tensor
@@ -76,27 +100,43 @@ def _loop_parent_component_tensor(
         )
 
     # Recursivly get parent component tensor until we reach the full dataset
-    parent_tensor = self._loop_parent_component_tensor(coords.parent)
+    parent_component_tensor = self._loop_parent_component_tensor(coords.parent)
 
     # Slice the parent using the current sub-batch index mapping
-    return parent_tensor[coords.parent_idx]
+    return parent_component_tensor[coords.parent_idx]
 
 
 def component_tensor(self: FieldProtocol, coords: CoordsProtocol) -> torch.Tensor:
+    """
+    Field values arranged in tensor of shape (n_points, n_components).
+    Useful for e.g. component-wise comparisons.
+
+    Note: scalar fields have shape (n_points, 1).
+    """
     # Loop through parent component tensors until we reach the full dataset,
     # then slice down to the current batch
     batch_component_tensor = self._loop_parent_component_tensor(coords)
 
-    # Detach and set requires_grad
-    return batch_component_tensor.detach().requires_grad_(True)
+    return batch_component_tensor
 
 
 def tensor(self: FieldProtocol, coords: CoordsProtocol) -> torch.Tensor:
+    """
+    Field values arranged in tensor of shape (n_points, n_geometric, ..., n_geometric).
+    Useful for e.g. linear algebra.
+
+    Note: scalar fields have shape (n_points,).
+    """
+
     # If full original coords
     if coords is self.coords:
         return self._tensor
 
     batch_component_tensor = self.component_tensor(coords)
+
+    # Protect rank 0 flattening
+    if self.rank == 0:
+        return batch_component_tensor.squeeze(1)
 
     tensor_shape = (coords.n_points,) + (len(coords.geometric_labels),) * self.rank
 
@@ -107,19 +147,23 @@ def tensor(self: FieldProtocol, coords: CoordsProtocol) -> torch.Tensor:
 def update_from_component_dict(
     self: FieldProtocol, new_components: dict[str, torch.Tensor]
 ) -> None:
-    # Check that new labels are subset of field components
-    if not set(new_components.keys()).issubset(set(self.component_labels)):
+    """Update field from dict of components in form
+    dict[component label: tensor with shape (n_points,)]"""
+    # Check that new labels contain all field components
+    if not set(new_components.keys()) == set(self.component_labels):
         raise KeyError(
-            "New components must be subset of field component labels when "
+            "New components must contain all field component labels when "
             "updating field"
         )
 
-    # Update components
-    for label in new_components:
-        setattr(self, label, new_components[label])
-
-    # Validate input
-    self._validate_input()
+    # Update components from dict
+    for label, new_component in new_components.items():
+        if new_component.shape != (self.coords.n_points,):
+            raise ValueError(
+                f"Component '{label}' must have shape ({self.coords.n_points},), "
+                f"got {new_component.shape}"
+            )
+        object.__setattr__(self, label, new_component)
 
     # Set tensors
     self._set_tensors()
@@ -127,32 +171,36 @@ def update_from_component_dict(
 
 def update_from_component_tensor(self: FieldProtocol, new_tensor: torch.Tensor) -> None:
     """Update the field from a component tensor of shape (n_points, n_components)"""
-
-    # Validate input tensor
-    if not isinstance(new_tensor, torch.Tensor):
-        raise TypeError("Component tensor given is not a torch.Tensor")
-
-    if new_tensor.shape != self._component_tensor.shape:
+    # Check shape of input
+    expected_shape = (self.coords.n_points, len(self.component_labels))
+    if new_tensor.shape != expected_shape:
         raise ValueError(
-            f"Expected component tensor of shape {self._component_tensor.shape} "
-            f"got {new_tensor.shape}"
+            f"Component tensor must have shape {expected_shape}, got {new_tensor.shape}"
         )
 
     # Update components from tensor
     for i, label in enumerate(self.component_labels):
-        setattr(self, label, new_tensor[:, i])
-
-    # Validate input
-    self._validate_input()
+        object.__setattr__(self, label, new_tensor[:, i])
 
     # Set tensors
     self._set_tensors()
 
 
 def update_from_tensor(self: FieldProtocol, new_tensor: torch.Tensor) -> None:
-    """
-    Update the field from a structured tensor of shape
+    """Update the field from a structured tensor of shape
     (n_points, n_geometric, ..., n_geometric)"""
+    # Check shape of input
+    dim = len(self.coords.geometric_labels)
+    expected_shape: tuple[int, ...]
+    if self.rank == 0:
+        expected_shape = (self.coords.n_points,)
+    else:
+        expected_shape = (self.coords.n_points,) + (dim,) * self.rank
+
+    if new_tensor.shape != expected_shape:
+        raise ValueError(
+            f"Tensor must have shape {expected_shape}, got {new_tensor.shape}"
+        )
 
     # Flatten the tensor along the component axes to match component_tensor shape
     component_tensor = new_tensor.reshape(self.coords.n_points, -1)
@@ -160,68 +208,62 @@ def update_from_tensor(self: FieldProtocol, new_tensor: torch.Tensor) -> None:
     self.update_from_component_tensor(component_tensor)
 
 
-def _validate_input(self: Any) -> None:
-    # Validate components
-    for label in self.component_labels:
-        if not hasattr(self, label):
-            raise ValueError(f"Coordinate label '{label}' not found")
-
-        component = getattr(self, label)
-
-        if not isinstance(component, torch.Tensor):
-            raise TypeError(f"Field component {label} is not a torch.Tensor")
-
-        if component.shape != (self.coords.n_points,):
-            raise ValueError(
-                f"Field component {label} must have shape matching "
-                f"coordinate points ({self.coords.n_points},), got "
-                f"shape {component.shape}"
-            )
-
-
 def generate_tensor_component_labels(
     geometric_labels: tuple[str, ...], rank: int
 ) -> tuple[str, ...]:
-    """
-    Generate labels for each component of a rank-n tensor field.
+    """Generate labels for each component of a rank-n tensor field."""
 
-    Parameters
-    ----------
-    geometric_labels : list[str]
-        List of geometric labels.
-    rank : int
-        Rank of tensor
-
-    Returns
-    -------
-    tuple[str]
-        Tuple for tensor components.
-    """
+    # Check rank
     if rank < 0:
-        raise ValueError("rank must be >= 0")
+        raise ValueError(f"rank must be >= 0, got {rank}")
     if rank == 0:
         return ("value",)
 
+    # Construct lables
     indices = tuple(product(range(len(geometric_labels)), repeat=rank))
-
     index_to_name = {idx: "_".join(geometric_labels[i] for i in idx) for idx in indices}
     labels = tuple(index_to_name[idx] for idx in indices)
     return labels
 
 
+def _validate_factory_inputs(
+    field_label: str,
+    rank: int,
+    coords: CoordsProtocol,
+) -> None:
+    # Check rank
+    if rank < 0:
+        raise ValueError(f"rank must be >= 0, got {rank}")
+
+    # field_label must not clash with any coord label
+    if field_label in coords.coord_labels:
+        raise ValueError(f"field_label '{field_label}' clashes with a coordinate label")
+
+    # field_label must not clash with any component label that would be generated
+    component_labels = generate_tensor_component_labels(coords.geometric_labels, rank)
+    if field_label in component_labels:
+        raise ValueError(
+            f"field_label '{field_label}' clashes with a generated component label"
+        )
+
+
 def make_field_dataclass(
-    rank: int, coords: CoordsProtocol, device: torch.device
+    field_label: str, rank: int, coords: CoordsProtocol, device: torch.device
 ) -> type[FieldProtocol]:
-    components: list[tuple[str, Any, Any | None]] = []
+    # Validate
+    _validate_factory_inputs(field_label, rank, coords)
+
+    dataclass_fields: list[tuple[str, Any, Any | None]] = []
 
     # Each field component
     component_labels = generate_tensor_component_labels(coords.geometric_labels, rank)
     for label in component_labels:
-        components.append((label, torch.Tensor, None))
+        dataclass_fields.append((label, torch.Tensor, None))
 
     # Input fields
-    components.extend(
+    dataclass_fields.extend(
         [
+            ("label", str, field(default=field_label)),
             ("rank", int, field(default=rank)),
             ("device", torch.device, field(default=device)),
             ("component_labels", tuple[str, ...], field(default=component_labels)),
@@ -234,11 +276,10 @@ def make_field_dataclass(
     # Make dataclass instance
     Field = make_dataclass(
         "Field",
-        components,
+        dataclass_fields,
         namespace={
             "coords": coords,
             "__post_init__": _field_post_init,
-            "_validate_input": _validate_input,
             "_set_tensors": _set_tensors,
             "_loop_parent_component_tensor": _loop_parent_component_tensor,
             "component_tensor": component_tensor,
@@ -247,6 +288,8 @@ def make_field_dataclass(
             "update_from_component_tensor": update_from_component_tensor,
             "update_from_tensor": update_from_tensor,
         },
+        frozen=True,
+        slots=True,
     )
 
     return Field

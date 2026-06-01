@@ -29,7 +29,7 @@ class TrainerState:
         """Check if trainer is in coast phase."""
         if self._is_coasting is None:
             raise ValueError(
-                "Coast state has not been initialised for the current " "step."
+                "Coast state has not been initialised for the current step."
             )
         return self._is_coasting
 

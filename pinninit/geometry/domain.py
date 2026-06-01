@@ -100,7 +100,10 @@ class Domain:
             self.periodic_coords: dict[str, float] = {}
             return
 
-        if self.coord_system.metadata.internal_coords != CoordSystemLabels.CARTESIAN:
+        if (
+            self.coord_system.metadata.internal_coord_system
+            != CoordSystemLabels.CARTESIAN
+        ):
             raise ValueError(
                 "Periodic boundary conditions are currently only supported for "
                 f"Cartesian coordinate systems, got "

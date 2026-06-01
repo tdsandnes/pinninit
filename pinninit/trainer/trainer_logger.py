@@ -43,13 +43,13 @@ class TrainerLogger:
             self.pre_step_train_losses_log.append(self.unweighted_train_losses.value)
         else:
             raise RuntimeError(
-                "Unweighted training losses were not recorded " "during step."
+                "Unweighted training losses were not recorded during step."
             )
         if self.unweighted_val_losses.has_value:
             self.post_step_val_losses_log.append(self.unweighted_val_losses.value)
         else:
             raise RuntimeError(
-                "Unweighted validation losses were not recorded " "during step."
+                "Unweighted validation losses were not recorded during step."
             )
         if self.loss_term_weights.has_value:
             self.loss_term_weights_log.append(self.loss_term_weights.value)

@@ -18,7 +18,7 @@ def load_coords(
     with h5py.File(file_path, "r") as f:
         if dataset_label not in f:
             raise KeyError(
-                f"Data set label '{dataset_label}' not found in file " f"{file_path}"
+                f"Data set label '{dataset_label}' not found in file {file_path}"
             )
         dataset_group = f[dataset_label]
 
@@ -44,7 +44,7 @@ def load_coords(
         else:
             if len(sample_mask) != num_points:
                 raise ValueError(
-                    "sample_mask length does not match number of points in" " dataset"
+                    "sample_mask length does not match number of points in dataset"
                 )
 
         # Load Coords
@@ -98,7 +98,7 @@ def load_fields(
     with h5py.File(file_path, "r") as f:
         if dataset_label not in f:
             raise KeyError(
-                f"Data set label '{dataset_label}' not found in file " f"{file_path}"
+                f"Data set label '{dataset_label}' not found in file {file_path}"
             )
         dataset_group = f[dataset_label]
 
@@ -124,7 +124,7 @@ def load_fields(
         else:
             if len(sample_mask) != num_points:
                 raise ValueError(
-                    "sample_mask length does not match number of points in" " dataset"
+                    "sample_mask length does not match number of points in dataset"
                 )
 
         # Load Fields
