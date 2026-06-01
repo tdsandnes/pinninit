@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import field, make_dataclass
+from dataclasses import MISSING, field, make_dataclass
 from typing import TYPE_CHECKING, Protocol, cast
 
 import torch
@@ -32,6 +32,9 @@ class CoordsProtocol(Protocol):
     parent: CoordsProtocol | None
     parent_idx: torch.Tensor | None
 
+    @property
+    def is_batch(self) -> bool: ...
+
     # Methods
     def __init__(self, **kwargs: Any) -> None: ...
     def __post_init__(self) -> None: ...
@@ -42,9 +45,6 @@ class CoordsProtocol(Protocol):
     def validate_in_domain(self, domain: Domain) -> None: ...
     def _set_tensors(self) -> None: ...
     def _validate_inputs(self) -> None: ...
-
-    @property
-    def is_batch(self) -> bool: ...
 
 
 def _coords_post_init(self: CoordsProtocol) -> None:
@@ -96,11 +96,6 @@ def _init_from_parent(self: CoordsProtocol) -> None:
     parent = self.parent
     object.__setattr__(self, "geometric_labels", parent.geometric_labels)
     object.__setattr__(self, "internal_labels", parent.internal_labels)
-
-    # Validate index size matches coords (already checked that coords have same size)
-    first_coord = getattr(self, self.coord_labels[0])
-    if self.parent_idx.shape != (first_coord.shape[0],):
-        raise ValueError("parent_idx must match number of points")
 
 
 def get_coord(self: CoordsProtocol, label: str) -> torch.Tensor:
@@ -246,7 +241,7 @@ def make_coords_dataclass(
 
     # Input fields at instance creation time
     for label in coord_labels_sorted:
-        dataclass_fields.append((label, torch.Tensor, None))
+        dataclass_fields.append((label, torch.Tensor, MISSING))
 
     # Input fields at class creation time
     dataclass_fields.extend(

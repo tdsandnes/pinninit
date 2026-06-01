@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import FrozenInstanceError
 from typing import cast
 
 import pytest
@@ -125,17 +124,26 @@ class TestFieldConstruction:
         field = make_field(rank=1, coords=coords_2d, device=device)
         assert field.coords == coords_2d
 
-    def test_field_is_immutable(
+    def test_field_is_mutable(
         self,
         coords_2d: CoordsProtocol,
         coords_2d_different: CoordsProtocol,
         device: torch.device,
     ) -> None:
         field = make_field(rank=1, coords=coords_2d, device=device)
-        with pytest.raises((FrozenInstanceError, TypeError)):
-            field.x = torch.zeros_like(field.get_component("x"))  # type: ignore[attr-defined]
-        with pytest.raises((FrozenInstanceError, TypeError, AttributeError)):
-            field.coords = coords_2d_different
+
+        # Mutate attribute value
+        zero_update = torch.zeros_like(field.get_component("x"))
+        field.x = zero_update  # type: ignore[attr-defined]
+
+        # Ensure view allocations and underlying tracking sync automatically
+        assert torch.allclose(field.get_component("x"), zero_update)
+        assert torch.allclose(field.component_tensor(coords_2d)[:, 0], zero_update)
+        assert torch.allclose(field.tensor(coords_2d)[:, 0], zero_update)
+
+        # Verify that evaluating against unrelated coords fails
+        with pytest.raises(ValueError, match="root coords or a batch"):
+            field.component_tensor(coords_2d_different)
 
 
 # Tensor operations and shapes
@@ -293,7 +301,7 @@ class TestFieldUpdateMethods:
             device=device,
         )
 
-        with pytest.raises(ValueError, match="must have shape"):
+        with pytest.raises(ValueError, match="has shape"):
             field.update_from_component_dict(
                 {
                     "x": bad_length_tensor,
@@ -406,6 +414,41 @@ class TestFieldUpdateMethods:
                 expected_component_tensor[:, i],
             )
 
+    def test_field_created_with_label_only(
+        self, coords_2d: CoordsProtocol, device: torch.device
+    ) -> None:
+        Field = make_field_dataclass(rank=1, coords=coords_2d, device=device)
+        field = Field(label="velocity")
+
+        assert torch.allclose(
+            field.get_component("x"), torch.zeros(coords_2d.n_points, device=device)
+        )
+        assert torch.allclose(
+            field.get_component("y"), torch.zeros(coords_2d.n_points, device=device)
+        )
+
+    def test_field_label_only_then_update_from_tensor(
+        self, coords_2d: CoordsProtocol, device: torch.device
+    ) -> None:
+        Field = make_field_dataclass(rank=1, coords=coords_2d, device=device)
+        field = Field(label="velocity")
+
+        new_tensor = torch.zeros(coords_2d.n_points, 2, device=device)
+        new_tensor[:, 0] = 3.0
+        new_tensor[:, 1] = 7.0
+
+        field.update_from_tensor(new_tensor)
+
+        assert torch.allclose(
+            field.get_component("x"),
+            torch.full((coords_2d.n_points,), 3.0, device=device),
+        )
+        assert torch.allclose(
+            field.get_component("y"),
+            torch.full((coords_2d.n_points,), 7.0, device=device),
+        )
+        assert torch.allclose(field.tensor(coords_2d), new_tensor)
+
 
 class TestScalarFieldBehavior:
     def test_scalar_field_construction_and_shapes(
@@ -498,6 +541,17 @@ class TestScalarFieldBehavior:
 
         with pytest.raises(ValueError, match="Tensor must have shape"):
             field.update_from_tensor(bad_tensor)
+
+    def test_scalar_field_created_with_label_only(
+        self, coords_2d: CoordsProtocol, device: torch.device
+    ) -> None:
+        Field = make_field_dataclass(rank=0, coords=coords_2d, device=device)
+        field = Field(label="pressure")
+
+        assert torch.allclose(
+            field.get_component("value"),
+            torch.zeros(coords_2d.n_points, device=device),
+        )
 
 
 class TestGenerateTensorComponentLabels:
@@ -614,10 +668,71 @@ class TestFieldCoordinateEvaluationAndAutograd:
             ),
         )
 
-        with pytest.raises(
-            ValueError, match="Evaluation coordinates must be a valid subset"
-        ):
+        with pytest.raises(ValueError, match="root coords or a batch"):
             field_instance.component_tensor(invalid_coords)
+
+    def test_batch_update_then_autograd_reflects_updated_values(
+        self, device: torch.device
+    ) -> None:
+        """
+        Build a scalar field initialised to x everywhere.
+        Update a batch of points to y.
+        Verify that autodiff wrt x and y gives the right derivatives
+        at updated vs non-updated points.
+        """
+        coord_system = make_cartesian_2d(device=device)
+        Coords = make_coords_dataclass(
+            {"x", "y"}, coord_system=coord_system, device=device
+        )
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0], device=device, requires_grad=True)
+        y = torch.tensor([5.0, 6.0, 7.0, 8.0], device=device, requires_grad=True)
+        coords = Coords(coord_system=coord_system, x=x, y=y)
+
+        # Initialise scalar field to x everywhere
+        Field = make_field_dataclass(rank=0, coords=coords, device=device)
+        field = Field(label="f", value=x.clone())
+
+        # Update points [1, 3] to y
+        batch_idx = torch.tensor([1, 3], device=device)
+        batch_coords = coords.get_batch(batch_idx)
+        batch_y = torch.stack([y[1], y[3]])
+        field.update_from_tensor(batch_y, coords=batch_coords)
+
+        # Evaluate full field and sum
+        full_tensor = field.tensor(coords)  # shape (4,)
+        loss = full_tensor.sum()  # Expected: x[0] + y[1] + x[2] + y[3]
+
+        loss.backward()  # type: ignore[no-untyped-call]
+
+        # Points not in batch
+        assert x.grad is not None
+        assert torch.allclose(
+            x.grad[0], torch.tensor(1.0, device=device)
+        )  # dloss/dx[0] = 1
+        assert torch.allclose(
+            x.grad[1], torch.tensor(0.0, device=device)
+        )  # updated, not x
+        assert torch.allclose(
+            x.grad[2], torch.tensor(1.0, device=device)
+        )  # dloss/dx[2] = 1
+        assert torch.allclose(
+            x.grad[3], torch.tensor(0.0, device=device)
+        )  # updated, not x
+
+        # Points in batch
+        assert y.grad is not None
+        assert torch.allclose(
+            y.grad[0], torch.tensor(0.0, device=device)
+        )  # not updated
+        assert torch.allclose(
+            y.grad[1], torch.tensor(1.0, device=device)
+        )  # dloss/dy[1] = 1
+        assert torch.allclose(
+            y.grad[2], torch.tensor(0.0, device=device)
+        )  # not updated
+        assert torch.allclose(
+            y.grad[3], torch.tensor(1.0, device=device)
+        )  # dloss/dy[3] = 1
 
 
 class TestFieldNeuralNetworkIntegration:
