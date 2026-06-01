@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from dataclasses import MISSING, field, make_dataclass
 from itertools import product
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import torch
 
 if TYPE_CHECKING:
-    from typing import Any
-
     from .coords_dataclass import CoordsProtocol
 
 
@@ -25,12 +23,6 @@ class FieldProtocol(Protocol):
 
     # Derived fields
     component_labels: tuple[str, ...]
-
-    @property
-    def _component_tensor(self) -> torch.Tensor: ...
-
-    @property
-    def _tensor(self) -> torch.Tensor: ...
 
     # Methods
     def __init__(self, **kwargs: Any) -> None: ...
@@ -57,6 +49,10 @@ class FieldProtocol(Protocol):
         coords: CoordsProtocol | None = None,
     ) -> None: ...
     def _validate_inputs(self) -> None: ...
+    @property
+    def _component_tensor(self) -> torch.Tensor: ...
+    @property
+    def _tensor(self) -> torch.Tensor: ...
 
 
 def _field_post_init(self: FieldProtocol) -> None:
@@ -280,11 +276,11 @@ def update_from_tensor(
 
 
 def _validate_inputs(self: FieldProtocol) -> None:
-    # label must not clash with any coord label
+    # field label must not clash with any coord label
     if self.label in self.coords.coord_labels:
         raise ValueError(f"label '{self.label}' clashes with a coordinate label")
 
-    # label must not clash with any component label that would be generated
+    # field label must not clash with any of its own component labels
     component_labels = generate_tensor_component_labels(
         self.coords.geometric_labels, self.rank
     )
@@ -318,74 +314,59 @@ def generate_tensor_component_labels(
     geometric_labels: tuple[str, ...], rank: int
 ) -> tuple[str, ...]:
     """Generate labels for each component of a rank-n tensor field."""
-
-    # Check rank
     if rank < 0:
         raise ValueError(f"rank must be >= 0, got {rank}")
     if rank == 0:
         return ("value",)
-
-    # Construct labels
-    indices = tuple(product(range(len(geometric_labels)), repeat=rank))
-    index_to_name = {idx: "_".join(geometric_labels[i] for i in idx) for idx in indices}
-    labels = tuple(index_to_name[idx] for idx in indices)
-    return labels
+    return tuple(
+        "_".join(geometric_labels[i] for i in idx)
+        for idx in product(range(len(geometric_labels)), repeat=rank)
+    )
 
 
-def _validate_factory_inputs(
+def _build_dataclass_fields(
+    component_labels: tuple[str, ...],
     rank: int,
-    coords: CoordsProtocol,
-) -> None:
-    # Check rank
-    if rank < 0:
-        raise ValueError(f"rank must be >= 0, got {rank}")
+    device: torch.device,
+) -> list[tuple[str, Any, Any]]:
+    return [
+        ("label", str, MISSING),
+        *(
+            (label, torch.Tensor | None, field(default=None))
+            for label in component_labels
+        ),
+        ("rank", int, field(default=rank)),
+        ("device", torch.device, field(default=device)),
+        ("component_labels", tuple[str, ...], field(default=component_labels)),
+    ]
 
 
 def make_field_dataclass(
     rank: int, coords: CoordsProtocol, device: torch.device
 ) -> type[FieldProtocol]:
-    # Validate
-    _validate_factory_inputs(rank, coords)
-
-    dataclass_fields: list[tuple[str, Any, Any | None]] = []
-
-    # Each field component
+    # Get field components
     component_labels = generate_tensor_component_labels(coords.geometric_labels, rank)
 
-    # Input fields at instance creation time
-    dataclass_fields.append(("label", str, MISSING))
-    for label in component_labels:
-        dataclass_fields.append((label, torch.Tensor | None, field(default=None)))
+    # Build dataclass fields list
+    dataclass_fields = _build_dataclass_fields(component_labels, rank, device)
 
-    # Input fields at class creation time
-    dataclass_fields.extend(
-        [
-            ("rank", int, field(default=rank)),
-            ("device", torch.device, field(default=device)),
-            ("component_labels", tuple[str, ...], field(default=component_labels)),
-        ]
-    )
+    # Dataclass namespace with methods and properties
+    namespace = {
+        "coords": coords,
+        "__post_init__": _field_post_init,
+        "_component_tensor": property(_component_tensor),
+        "_tensor": property(_tensor),
+        "_root_indices_for_coords": _root_indices_for_coords,
+        "get_component": get_component,
+        "component_tensor": component_tensor,
+        "tensor": tensor,
+        "update_from_component_dict": update_from_component_dict,
+        "update_from_component_tensor": update_from_component_tensor,
+        "update_from_tensor": update_from_tensor,
+        "_validate_inputs": _validate_inputs,
+    }
 
     # Make dataclass instance
-    Field = make_dataclass(
-        "Field",
-        dataclass_fields,
-        namespace={
-            "coords": coords,
-            "__post_init__": _field_post_init,
-            "_component_tensor": property(_component_tensor),
-            "_tensor": property(_tensor),
-            "_root_indices_for_coords": _root_indices_for_coords,
-            "get_component": get_component,
-            "component_tensor": component_tensor,
-            "tensor": tensor,
-            "update_from_component_dict": update_from_component_dict,
-            "update_from_component_tensor": update_from_component_tensor,
-            "update_from_tensor": update_from_tensor,
-            "_validate_inputs": _validate_inputs,
-        },
-        frozen=False,
-        slots=True,
+    return make_dataclass(
+        "Field", dataclass_fields, namespace=namespace, frozen=False, slots=True
     )
-
-    return Field

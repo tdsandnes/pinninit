@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import MISSING, field, make_dataclass
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import Any, Protocol, cast
 
 import torch
 
 from ..geometry.coordinate_system import CoordSystem
 from ..geometry.domain import Domain
-
-if TYPE_CHECKING:
-    from typing import Any
 
 
 class CoordsProtocol(Protocol):
@@ -32,9 +29,6 @@ class CoordsProtocol(Protocol):
     parent: CoordsProtocol | None
     parent_idx: torch.Tensor | None
 
-    @property
-    def is_batch(self) -> bool: ...
-
     # Methods
     def __init__(self, **kwargs: Any) -> None: ...
     def __post_init__(self) -> None: ...
@@ -45,6 +39,8 @@ class CoordsProtocol(Protocol):
     def validate_in_domain(self, domain: Domain) -> None: ...
     def _set_tensors(self) -> None: ...
     def _validate_inputs(self) -> None: ...
+    @property
+    def is_batch(self) -> bool: ...
 
 
 def _coords_post_init(self: CoordsProtocol) -> None:
@@ -198,7 +194,7 @@ def _validate_inputs(self: CoordsProtocol) -> None:
         if coord.dim() != 1:
             raise ValueError(f"Coordinate {label} must be 1D, got shape {coord.shape}")
 
-        # Move coordinate to correct device
+        # Raise error if coordinate on wrong device
         if coord.device != self.device:
             raise ValueError(
                 f"Coordinate {label} on {coord.device}, expected {self.device}"
@@ -226,6 +222,30 @@ def _validate_factory_inputs(
         )
 
 
+def _build_dataclass_fields(
+    coord_labels_sorted: tuple[str, ...],
+    coord_system: CoordSystem,
+    device: torch.device,
+) -> list[tuple[str, Any, Any]]:
+    return [
+        # Input fields at instance creation time
+        *((label, torch.Tensor, MISSING) for label in coord_labels_sorted),
+        # Input fields at class creation time
+        ("coord_labels", tuple[str, ...], field(default=coord_labels_sorted)),
+        ("coord_system", CoordSystem, field(default=coord_system)),
+        ("device", torch.device, field(default=device)),
+        ("parent", CoordsProtocol | None, field(default=None)),
+        ("parent_idx", torch.Tensor | None, field(default=None)),
+        # Derived fields (init=False)
+        ("n_points", int, field(init=False)),
+        ("geometric_labels", tuple[str, ...], field(init=False)),
+        ("internal_labels", tuple[str, ...], field(init=False)),
+        ("tensor", torch.Tensor, field(init=False)),
+        ("geometric", torch.Tensor, field(init=False)),
+        ("internal", torch.Tensor, field(init=False)),
+    ]
+
+
 def make_coords_dataclass(
     coord_labels: set[str],
     coord_system: CoordSystem,
@@ -234,59 +254,28 @@ def make_coords_dataclass(
     # Validate
     _validate_factory_inputs(coord_labels, coord_system)
 
-    dataclass_fields: list[tuple[str, Any, Any | None]] = []
-
-    # Each coordinate
+    # Sort coordinate labels
     coord_labels_sorted = tuple(sorted(coord_labels))
 
-    # Input fields at instance creation time
-    for label in coord_labels_sorted:
-        dataclass_fields.append((label, torch.Tensor, MISSING))
-
-    # Input fields at class creation time
-    dataclass_fields.extend(
-        [
-            (
-                "coord_labels",
-                tuple[str, ...],
-                field(default=coord_labels_sorted),
-            ),
-            ("coord_system", CoordSystem, field(default=coord_system)),
-            ("device", torch.device, field(default=device)),
-            ("parent", CoordsProtocol | None, field(default=None)),
-            ("parent_idx", torch.Tensor | None, field(default=None)),
-        ]
+    # Build dataclass fields list
+    dataclass_fields = _build_dataclass_fields(
+        coord_labels_sorted, coord_system, device
     )
 
-    # Derived fields
-    dataclass_fields.extend(
-        [
-            ("n_points", int, field(init=False)),
-            ("geometric_labels", tuple[str, ...], field(init=False)),
-            ("internal_labels", tuple[str, ...], field(init=False)),
-            ("tensor", torch.Tensor, field(init=False)),
-            ("geometric", torch.Tensor, field(init=False)),
-            ("internal", torch.Tensor, field(init=False)),
-        ]
-    )
+    # Dataclass namespace with methods and properties
+    namespace = {
+        "__post_init__": _coords_post_init,
+        "_init_from_scratch": _init_from_scratch,
+        "_init_from_parent": _init_from_parent,
+        "get_coord": get_coord,
+        "get_batch": get_batch,
+        "validate_in_domain": validate_in_domain,
+        "_set_tensors": _set_tensors,
+        "_validate_inputs": _validate_inputs,
+        "is_batch": property(lambda self: self.parent is not None),
+    }
 
     # Make dataclass instance
-    Coords = make_dataclass(
-        "Coords",
-        dataclass_fields,
-        namespace={
-            "__post_init__": _coords_post_init,
-            "_init_from_scratch": _init_from_scratch,
-            "_init_from_parent": _init_from_parent,
-            "get_coord": get_coord,
-            "get_batch": get_batch,
-            "validate_in_domain": validate_in_domain,
-            "_set_tensors": _set_tensors,
-            "_validate_inputs": _validate_inputs,
-            "is_batch": property(lambda self: self.parent is not None),
-        },
-        frozen=True,
-        slots=True,
+    return make_dataclass(
+        "Coords", dataclass_fields, namespace=namespace, frozen=True, slots=True
     )
-
-    return Coords
