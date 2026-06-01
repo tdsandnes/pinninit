@@ -14,10 +14,13 @@ if TYPE_CHECKING:
 
 class CoordsProtocol(Protocol):
     # Attributes
-    # Input fields
+    # Input fields at class creation time
     coord_labels: tuple[str, ...]
     coord_system: CoordSystem
     device: torch.device
+
+    # Input fields at instance creation time
+    # *component tensors*
 
     # Derived fields
     n_points: int
@@ -30,6 +33,7 @@ class CoordsProtocol(Protocol):
     parent_idx: torch.Tensor | None
 
     # Methods
+    def __init__(self, **kwargs: Any) -> None: ...
     def __post_init__(self) -> None: ...
     def _init_from_scratch(self) -> None: ...
     def _init_from_parent(self) -> None: ...
@@ -37,7 +41,7 @@ class CoordsProtocol(Protocol):
     def get_batch(self, idx: torch.Tensor) -> CoordsProtocol: ...
     def validate_in_domain(self, domain: Domain) -> None: ...
     def _set_tensors(self) -> None: ...
-    def _validate_coordinates(self) -> None: ...
+    def _validate_inputs(self) -> None: ...
 
     @property
     def is_batch(self) -> bool: ...
@@ -46,7 +50,7 @@ class CoordsProtocol(Protocol):
 def _coords_post_init(self: CoordsProtocol) -> None:
     """__post_init__ executed on initialistion of each coord object."""
     # Validate
-    self._validate_coordinates()
+    self._validate_inputs()
 
     # Init object based on whether it is a batch or full set of points
     if self.is_batch:
@@ -101,6 +105,8 @@ def _init_from_parent(self: CoordsProtocol) -> None:
 
 def get_coord(self: CoordsProtocol, label: str) -> torch.Tensor:
     """Get a coordinate"""
+    if label not in self.coord_labels:
+        raise KeyError(f"Coordinate label '{label}' not found in coords")
     coord: torch.Tensor = getattr(self, label)
     return coord
 
@@ -188,7 +194,7 @@ def _set_tensors(self: CoordsProtocol) -> None:
     object.__setattr__(self, "n_points", tensor.shape[0])
 
 
-def _validate_coordinates(self: CoordsProtocol) -> None:
+def _validate_inputs(self: CoordsProtocol) -> None:
     # Validate coord components
     lengths = []
     for label in self.coord_labels:
@@ -235,12 +241,14 @@ def make_coords_dataclass(
 
     dataclass_fields: list[tuple[str, Any, Any | None]] = []
 
-    # Store each coordinate
+    # Each coordinate
     coord_labels_sorted = tuple(sorted(coord_labels))
+
+    # Input fields at instance creation time
     for label in coord_labels_sorted:
         dataclass_fields.append((label, torch.Tensor, None))
 
-    # Input fields
+    # Input fields at class creation time
     dataclass_fields.extend(
         [
             (
@@ -252,7 +260,12 @@ def make_coords_dataclass(
             ("device", torch.device, field(default=device)),
             ("parent", CoordsProtocol | None, field(default=None)),
             ("parent_idx", torch.Tensor | None, field(default=None)),
-            # Derived fields
+        ]
+    )
+
+    # Derived fields
+    dataclass_fields.extend(
+        [
             ("n_points", int, field(init=False)),
             ("geometric_labels", tuple[str, ...], field(init=False)),
             ("internal_labels", tuple[str, ...], field(init=False)),
@@ -274,7 +287,7 @@ def make_coords_dataclass(
             "get_batch": get_batch,
             "validate_in_domain": validate_in_domain,
             "_set_tensors": _set_tensors,
-            "_validate_coordinates": _validate_coordinates,
+            "_validate_inputs": _validate_inputs,
             "is_batch": property(lambda self: self.parent is not None),
         },
         frozen=True,

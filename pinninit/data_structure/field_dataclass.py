@@ -14,11 +14,14 @@ if TYPE_CHECKING:
 
 class FieldProtocol(Protocol):
     # Attributes
-    # Input fields
-    label: str
+    # Input fields at class creation time
     rank: int
     coords: CoordsProtocol  # bound as class attribute in make_field_dataclass
     device: torch.device
+
+    # Input fields at instance creation time
+    label: str
+    # *component tensors*
 
     # Derived fields
     _tensor: torch.Tensor
@@ -26,9 +29,11 @@ class FieldProtocol(Protocol):
     component_labels: tuple[str, ...]
 
     # Methods
+    def __init__(self, **kwargs: Any) -> None: ...
     def __post_init__(self) -> None: ...
     def _set_tensors(self) -> None: ...
     def _loop_parent_component_tensor(self, coords: CoordsProtocol) -> torch.Tensor: ...
+    def get_component(self, label: str) -> torch.Tensor: ...
     def component_tensor(self, coords: CoordsProtocol) -> torch.Tensor: ...
     def tensor(self, coords: CoordsProtocol) -> torch.Tensor: ...
     def update_from_component_dict(
@@ -36,20 +41,13 @@ class FieldProtocol(Protocol):
     ) -> None: ...
     def update_from_component_tensor(self, new_tensor: torch.Tensor) -> None: ...
     def update_from_tensor(self, new_tensor: torch.Tensor) -> None: ...
+    def _validate_inputs(self) -> None: ...
 
 
 def _field_post_init(self: FieldProtocol) -> None:
     """__post_init__ executed on initialistion of each field object."""
-
-    # Check componets have right shape
-    for label in self.component_labels:
-        component = getattr(self, label)
-        if component.shape != (self.coords.n_points,):
-            raise ValueError(
-                f"Field component {label} must have shape matching "
-                f"coordinate points ({self.coords.n_points},), got "
-                f"shape {component.shape}"
-            )
+    # Validate
+    self._validate_inputs()
 
     # Set tensors
     self._set_tensors()
@@ -104,6 +102,14 @@ def _loop_parent_component_tensor(
 
     # Slice the parent using the current sub-batch index mapping
     return parent_component_tensor[coords.parent_idx]
+
+
+def get_component(self: FieldProtocol, label: str) -> torch.Tensor:
+    """Get a specific component of the field by label."""
+    if label not in self.component_labels:
+        raise KeyError(f"Component label '{label}' not found in field components")
+    component: torch.Tensor = getattr(self, label)
+    return component
 
 
 def component_tensor(self: FieldProtocol, coords: CoordsProtocol) -> torch.Tensor:
@@ -208,6 +214,31 @@ def update_from_tensor(self: FieldProtocol, new_tensor: torch.Tensor) -> None:
     self.update_from_component_tensor(component_tensor)
 
 
+def _validate_inputs(self: FieldProtocol) -> None:
+    # label must not clash with any coord label
+    if self.label in self.coords.coord_labels:
+        raise ValueError(f"label '{self.label}' clashes with a coordinate label")
+
+    # label must not clash with any component label that would be generated
+    component_labels = generate_tensor_component_labels(
+        self.coords.geometric_labels, self.rank
+    )
+    if self.label in component_labels:
+        raise ValueError(
+            f"label '{self.label}' clashes with a generated component label"
+        )
+
+    # Check componets have right shape
+    for label in self.component_labels:
+        component = getattr(self, label)
+        if component.shape != (self.coords.n_points,):
+            raise ValueError(
+                f"Field component {label} must have shape matching "
+                f"coordinate points ({self.coords.n_points},), got "
+                f"shape {component.shape}"
+            )
+
+
 def generate_tensor_component_labels(
     geometric_labels: tuple[str, ...], rank: int
 ) -> tuple[str, ...]:
@@ -227,7 +258,6 @@ def generate_tensor_component_labels(
 
 
 def _validate_factory_inputs(
-    field_label: str,
     rank: int,
     coords: CoordsProtocol,
 ) -> None:
@@ -235,41 +265,41 @@ def _validate_factory_inputs(
     if rank < 0:
         raise ValueError(f"rank must be >= 0, got {rank}")
 
-    # field_label must not clash with any coord label
-    if field_label in coords.coord_labels:
-        raise ValueError(f"field_label '{field_label}' clashes with a coordinate label")
-
-    # field_label must not clash with any component label that would be generated
-    component_labels = generate_tensor_component_labels(coords.geometric_labels, rank)
-    if field_label in component_labels:
-        raise ValueError(
-            f"field_label '{field_label}' clashes with a generated component label"
-        )
-
 
 def make_field_dataclass(
-    field_label: str, rank: int, coords: CoordsProtocol, device: torch.device
+    rank: int, coords: CoordsProtocol, device: torch.device
 ) -> type[FieldProtocol]:
     # Validate
-    _validate_factory_inputs(field_label, rank, coords)
+    _validate_factory_inputs(rank, coords)
 
     dataclass_fields: list[tuple[str, Any, Any | None]] = []
 
     # Each field component
     component_labels = generate_tensor_component_labels(coords.geometric_labels, rank)
+
+    # Input fields at instance creation time
     for label in component_labels:
         dataclass_fields.append((label, torch.Tensor, None))
-
-    # Input fields
     dataclass_fields.extend(
         [
-            ("label", str, field(default=field_label)),
+            ("label", str, None),
+        ]
+    )
+
+    # Input fields at class creation time
+    dataclass_fields.extend(
+        [
             ("rank", int, field(default=rank)),
             ("device", torch.device, field(default=device)),
             ("component_labels", tuple[str, ...], field(default=component_labels)),
-            # Derived fields
-            ("_tensor", torch.Tensor, field(default=None, init=False)),
-            ("_component_tensor", torch.Tensor, field(default=None, init=False)),
+        ]
+    )
+
+    # Derived fields
+    dataclass_fields.extend(
+        [
+            ("_tensor", torch.Tensor, field(init=False)),
+            ("_component_tensor", torch.Tensor, field(init=False)),
         ]
     )
 
@@ -282,11 +312,13 @@ def make_field_dataclass(
             "__post_init__": _field_post_init,
             "_set_tensors": _set_tensors,
             "_loop_parent_component_tensor": _loop_parent_component_tensor,
+            "get_component": get_component,
             "component_tensor": component_tensor,
             "tensor": tensor,
             "update_from_component_dict": update_from_component_dict,
             "update_from_component_tensor": update_from_component_tensor,
             "update_from_tensor": update_from_tensor,
+            "_validate_inputs": _validate_inputs,
         },
         frozen=True,
         slots=True,

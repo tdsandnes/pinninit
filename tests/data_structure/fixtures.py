@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
-
 import torch
 
 from pinninit.data_structure.coords_dataclass import (
@@ -11,6 +9,7 @@ from pinninit.data_structure.coords_dataclass import (
 from pinninit.data_structure.field_dataclass import FieldProtocol, make_field_dataclass
 from pinninit.geometry.coordinate_system import (
     CartesianCoords,
+    CoordSystem,
     CylindricalCoords,
     SphericalCoords,
 )
@@ -27,7 +26,7 @@ def make_device() -> torch.device:
 
 
 # Coordinate systems
-def make_cartesian_1d(device: torch.device) -> CartesianCoords:
+def make_cartesian_1d(device: torch.device) -> CoordSystem:
     return CartesianCoords(
         dim_geometric=1,
         coord_axes={
@@ -38,7 +37,7 @@ def make_cartesian_1d(device: torch.device) -> CartesianCoords:
     )
 
 
-def make_cartesian_2d(device: torch.device) -> CartesianCoords:
+def make_cartesian_2d(device: torch.device) -> CoordSystem:
     return CartesianCoords(
         dim_geometric=2,
         coord_axes={"x", "y"},
@@ -47,7 +46,7 @@ def make_cartesian_2d(device: torch.device) -> CartesianCoords:
     )
 
 
-def make_cartesian_3d(device: torch.device) -> CartesianCoords:
+def make_cartesian_3d(device: torch.device) -> CoordSystem:
     return CartesianCoords(
         dim_geometric=3,
         coord_axes={"x", "y", "z"},
@@ -56,7 +55,7 @@ def make_cartesian_3d(device: torch.device) -> CartesianCoords:
     )
 
 
-def make_cylindrical_2d(device: torch.device) -> CylindricalCoords:
+def make_cylindrical_2d(device: torch.device) -> CoordSystem:
     return CylindricalCoords(
         dim_geometric=2,
         coord_axes={"r", "theta"},
@@ -65,7 +64,7 @@ def make_cylindrical_2d(device: torch.device) -> CylindricalCoords:
     )
 
 
-def make_spherical_3d(device: torch.device) -> SphericalCoords:
+def make_spherical_3d(device: torch.device) -> CoordSystem:
     return SphericalCoords(
         dim_geometric=3,
         coord_axes={"r", "theta", "phi"},
@@ -75,9 +74,7 @@ def make_spherical_3d(device: torch.device) -> SphericalCoords:
 
 
 # Domains
-def make_domain_1d_cartesian(
-    coord_system: CartesianCoords, device: torch.device
-) -> Domain:
+def make_domain_1d_cartesian(coord_system: CoordSystem, device: torch.device) -> Domain:
     return Domain(
         coord_system=coord_system,
         geometric_bounds={"x": (0.0, 1.0)},
@@ -86,9 +83,7 @@ def make_domain_1d_cartesian(
     )
 
 
-def make_domain_2d_cartesian(
-    coord_system: CartesianCoords, device: torch.device
-) -> Domain:
+def make_domain_2d_cartesian(coord_system: CoordSystem, device: torch.device) -> Domain:
     return Domain(
         coord_system=coord_system,
         geometric_bounds={"x": (0.0, 1.0), "y": (0.0, 1.0)},
@@ -167,9 +162,7 @@ def make_pinn_environment(
     """
     # Create the coordinate dataclass class
     coord_system = make_cartesian_2d(device=device)
-    Coords: Any = make_coords_dataclass(
-        {"x", "y"}, coord_system=coord_system, device=device
-    )
+    Coords = make_coords_dataclass({"x", "y"}, coord_system=coord_system, device=device)
     x = torch.tensor([1.5, 2.5, 3.5, 4.5], device=device, requires_grad=True)
     y = torch.tensor([5.5, 6.5, 7.5, 8.5], device=device, requires_grad=True)
     coords = Coords(x=x, y=y)
@@ -177,10 +170,8 @@ def make_pinn_environment(
     # Set up field
     f_x = torch.tensor([10.0, 20.0, 30.0, 40.0], device=device, requires_grad=True)
     f_y = torch.tensor([50.0, 60.0, 70.0, 80.0], device=device, requires_grad=True)
-    Field: Any = make_field_dataclass(
-        field_label="f", rank=1, coords=coords, device=device
-    )
-    reference_field = Field(x=f_x, y=f_y)
+    Field = make_field_dataclass(rank=1, coords=coords, device=device)
+    reference_field = Field(label="f", x=f_x, y=f_y)
 
     # Define a predictable single-layer NN (Linear transformation)
     nn_layer = torch.nn.Linear(2, 2, device=device)
