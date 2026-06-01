@@ -58,17 +58,27 @@ class MetricTensor(ABC):
         """
         pass
 
+    @abstractmethod
     def scale_factors_times_vec(self, v: torch.Tensor) -> torch.Tensor:
-        """Multiply a vector by the coordinate scale factors."""
-        raise NotImplementedError(
-            "Scale factor multiplication only defined for orthogonal metrics."
-        )
+        """Multiply a vector by the coordinate scale factors.
 
+        Parameters
+        ----------
+        v : torch.Tensor
+            Shape: (n_points, dim)
+        """
+        pass
+
+    @abstractmethod
     def inv_scale_factors_times_vec(self, v: torch.Tensor) -> torch.Tensor:
-        """Divide a vector by the coordinate scale factors."""
-        raise NotImplementedError(
-            "Inverse scale factor multiplication only defined for orthogonal metrics."
-        )
+        """Divide a vector by the coordinate scale factors.
+
+        Parameters
+        ----------
+        v : torch.Tensor
+            Shape: (n_points, dim)
+        """
+        pass
 
 
 class IdentityMetricTensor(MetricTensor):
@@ -179,3 +189,13 @@ class FullMetricTensor(MetricTensor):
 
     def inv_sqrt_det_times_scalar(self, s: torch.Tensor) -> torch.Tensor:
         return s / self.sqrt_det
+
+    def scale_factors_times_vec(self, v: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError(
+            "Scale factor multiplication only defined for orthogonal metrics."
+        )
+
+    def inv_scale_factors_times_vec(self, v: torch.Tensor) -> torch.Tensor:
+        raise NotImplementedError(
+            "Inverse scale factor multiplication only defined for orthogonal metrics."
+        )
