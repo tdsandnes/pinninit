@@ -1,0 +1,419 @@
+"""
+Unit tests for data_structure/equation.py.
+"""
+
+from __future__ import annotations
+
+from typing import cast
+
+import pytest
+import torch
+
+from pinninit.data_structure.coords_dataclass import (
+    CoordsProtocol,
+    make_coords_dataclass,
+)
+from pinninit.data_structure.data_container import DataContainer
+from pinninit.data_structure.equation import Equation
+from pinninit.differential_equations.operators import Operators
+from pinninit.geometry.coordinate_system import CoordSystem
+
+from .fixtures import (
+    N_POINTS,
+    make_cartesian_2d,
+    make_device,
+    make_xy_2d,
+)
+
+
+@pytest.fixture  # type: ignore[misc]
+def device() -> torch.device:
+    return make_device()
+
+
+@pytest.fixture  # type: ignore[misc]
+def n_points() -> int:
+    return N_POINTS
+
+
+@pytest.fixture  # type: ignore[misc]
+def cartesian_2d(device: torch.device) -> CoordSystem:
+    return make_cartesian_2d(device)
+
+
+@pytest.fixture  # type: ignore[misc]
+def xy_2d(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
+    return make_xy_2d(device)
+
+
+def make_coords_cartesian_2d(
+    coord_system: CoordSystem, x: torch.Tensor, y: torch.Tensor
+) -> CoordsProtocol:
+    Coords = make_coords_dataclass(
+        coord_labels={"x", "y"},
+        coord_system=coord_system,
+        device=x.device,
+    )
+    return Coords(x=x, y=y)
+
+
+def build_container(
+    cartesian_2d: CoordSystem,
+    xy_2d: tuple[torch.Tensor, torch.Tensor],
+) -> DataContainer:
+    x, y = xy_2d
+    coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+    return DataContainer(
+        coords=coords,
+        primary_field_label_to_rank={"primary_field_1": 0, "primary_field_2": 1},
+        derived_field_label_to_rank={"derived_field_1": 0, "derived_field_2": 1},
+        const_labels={"constant"},
+    )
+
+
+class TestEquationConstruction:
+    def test_input_labels_are_derived_from_signature_excluding_operators(self) -> None:
+        def residual(
+            x: torch.Tensor, primary_field_1: torch.Tensor, operators: Operators
+        ) -> torch.Tensor:
+            return x + primary_field_1
+
+        equation = Equation(
+            label="residual",
+            function=residual,
+            output_label_to_rank={"derived_field_1": 0},
+        )
+
+        assert equation.input_labels == ("x", "primary_field_1")
+        assert equation.output_labels == ("derived_field_1",)
+
+    def test_missing_operators_argument_raises(self) -> None:
+        def residual(x: torch.Tensor) -> torch.Tensor:
+            return x
+
+        with pytest.raises(ValueError, match="must accept 'operators'"):
+            Equation(
+                label="bad_residual",
+                function=residual,
+                output_label_to_rank={"derived_field_1": 0},
+            )
+
+    def test_negative_output_rank_raises(self) -> None:
+        def residual(x: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return x
+
+        with pytest.raises(ValueError, match="must be >= 0"):
+            Equation(
+                label="bad_rank",
+                function=residual,
+                output_label_to_rank={"derived_field_1": -1},
+            )
+
+    def test_output_labels_preserve_output_label_to_rank_insertion_order(self) -> None:
+        def residual(
+            x: torch.Tensor,
+            operators: Operators,
+        ) -> tuple[torch.Tensor, torch.Tensor]:
+            return x, x
+
+        equation = Equation(
+            label="ordered_outputs",
+            function=residual,
+            output_label_to_rank={
+                "second": 0,
+                "first": 0,
+            },
+        )
+
+        assert equation.output_labels == ("second", "first")
+
+
+class TestEquationGatherInputs:
+    def test_gathers_coordinates_fields_and_consts(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        device: torch.device,
+    ) -> None:
+        data = build_container(cartesian_2d, xy_2d)
+        coords = data.coords
+
+        primary_field_1 = coords.get_coord("x") + coords.get_coord("y")
+        data.set_field_from_tensor("primary_field_1", primary_field_1)
+        data.set_const("constant", torch.tensor(2.0, device=device))
+
+        def residual(
+            x: torch.Tensor,
+            primary_field_1: torch.Tensor,
+            constant: torch.Tensor,
+            operators: Operators,
+        ) -> torch.Tensor:
+            return x + primary_field_1 + constant
+
+        equation = Equation(
+            label="residual",
+            function=residual,
+            output_label_to_rank={"derived_field_1": 0},
+        )
+
+        result = equation.evaluate(data, coords)
+
+        expected = (
+            coords.get_coord("x") + primary_field_1 + torch.tensor(2.0, device=device)
+        )
+        assert set(result) == {"derived_field_1"}
+        assert torch.allclose(result["derived_field_1"], expected)
+
+    def test_unknown_input_label_raises(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        data = build_container(cartesian_2d, xy_2d)
+
+        def residual(missing: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return missing
+
+        equation = Equation(
+            label="unknown_input",
+            function=residual,
+            output_label_to_rank={"derived_field_1": 0},
+        )
+
+        with pytest.raises(KeyError, match="not found"):
+            equation.evaluate(data, data.coords)
+
+    def test_uninitialised_field_input_raises(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        data = build_container(cartesian_2d, xy_2d)
+
+        def residual(
+            primary_field_1: torch.Tensor, operators: Operators
+        ) -> torch.Tensor:
+            return primary_field_1
+
+        equation = Equation(
+            label="uninitialised_field",
+            function=residual,
+            output_label_to_rank={"derived_field_1": 0},
+        )
+
+        with pytest.raises(
+            ValueError, match="Field 'primary_field_1' has not been initialised"
+        ):
+            equation.evaluate(data, data.coords)
+
+    def test_uninitialised_const_input_raises(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        data = build_container(cartesian_2d, xy_2d)
+
+        def residual(constant: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return constant
+
+        equation = Equation(
+            label="uninitialised_const",
+            function=residual,
+            output_label_to_rank={"derived_field_1": 0},
+        )
+
+        with pytest.raises(
+            ValueError, match="Constant 'constant' has not been initialised"
+        ):
+            equation.evaluate(data, data.coords)
+
+    def test_duplicate_label_between_coord_and_field_raises(self) -> None:
+        def residual(x: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return x
+
+        class MockCoords:
+            coord_labels = {"x"}
+
+            def get_coord(self, label: str) -> torch.Tensor:
+                return torch.ones(10)
+
+        class MockField:
+            label = "x"
+
+            def tensor(self, coords: CoordsProtocol) -> torch.Tensor:
+                return torch.zeros(10)
+
+        class MockContainer:
+            coords = MockCoords()
+            coord_labels = coords.coord_labels
+            primary_fields = {"x": MockField()}
+            fields = primary_fields
+            field_labels = set(primary_fields.keys())
+            fields_active_coords = {"x": coords}
+            derived_fields: dict[str, MockField] = {}
+            consts: dict[str, torch.Tensor] = {}
+
+        equation = Equation(
+            label="duplicate_label",
+            function=residual,
+            output_label_to_rank={"derived_field_1": 0},
+        )
+
+        data = MockContainer()
+
+        with pytest.raises(ValueError, match="Duplicate labels"):
+            equation.evaluate(
+                cast(DataContainer, data), cast(CoordsProtocol, data.coords)
+            )
+
+
+class TestEquationEvaluate:
+    def test_scalar_output_is_wrapped_in_result_dict(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        data = build_container(cartesian_2d, xy_2d)
+        coords = data.coords
+
+        def residual(
+            x: torch.Tensor, y: torch.Tensor, operators: Operators
+        ) -> torch.Tensor:
+            return x**2 + y
+
+        equation = Equation(
+            label="scalar_equation",
+            function=residual,
+            output_label_to_rank={"derived_field_1": 0},
+        )
+
+        result = equation.evaluate(data, coords)
+
+        assert set(result) == {"derived_field_1"}
+        assert result["derived_field_1"].shape == (coords.n_points,)
+        assert torch.allclose(
+            result["derived_field_1"],
+            coords.get_coord("x") ** 2 + coords.get_coord("y"),
+        )
+
+    def test_tuple_outputs_are_mapped_to_output_labels_in_order(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        data = build_container(cartesian_2d, xy_2d)
+        coords = data.coords
+
+        def residual(
+            x: torch.Tensor,
+            y: torch.Tensor,
+            operators: Operators,
+        ) -> tuple[torch.Tensor, torch.Tensor]:
+            vector = torch.stack([x, y], dim=1)
+            scalar = x + y
+            return scalar, vector
+
+        equation = Equation(
+            label="multi_output",
+            function=residual,
+            output_label_to_rank={"derived_field_1": 0, "derived_field_2": 1},
+        )
+
+        result = equation.evaluate(data, coords)
+
+        assert set(result) == {"derived_field_1", "derived_field_2"}
+        assert result["derived_field_1"].shape == (coords.n_points,)
+        assert result["derived_field_2"].shape == (coords.n_points, 2)
+        assert torch.allclose(
+            result["derived_field_1"], coords.get_coord("x") + coords.get_coord("y")
+        )
+        assert torch.allclose(
+            result["derived_field_2"],
+            torch.stack([coords.get_coord("x"), coords.get_coord("y")], dim=1),
+        )
+
+    def test_wrong_number_of_outputs_raises(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        data = build_container(cartesian_2d, xy_2d)
+
+        def residual(x: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return x
+
+        equation = Equation(
+            label="wrong_count",
+            function=residual,
+            output_label_to_rank={"derived_field_1": 0, "derived_field_2": 1},
+        )
+
+        with pytest.raises(ValueError, match="returned 1 outputs"):
+            equation.evaluate(data, data.coords)
+
+    def test_non_tensor_output_raises(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        data = build_container(cartesian_2d, xy_2d)
+
+        def residual(x: torch.Tensor, operators: Operators) -> float:
+            return 1.0
+
+        equation = Equation(
+            label="non_tensor",
+            function=residual,
+            output_label_to_rank={"derived_field_1": 0},
+        )
+
+        with pytest.raises(TypeError, match="must be a torch.Tensor"):
+            equation.evaluate(data, data.coords)
+
+    def test_wrong_output_shape_raises(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        data = build_container(cartesian_2d, xy_2d)
+
+        def residual(x: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return torch.stack([x, x], dim=1)
+
+        equation = Equation(
+            label="wrong_shape",
+            function=residual,
+            output_label_to_rank={"derived_field_1": 0},
+        )
+
+        with pytest.raises(ValueError, match="expected"):
+            equation.evaluate(data, data.coords)
+
+    def test_tuple_outputs_are_assigned_using_output_label_order(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        data = build_container(cartesian_2d, xy_2d)
+
+        def residual(
+            x: torch.Tensor,
+            operators: Operators,
+        ) -> tuple[torch.Tensor, torch.Tensor]:
+            return x + 1, x + 2
+
+        equation = Equation(
+            label="ordered_outputs",
+            function=residual,
+            output_label_to_rank={
+                "second": 0,
+                "first": 0,
+            },
+        )
+
+        result = equation.evaluate(data, data.coords)
+
+        x = data.coords.get_coord("x")
+
+        assert torch.allclose(result["second"], x + 1)
+        assert torch.allclose(result["first"], x + 2)

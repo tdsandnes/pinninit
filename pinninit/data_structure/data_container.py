@@ -65,6 +65,13 @@ class DataContainer:
     def fields(self) -> dict[str, FieldProtocol]:
         return {**self.primary_fields, **self.derived_fields}
 
+    @property
+    def fields_active_coords(self) -> dict[str, CoordsProtocol | None]:
+        return {
+            **self.primary_fields_active_coords,
+            **self.derived_fields_active_coords,
+        }
+
     def get_field(self, label: str) -> FieldProtocol:
         if label not in self.field_labels:
             raise KeyError(f"Field '{label}' not found.")
@@ -243,10 +250,8 @@ class DataContainer:
 
     def _get_active_coords(self, label: str) -> CoordsProtocol:
         # Check for label in fields and consts
-        if label in self.primary_field_labels:
-            active_coords = self.primary_fields_active_coords[label]
-        elif label in self.derived_field_labels:
-            active_coords = self.derived_fields_active_coords[label]
+        if label in self.field_labels:
+            active_coords = self.fields_active_coords[label]
         elif label in self.consts:
             active_coords = self.consts_active_coords[label]
         else:

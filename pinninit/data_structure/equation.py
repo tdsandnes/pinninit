@@ -106,11 +106,15 @@ class Equation:
 
             # Check fields
             if label in data_container.field_labels:
+                if data_container.fields_active_coords[label] is None:
+                    raise ValueError(f"Field '{label}' has not been initialised.")
                 value = data_container.fields[label].tensor(eval_coords)
                 matches += 1
 
             # Check consts
             if label in data_container.consts:
+                if data_container.consts_active_coords[label] is None:
+                    raise ValueError(f"Constant '{label}' has not been initialised.")
                 value = data_container.consts[label]
                 matches += 1
 
@@ -120,9 +124,9 @@ class Equation:
             elif matches > 1:
                 raise ValueError(f"Duplicate labels '{label}' found in data container.")
 
-            # Make sure value  has been set in data container
+            # Make sure value has been set in data container
             if value is None:
-                raise ValueError(f"Primary field '{label}' has not been initialised.")
+                raise ValueError(f"Unexpected '{label}' has value None.")
 
             inputs[label] = value
 
