@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ..differential_equations.operators import Operators
+
 if TYPE_CHECKING:
     from .coords_dataclass import CoordsProtocol
     from .data_container import DataContainer
@@ -82,8 +84,11 @@ class EquationEvaluator:
         # Ensure all primary fields are compatible with evaluation coordinates.
         self.data_container.validate_eval_coords_primary_fields(coords)
 
+        # Set operators
+        operators = Operators(coords)
+
         for equation in self._sorted_equations:
-            result = equation.evaluate(self.data_container, coords)
+            result = equation.evaluate(self.data_container, coords, operators)
 
             for label, tensor in result.items():
                 self.data_container.set_field_from_tensor(

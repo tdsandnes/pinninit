@@ -156,7 +156,8 @@ class TestEquationGatherInputs:
             output_label_to_rank={"w": 0},
         )
 
-        result = equation.evaluate(data, coords)
+        operators = Operators(coords)
+        result = equation.evaluate(data, coords, operators)
 
         expected = coords.get_coord("x") + u + torch.tensor(2.0, device=device)
         assert set(result) == {"w"}
@@ -178,8 +179,9 @@ class TestEquationGatherInputs:
             output_label_to_rank={"w": 0},
         )
 
+        operators = Operators(data.coords)
         with pytest.raises(KeyError, match="not found"):
-            equation.evaluate(data, data.coords)
+            equation.evaluate(data, data.coords, operators)
 
     def test_uninitialised_field_input_raises(
         self,
@@ -197,8 +199,9 @@ class TestEquationGatherInputs:
             output_label_to_rank={"w": 0},
         )
 
+        operators = Operators(data.coords)
         with pytest.raises(ValueError, match="Field 'u' has not been initialised"):
-            equation.evaluate(data, data.coords)
+            equation.evaluate(data, data.coords, operators)
 
     def test_uninitialised_const_input_raises(
         self,
@@ -216,8 +219,9 @@ class TestEquationGatherInputs:
             output_label_to_rank={"w": 0},
         )
 
+        operators = Operators(data.coords)
         with pytest.raises(ValueError, match="Constant 'c' has not been initialised"):
-            equation.evaluate(data, data.coords)
+            equation.evaluate(data, data.coords, operators)
 
     def test_duplicate_label_between_coord_and_field_raises(self) -> None:
         def residual(x: torch.Tensor, operators: Operators) -> torch.Tensor:
@@ -245,6 +249,9 @@ class TestEquationGatherInputs:
             derived_fields: dict[str, MockField] = {}
             consts: dict[str, torch.Tensor] = {}
 
+        class MockOperators:
+            pass
+
         equation = Equation(
             label="duplicate_label",
             function=residual,
@@ -255,7 +262,9 @@ class TestEquationGatherInputs:
 
         with pytest.raises(ValueError, match="Duplicate labels"):
             equation.evaluate(
-                cast(DataContainer, data), cast(CoordsProtocol, data.coords)
+                cast(DataContainer, data),
+                cast(CoordsProtocol, data.coords),
+                cast(Operators, MockOperators()),
             )
 
 
@@ -279,7 +288,8 @@ class TestEquationEvaluate:
             output_label_to_rank={"w": 0},
         )
 
-        result = equation.evaluate(data, coords)
+        operators = Operators(coords)
+        result = equation.evaluate(data, coords, operators)
 
         assert set(result) == {"w"}
         assert result["w"].shape == (coords.n_points,)
@@ -311,7 +321,8 @@ class TestEquationEvaluate:
             output_label_to_rank={"w": 0, "q": 1},
         )
 
-        result = equation.evaluate(data, coords)
+        operators = Operators(coords)
+        result = equation.evaluate(data, coords, operators)
 
         assert set(result) == {"w", "q"}
         assert result["w"].shape == (coords.n_points,)
@@ -340,8 +351,9 @@ class TestEquationEvaluate:
             output_label_to_rank={"w": 0, "q": 1},
         )
 
+        operators = Operators(data.coords)
         with pytest.raises(ValueError, match="returned 1 outputs"):
-            equation.evaluate(data, data.coords)
+            equation.evaluate(data, data.coords, operators)
 
     def test_non_tensor_output_raises(
         self,
@@ -359,8 +371,9 @@ class TestEquationEvaluate:
             output_label_to_rank={"w": 0},
         )
 
+        operators = Operators(data.coords)
         with pytest.raises(TypeError, match="must be a torch.Tensor"):
-            equation.evaluate(data, data.coords)
+            equation.evaluate(data, data.coords, operators)
 
     def test_wrong_output_shape_raises(
         self,
@@ -378,8 +391,9 @@ class TestEquationEvaluate:
             output_label_to_rank={"w": 0},
         )
 
+        operators = Operators(data.coords)
         with pytest.raises(ValueError, match="expected"):
-            equation.evaluate(data, data.coords)
+            equation.evaluate(data, data.coords, operators)
 
     def test_tuple_outputs_are_assigned_using_output_label_order(
         self,
@@ -403,7 +417,8 @@ class TestEquationEvaluate:
             },
         )
 
-        result = equation.evaluate(data, data.coords)
+        operators = Operators(data.coords)
+        result = equation.evaluate(data, data.coords, operators)
 
         x = data.coords.get_coord("x")
 

@@ -269,3 +269,183 @@ class TestCylindricalDerivatives:
 
         assert torch.allclose(operators.contravariant_grad(f), expected_contravariant)
         assert torch.allclose(operators.grad(f), expected_physical)
+
+
+class TestBatchedCoordinates:
+    def test_grad_matches_root_result_on_batch(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        x, y = xy_2d
+        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        root_ops = Operators(coords)
+        root_x = coords.get_coord("x")
+        root_y = coords.get_coord("y")
+        f = root_x**2 + 3.0 * root_y
+        expected = root_ops.grad(f)
+
+        # Batch
+        idx = torch.tensor([0, 2, 5, 7, 9], device=x.device)
+        batch_coords = coords.get_batch(idx)
+        batch_x = batch_coords.get_coord("x")
+        batch_y = batch_coords.get_coord("y")
+        batch_f = batch_x**2 + 3.0 * batch_y
+        batch_ops = Operators(batch_coords)
+
+        # Evaluate grad
+        actual = batch_ops.grad(batch_f)
+
+        assert torch.allclose(actual, expected[idx])
+
+    def test_divergence_matches_root_result_on_batch(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        x, y = xy_2d
+        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        root_ops = Operators(coords)
+        root_x = coords.get_coord("x")
+        root_y = coords.get_coord("y")
+        vector = torch.stack([root_x**2, root_y**3], dim=1)
+        expected = root_ops.div(vector)
+
+        # Batch
+        idx = torch.tensor([1, 4, 6, 8], device=x.device)
+        batch_coords = coords.get_batch(idx)
+        batch_x = batch_coords.get_coord("x")
+        batch_y = batch_coords.get_coord("y")
+        batch_vector = torch.stack(
+            [batch_x**2, batch_y**3],
+            dim=1,
+        )
+        batch_ops = Operators(batch_coords)
+
+        # Evaluate div
+        actual = batch_ops.div(batch_vector)
+
+        assert torch.allclose(actual, expected[idx])
+
+    def test_laplacian_matches_root_result_on_batch(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        x, y = xy_2d
+        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        root_ops = Operators(coords)
+        root_x = coords.get_coord("x")
+        root_y = coords.get_coord("y")
+        f = root_x**2 + root_y**2
+        expected = root_ops.laplacian(f)
+
+        # Batch
+        idx = torch.tensor([0, 3, 6, 9], device=x.device)
+        batch_coords = coords.get_batch(idx)
+        batch_x = batch_coords.get_coord("x")
+        batch_y = batch_coords.get_coord("y")
+        batch_f = batch_x**2 + batch_y**2
+        batch_ops = Operators(batch_coords)
+
+        # Evaluate laplacian
+        actual = batch_ops.laplacian(batch_f)
+
+        assert torch.allclose(actual, expected[idx])
+
+    def test_nested_batch_grad_matches_root_result(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        x, y = xy_2d
+        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        root_ops = Operators(coords)
+        root_x = coords.get_coord("x")
+        root_y = coords.get_coord("y")
+        f = root_x**2 + 3.0 * root_y
+        expected = root_ops.grad(f)
+
+        # batch 1
+        idx1 = torch.tensor([0, 2, 4, 6, 8], device=x.device)
+        batch1 = coords.get_batch(idx1)
+
+        # batch 2
+        idx2 = torch.tensor([1, 3], device=x.device)
+        batch2 = batch1.get_batch(idx2)
+        batch2_x = batch2.get_coord("x")
+        batch2_y = batch2.get_coord("y")
+        batch2_f = batch2_x**2 + 3.0 * batch2_y
+        batch2_ops = Operators(batch2)
+
+        # Evaluate grad on batch 2 using batch2-coord operators
+        actual = batch2_ops.grad(batch2_f)
+
+        # Compare with sliced root
+        expected_indices = idx1[idx2]
+        assert torch.allclose(actual, expected[expected_indices])
+
+
+class TestCoordinateGraphStructure:
+    def test_d_dcoord_of_internal_coordinate(
+        self,
+        cylindrical_2d: CoordSystem,
+        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        r, theta = r_theta_2d
+        coords = make_coords_cylindrical_2d(cylindrical_2d, r, theta)
+        operators = Operators(coords)
+
+        # Make linear combination of internal coords
+        a = torch.tensor([1.0, 2.0], device=r.device)
+        f = (coords.internal * a).sum(dim=1)
+        dx_dr = operators.d_dcoord(f, "r")
+        dx_dtheta = operators.d_dcoord(f, "theta")
+
+        # Analytic cylindrical mapping
+        expected_dr = a[0] * torch.cos(theta) + a[1] * torch.sin(theta)
+        expected_dtheta = a[0] * (-r * torch.sin(theta)) + a[1] * (r * torch.cos(theta))
+
+        assert torch.allclose(dx_dr, expected_dr)
+        assert torch.allclose(dx_dtheta, expected_dtheta)
+
+    def test_grad_of_internal_coordinate(
+        self,
+        cylindrical_2d: CoordSystem,
+        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        r, theta = r_theta_2d
+        coords = make_coords_cylindrical_2d(cylindrical_2d, r, theta)
+        operators = Operators(coords)
+
+        # Make linear combination of internal coords
+        a = torch.tensor([1.0, 2.0], device=r.device)
+        f = (coords.internal * a).sum(dim=1)
+        grad_f = operators.grad(f)
+        expected = torch.stack(
+            [
+                a[0] * torch.cos(theta) + a[1] * torch.sin(theta),
+                -a[0] * torch.sin(theta) + a[1] * torch.cos(theta),
+            ],
+            dim=1,
+        )
+
+        assert torch.allclose(grad_f, expected)
+
+    def test_d_dcoord_of_geometric_coordinate(
+        self,
+        cylindrical_2d: CoordSystem,
+        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        r, theta = r_theta_2d
+        coords = make_coords_cylindrical_2d(cylindrical_2d, r, theta)
+        operators = Operators(coords)
+
+        r_geom = coords.get_coord("r")
+
+        derivative = operators.d_dcoord(r_geom, "r")
+
+        assert torch.allclose(
+            derivative,
+            torch.ones_like(r),
+        )

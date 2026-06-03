@@ -65,7 +65,7 @@ def build_container(
 
 
 class TestDataContainerConstruction:
-    def test_initialises_metadata_fields_consts_and_operators(
+    def test_initialises_metadata_fields_consts(
         self,
         cartesian_2d: CoordSystem,
         xy_2d: tuple[torch.Tensor, torch.Tensor],
@@ -76,7 +76,6 @@ class TestDataContainerConstruction:
         assert data.coords.coord_system is cartesian_2d
         assert data.coord_labels == ("x", "y")
         assert data.device == device
-        assert isinstance(data.operators, Operators)
 
         assert data.primary_field_labels == {"u", "v"}
         assert data.derived_field_labels == {"w", "q"}

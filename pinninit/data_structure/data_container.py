@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import torch
 
-from ..differential_equations.operators import Operators
 from .coords_dataclass import CoordsProtocol
 from .equation import Equation
 from .equation_evaluator import EquationEvaluator
@@ -21,7 +20,6 @@ class DataContainer:
         self.coords = coords
         self.coord_labels = coords.coord_labels
         self.device = coords.device
-        self.operators = Operators(coords)
         self.equations = equations or ()
         self.equation_evaluator = EquationEvaluator(self)
 

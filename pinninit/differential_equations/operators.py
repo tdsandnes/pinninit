@@ -69,14 +69,20 @@ class Operators:
         torch.Tensor
             Contravarient gradient of the function: (n_points, dim_geometric)
         """
-        # List of derivatives wrt geometric coordinates
-        derivative_f = torch.autograd.grad(
-            outputs=f,
-            inputs=self.coords.geometric,
-            grad_outputs=torch.ones_like(f),
-            create_graph=True,
-            retain_graph=True,
-        )[0]
+        # List of derivatives wrt geometric coordinates individually for graph
+        derivatives = []
+        for coord_label in self.geometric_labels:
+            coord = self.coords.get_coord(coord_label)
+            derivative = torch.autograd.grad(
+                outputs=f,
+                inputs=coord,
+                grad_outputs=torch.ones_like(f),
+                create_graph=True,
+                retain_graph=True,
+            )[0]
+            derivatives.append(derivative)
+
+        derivative_f = torch.stack(derivatives, dim=1)
 
         return self.G.inv_metric_times_vec(derivative_f)
 
@@ -153,17 +159,10 @@ class Operators:
         # Term to take derivatives of
         inner_term = self.G.sqrt_det_times_vec(contra_v)
 
-        div_terms = []
-        for i, coord_label in enumerate(self.geometric_labels):
-            coord = self.coords.get_coord(coord_label)
-            derivative = torch.autograd.grad(
-                outputs=inner_term[:, i],
-                inputs=coord,
-                grad_outputs=torch.ones_like(coord),
-                create_graph=True,
-                retain_graph=True,
-            )[0]
-            div_terms.append(derivative)
+        div_terms = [
+            self.d_dcoord(inner_term[:, i], coord_label)
+            for i, coord_label in enumerate(self.geometric_labels)
+        ]
 
         sum_derivatives = torch.stack(div_terms, dim=1).sum(dim=1)
 

@@ -9,6 +9,7 @@ import torch
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from ..differential_equations.operators import Operators
     from .coords_dataclass import CoordsProtocol
     from .data_container import DataContainer
 
@@ -46,13 +47,16 @@ class Equation:
         return tuple(self.output_label_to_rank.keys())
 
     def evaluate(
-        self, data_container: DataContainer, eval_coords: CoordsProtocol
+        self,
+        data_container: DataContainer,
+        eval_coords: CoordsProtocol,
+        operators: Operators,
     ) -> dict[str, torch.Tensor]:
         # Gather inputs from data container
         inputs = self._gather_inputs(data_container, eval_coords)
 
         # Evaluate function
-        outputs = self.function(**inputs, operators=data_container.operators)
+        outputs = self.function(**inputs, operators=operators)
 
         # Make tuple even if single output
         if not isinstance(outputs, tuple):
