@@ -16,13 +16,13 @@ class DataContainer:
         primary_field_label_to_rank: dict[str, int],
         derived_field_label_to_rank: dict[str, int] | None = None,
         const_labels: set[str] | None = None,
-        equations: set[Equation] | None = None,
+        equations: list[Equation] | None = None,
     ) -> None:
         self.coords = coords
         self.coord_labels = coords.coord_labels
         self.device = coords.device
         self.operators = Operators(coords)
-        self.equations = equations or set()
+        self.equations = equations or ()
         self.equation_evaluator = EquationEvaluator(self)
 
         # Store field labels
@@ -79,27 +79,36 @@ class DataContainer:
         return self.fields[label]
 
     def get_field_tensor(
-        self, label: str, coords: CoordsProtocol | None = None
+        self,
+        label: str,
+        coords: CoordsProtocol | None = None,
+        enforce_ancestry: bool = True,
     ) -> torch.Tensor:
         coords = coords or self.coords
         active_coords = self._get_active_coords(label)
-        self._validate_eval_coords(label, active_coords, coords)
+        self._validate_eval_coords(label, active_coords, coords, enforce_ancestry)
         return self.get_field(label).tensor(coords)
 
     def get_field_component_tensor(
-        self, label: str, coords: CoordsProtocol | None = None
+        self,
+        label: str,
+        coords: CoordsProtocol | None = None,
+        enforce_ancestry: bool = True,
     ) -> torch.Tensor:
         coords = coords or self.coords
         active_coords = self._get_active_coords(label)
-        self._validate_eval_coords(label, active_coords, coords)
+        self._validate_eval_coords(label, active_coords, coords, enforce_ancestry)
         return self.get_field(label).component_tensor(coords)
 
     def get_const(
-        self, label: str, coords: CoordsProtocol | None = None
+        self,
+        label: str,
+        coords: CoordsProtocol | None = None,
+        enforce_ancestry: bool = True,
     ) -> torch.Tensor:
         coords = coords or self.coords
         active_coords = self._get_active_coords(label)
-        self._validate_eval_coords(label, active_coords, coords)
+        self._validate_eval_coords(label, active_coords, coords, enforce_ancestry)
 
         value = self.consts[label]
         if value is None:
@@ -126,7 +135,7 @@ class DataContainer:
 
         # Update field
         coords = coords or self.coords
-        self._validate_eval_coords(label, self.coords, coords)
+        self._validate_eval_coords(label, self.coords, coords, enforce_ancestry=True)
         self.get_field(label).update_from_tensor(
             tensor, coords=coords, detach_stale_values=detach_stale_values
         )
@@ -153,7 +162,7 @@ class DataContainer:
 
         # Update field
         coords = coords or self.coords
-        self._validate_eval_coords(label, self.coords, coords)
+        self._validate_eval_coords(label, self.coords, coords, enforce_ancestry=True)
         self.get_field(label).update_from_component_tensor(
             component_tensor, coords=coords, detach_stale_values=detach_stale_values
         )
@@ -180,7 +189,7 @@ class DataContainer:
 
         # Update field
         coords = coords or self.coords
-        self._validate_eval_coords(label, self.coords, coords)
+        self._validate_eval_coords(label, self.coords, coords, enforce_ancestry=True)
         self.get_field(label).update_from_component_dict(
             component_dict, coords=coords, detach_stale_values=detach_stale_values
         )
@@ -207,7 +216,7 @@ class DataContainer:
 
         # Update active coords for the constant
         coords = coords or self.coords
-        self._validate_eval_coords(label, self.coords, coords)
+        self._validate_eval_coords(label, self.coords, coords, enforce_ancestry=True)
         self.consts_active_coords[label] = coords
 
     def evaluate_derived_fields(self, coords: CoordsProtocol | None = None) -> None:
@@ -240,8 +249,16 @@ class DataContainer:
         return Field(label=label)
 
     def _validate_eval_coords(
-        self, label: str, active_coords: CoordsProtocol, coords: CoordsProtocol
+        self,
+        label: str,
+        active_coords: CoordsProtocol,
+        coords: CoordsProtocol,
+        enforce_ancestry: bool,
     ) -> None:
+        # Bypasses the tree search if not enforcing coord ancestry
+        if not enforce_ancestry:
+            return
+
         if not active_coords.is_ancestor_of(coords):
             raise ValueError(
                 f"Evaluation coords for '{label}' must be the active coords or a "
