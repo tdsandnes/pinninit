@@ -37,6 +37,7 @@ class CoordsProtocol(Protocol):
     def get_coord(self, label: str) -> torch.Tensor: ...
     def get_batch(self, idx: torch.Tensor) -> CoordsProtocol: ...
     def validate_in_domain(self, domain: Domain) -> None: ...
+    def is_ancestor_of(self: CoordsProtocol, other_coords: CoordsProtocol) -> bool: ...
     def _set_tensors(self) -> None: ...
     def _validate_inputs(self) -> None: ...
     @property
@@ -137,6 +138,15 @@ def validate_in_domain(self: CoordsProtocol, domain: Domain) -> None:
     mask = domain.contains_geometric(self.geometric)
     if not torch.all(mask):
         raise ValueError("Geometric coordinates lie outside of domain.")
+
+
+def is_ancestor_of(self: CoordsProtocol, other_coords: CoordsProtocol) -> bool:
+    """Return True if self is an ancestor of other_coords, or if it is other_coords."""
+    if other_coords is self:
+        return True
+    if other_coords.parent is None:
+        return False
+    return self.is_ancestor_of(other_coords.parent)
 
 
 def _set_tensors(self: CoordsProtocol) -> None:
@@ -268,6 +278,7 @@ def make_coords_dataclass(
         "get_coord": get_coord,
         "get_batch": get_batch,
         "validate_in_domain": validate_in_domain,
+        "is_ancestor_of": is_ancestor_of,
         "_set_tensors": _set_tensors,
         "_validate_inputs": _validate_inputs,
         "is_batch": property(lambda self: self.parent is not None),
