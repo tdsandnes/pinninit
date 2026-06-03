@@ -45,13 +45,11 @@ class CoordsProtocol(Protocol):
 
 def _coords_post_init(self: CoordsProtocol) -> None:
     """__post_init__ executed on initialistion of each coord object."""
-    # Validate
-    self._validate_inputs()
-
     # Init object based on whether it is a batch or full set of points
     if self.is_batch:
         self._init_from_parent()
     else:
+        self._validate_inputs()
         self._init_from_scratch()
 
     # Set tensors

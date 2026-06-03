@@ -37,16 +37,19 @@ class FieldProtocol(Protocol):
         self,
         new_components: dict[str, torch.Tensor],
         coords: CoordsProtocol | None = None,
+        detach_stale_values: bool = True,
     ) -> None: ...
     def update_from_component_tensor(
         self,
         new_tensor: torch.Tensor,
         coords: CoordsProtocol | None = None,
+        detach_stale_values: bool = True,
     ) -> None: ...
     def update_from_tensor(
         self,
         new_tensor: torch.Tensor,
         coords: CoordsProtocol | None = None,
+        detach_stale_values: bool = True,
     ) -> None: ...
     def _validate_inputs(self) -> None: ...
     @property
@@ -168,6 +171,7 @@ def update_from_component_dict(
     self: FieldProtocol,
     new_components: dict[str, torch.Tensor],
     coords: CoordsProtocol | None = None,
+    detach_stale_values: bool = True,
 ) -> None:
     """Update field from dict of components in form
     dict[component label: tensor with shape (n_points,)]
@@ -198,13 +202,16 @@ def update_from_component_dict(
         [new_components[label] for label in self.component_labels],
         dim=1,
     )
-    self.update_from_component_tensor(new_tensor, coords=coords)
+    self.update_from_component_tensor(
+        new_tensor, coords=coords, detach_stale_values=detach_stale_values
+    )
 
 
 def update_from_component_tensor(
     self: FieldProtocol,
     new_tensor: torch.Tensor,
     coords: CoordsProtocol | None = None,
+    detach_stale_values: bool = True,
 ) -> None:
     """Update the field from a component tensor of shape (n_points, n_components).
 
@@ -236,13 +243,20 @@ def update_from_component_tensor(
             setattr(self, label, new_component_data)
         else:
             # Batch update
-            getattr(self, label)[root_indices] = new_component_data
+            component_data = (
+                getattr(self, label).detach()
+                if detach_stale_values
+                else getattr(self, label)
+            )
+            component_data[root_indices] = new_component_data
+            setattr(self, label, component_data)
 
 
 def update_from_tensor(
     self: FieldProtocol,
     new_tensor: torch.Tensor,
     coords: CoordsProtocol | None = None,
+    detach_stale_values: bool = True,
 ) -> None:
     """Update the field from a structured tensor of shape
     (n_points, n_geometric, ..., n_geometric)
@@ -272,7 +286,9 @@ def update_from_tensor(
     # Flatten the tensor along the component axes to match component_tensor shape
     component_tensor = new_tensor.reshape(coords.n_points, -1)
 
-    self.update_from_component_tensor(component_tensor, coords=coords)
+    self.update_from_component_tensor(
+        component_tensor, coords=coords, detach_stale_values=detach_stale_values
+    )
 
 
 def _validate_inputs(self: FieldProtocol) -> None:

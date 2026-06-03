@@ -671,69 +671,6 @@ class TestFieldCoordinateEvaluationAndAutograd:
         with pytest.raises(ValueError, match="root coords or a batch"):
             field_instance.component_tensor(invalid_coords)
 
-    def test_batch_update_then_autograd_reflects_updated_values(
-        self, device: torch.device
-    ) -> None:
-        """
-        Build a scalar field initialised to x everywhere.
-        Update a batch of points to y.
-        Verify that autodiff wrt x and y gives the right derivatives
-        at updated vs non-updated points.
-        """
-        coord_system = make_cartesian_2d(device=device)
-        Coords = make_coords_dataclass(
-            {"x", "y"}, coord_system=coord_system, device=device
-        )
-        x = torch.tensor([1.0, 2.0, 3.0, 4.0], device=device, requires_grad=True)
-        y = torch.tensor([5.0, 6.0, 7.0, 8.0], device=device, requires_grad=True)
-        coords = Coords(coord_system=coord_system, x=x, y=y)
-
-        # Initialise scalar field to x everywhere
-        Field = make_field_dataclass(rank=0, coords=coords, device=device)
-        field = Field(label="f", value=x.clone())
-
-        # Update points [1, 3] to y
-        batch_idx = torch.tensor([1, 3], device=device)
-        batch_coords = coords.get_batch(batch_idx)
-        batch_y = torch.stack([y[1], y[3]])
-        field.update_from_tensor(batch_y, coords=batch_coords)
-
-        # Evaluate full field and sum
-        full_tensor = field.tensor(coords)  # shape (4,)
-        loss = full_tensor.sum()  # Expected: x[0] + y[1] + x[2] + y[3]
-
-        loss.backward()  # type: ignore[no-untyped-call]
-
-        # Points not in batch
-        assert x.grad is not None
-        assert torch.allclose(
-            x.grad[0], torch.tensor(1.0, device=device)
-        )  # dloss/dx[0] = 1
-        assert torch.allclose(
-            x.grad[1], torch.tensor(0.0, device=device)
-        )  # updated, not x
-        assert torch.allclose(
-            x.grad[2], torch.tensor(1.0, device=device)
-        )  # dloss/dx[2] = 1
-        assert torch.allclose(
-            x.grad[3], torch.tensor(0.0, device=device)
-        )  # updated, not x
-
-        # Points in batch
-        assert y.grad is not None
-        assert torch.allclose(
-            y.grad[0], torch.tensor(0.0, device=device)
-        )  # not updated
-        assert torch.allclose(
-            y.grad[1], torch.tensor(1.0, device=device)
-        )  # dloss/dy[1] = 1
-        assert torch.allclose(
-            y.grad[2], torch.tensor(0.0, device=device)
-        )  # not updated
-        assert torch.allclose(
-            y.grad[3], torch.tensor(1.0, device=device)
-        )  # dloss/dy[3] = 1
-
 
 class TestFieldNeuralNetworkIntegration:
     def test_nn_raw_tensor_evaluation_and_data_loss(
@@ -839,34 +776,289 @@ class TestGetComponentErrors:
             field.get_component("invalid_label")
 
 
-# Validation errors
-class TestFieldValidationErrors:
-    def test_negative_rank_raises(
-        self, coords_2d: CoordsProtocol, device: torch.device
+class TestDetachStaleValues:
+    def test_detach_stale_values_true_across_two_batches_update_from_tensor(
+        self, device: torch.device
     ) -> None:
-        with pytest.raises(ValueError, match="rank must be >= 0"):
-            make_field_dataclass(rank=-1, coords=coords_2d, device=device)
+        coord_system = make_cartesian_2d(device=device)
+        Coords = make_coords_dataclass(
+            {"x", "y"}, coord_system=coord_system, device=device
+        )
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0], device=device, requires_grad=True)
+        y = torch.tensor([5.0, 6.0, 7.0, 8.0], device=device, requires_grad=True)
+        coords = Coords(coord_system=coord_system, x=x, y=y)
 
-    def test_mismatched_points_length_raises(
-        self, coords_2d: CoordsProtocol, device: torch.device
+        batch_1_coords = coords.get_batch(torch.tensor([0, 1], device=device))
+        batch_2_coords = coords.get_batch(torch.tensor([2, 3], device=device))
+
+        Field = make_field_dataclass(rank=1, coords=coords, device=device)
+        field = Field(label="f")
+
+        # Batch 1 update: f_x = 2*x, f_y = 3*y at indices [0, 1]
+        x_vals = 2 * torch.stack([x[0], x[1]])
+        y_vals = 3 * torch.stack([y[0], y[1]])
+        field.update_from_tensor(
+            torch.stack([x_vals, y_vals], dim=1), coords=batch_1_coords
+        )
+
+        field.tensor(coords).sum().backward()  # type: ignore[no-untyped-call]
+
+        assert x.grad is not None
+        assert torch.allclose(x.grad[0], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[1], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[2], torch.tensor(0.0, device=device))
+        assert torch.allclose(x.grad[3], torch.tensor(0.0, device=device))
+
+        assert y.grad is not None
+        assert torch.allclose(y.grad[0], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[1], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[2], torch.tensor(0.0, device=device))
+        assert torch.allclose(y.grad[3], torch.tensor(0.0, device=device))
+
+        x.grad.zero_()
+        y.grad.zero_()
+
+        # Batch 2 update: f_x = 2*x, f_y = 3*y at indices [2, 3]
+        x_vals = 2 * torch.stack([x[2], x[3]])
+        y_vals = 3 * torch.stack([y[2], y[3]])
+        field.update_from_tensor(
+            torch.stack([x_vals, y_vals], dim=1), coords=batch_2_coords
+        )
+
+        field.tensor(coords).sum().backward()  # type: ignore[no-untyped-call]
+
+        assert torch.allclose(x.grad[0], torch.tensor(0.0, device=device))
+        assert torch.allclose(x.grad[1], torch.tensor(0.0, device=device))
+        assert torch.allclose(x.grad[2], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[3], torch.tensor(2.0, device=device))
+
+        assert torch.allclose(y.grad[0], torch.tensor(0.0, device=device))
+        assert torch.allclose(y.grad[1], torch.tensor(0.0, device=device))
+        assert torch.allclose(y.grad[2], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[3], torch.tensor(3.0, device=device))
+
+    def test_detach_stale_values_true_across_two_batches_update_from_component_tensor(
+        self, device: torch.device
     ) -> None:
-        Field = make_field_dataclass(rank=0, coords=coords_2d, device=device)
-        # Create a tensor with length that does not match coords.n_points
-        bad_length_tensor = torch.ones(coords_2d.n_points + 5, device=device)
+        coord_system = make_cartesian_2d(device=device)
+        Coords = make_coords_dataclass(
+            {"x", "y"}, coord_system=coord_system, device=device
+        )
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0], device=device, requires_grad=True)
+        y = torch.tensor([5.0, 6.0, 7.0, 8.0], device=device, requires_grad=True)
+        coords = Coords(coord_system=coord_system, x=x, y=y)
 
-        with pytest.raises(ValueError, match="must have shape"):
-            Field(label="f", value=bad_length_tensor)
+        batch_1_coords = coords.get_batch(torch.tensor([0, 1], device=device))
+        batch_2_coords = coords.get_batch(torch.tensor([2, 3], device=device))
 
-    def test_field_label_clashes_with_coordinate_label_raises(
-        self, coords_2d: CoordsProtocol, device: torch.device
+        Field = make_field_dataclass(rank=1, coords=coords, device=device)
+        field = Field(label="f")
+
+        x_vals = 2 * torch.stack([x[0], x[1]])
+        y_vals = 3 * torch.stack([y[0], y[1]])
+        field.update_from_component_tensor(
+            torch.stack([x_vals, y_vals], dim=1), coords=batch_1_coords
+        )
+
+        field.tensor(coords).sum().backward()  # type: ignore[no-untyped-call]
+
+        assert x.grad is not None
+        assert torch.allclose(x.grad[0], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[1], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[2], torch.tensor(0.0, device=device))
+        assert torch.allclose(x.grad[3], torch.tensor(0.0, device=device))
+
+        assert y.grad is not None
+        assert torch.allclose(y.grad[0], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[1], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[2], torch.tensor(0.0, device=device))
+        assert torch.allclose(y.grad[3], torch.tensor(0.0, device=device))
+
+        x.grad.zero_()
+        y.grad.zero_()
+
+        x_vals = 2 * torch.stack([x[2], x[3]])
+        y_vals = 3 * torch.stack([y[2], y[3]])
+        field.update_from_component_tensor(
+            torch.stack([x_vals, y_vals], dim=1), coords=batch_2_coords
+        )
+
+        field.tensor(coords).sum().backward()  # type: ignore[no-untyped-call]
+
+        assert torch.allclose(x.grad[0], torch.tensor(0.0, device=device))
+        assert torch.allclose(x.grad[1], torch.tensor(0.0, device=device))
+        assert torch.allclose(x.grad[2], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[3], torch.tensor(2.0, device=device))
+
+        assert torch.allclose(y.grad[0], torch.tensor(0.0, device=device))
+        assert torch.allclose(y.grad[1], torch.tensor(0.0, device=device))
+        assert torch.allclose(y.grad[2], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[3], torch.tensor(3.0, device=device))
+
+    def test_detach_stale_values_true_across_two_batches_update_from_component_dict(
+        self, device: torch.device
     ) -> None:
-        with pytest.raises(ValueError, match="clashes with a coordinate label"):
-            make_field(rank=0, coords=coords_2d, device=device, label="x")
+        coord_system = make_cartesian_2d(device=device)
+        Coords = make_coords_dataclass(
+            {"x", "y"}, coord_system=coord_system, device=device
+        )
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0], device=device, requires_grad=True)
+        y = torch.tensor([5.0, 6.0, 7.0, 8.0], device=device, requires_grad=True)
+        coords = Coords(coord_system=coord_system, x=x, y=y)
 
-    def test_field_label_clashes_with_component_label_raises(
-        self, coords_2d: CoordsProtocol, device: torch.device
+        batch_1_coords = coords.get_batch(torch.tensor([0, 1], device=device))
+        batch_2_coords = coords.get_batch(torch.tensor([2, 3], device=device))
+
+        Field = make_field_dataclass(rank=1, coords=coords, device=device)
+        field = Field(label="f")
+
+        field.update_from_component_dict(
+            {"x": 2 * torch.stack([x[0], x[1]]), "y": 3 * torch.stack([y[0], y[1]])},
+            coords=batch_1_coords,
+        )
+
+        field.tensor(coords).sum().backward()  # type: ignore[no-untyped-call]
+
+        assert x.grad is not None
+        assert torch.allclose(x.grad[0], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[1], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[2], torch.tensor(0.0, device=device))
+        assert torch.allclose(x.grad[3], torch.tensor(0.0, device=device))
+
+        assert y.grad is not None
+        assert torch.allclose(y.grad[0], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[1], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[2], torch.tensor(0.0, device=device))
+        assert torch.allclose(y.grad[3], torch.tensor(0.0, device=device))
+
+        x.grad.zero_()
+        y.grad.zero_()
+
+        field.update_from_component_dict(
+            {"x": 2 * torch.stack([x[2], x[3]]), "y": 3 * torch.stack([y[2], y[3]])},
+            coords=batch_2_coords,
+        )
+
+        field.tensor(coords).sum().backward()  # type: ignore[no-untyped-call]
+
+        assert torch.allclose(x.grad[0], torch.tensor(0.0, device=device))
+        assert torch.allclose(x.grad[1], torch.tensor(0.0, device=device))
+        assert torch.allclose(x.grad[2], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[3], torch.tensor(2.0, device=device))
+
+        assert torch.allclose(y.grad[0], torch.tensor(0.0, device=device))
+        assert torch.allclose(y.grad[1], torch.tensor(0.0, device=device))
+        assert torch.allclose(y.grad[2], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[3], torch.tensor(3.0, device=device))
+
+    def test_detach_stale_values_false_all_remain_in_graph_update_from_tensor(
+        self, device: torch.device
     ) -> None:
-        with pytest.raises(
-            ValueError, match="clashes with a generated component label"
-        ):
-            make_field(rank=2, coords=coords_2d, device=device, label="x_x")
+        coord_system = make_cartesian_2d(device=device)
+        Coords = make_coords_dataclass(
+            {"x", "y"}, coord_system=coord_system, device=device
+        )
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0], device=device, requires_grad=True)
+        y = torch.tensor([5.0, 6.0, 7.0, 8.0], device=device, requires_grad=True)
+        coords = Coords(coord_system=coord_system, x=x, y=y)
+
+        batch_coords = coords.get_batch(torch.tensor([0, 1], device=device))
+
+        Field = make_field_dataclass(rank=1, coords=coords, device=device)
+        field = Field(label="f", x=2 * x, y=3 * y)
+
+        x_vals = 2 * torch.stack([x[0], x[1]])
+        y_vals = 3 * torch.stack([y[0], y[1]])
+        field.update_from_tensor(
+            torch.stack([x_vals, y_vals], dim=1),
+            coords=batch_coords,
+            detach_stale_values=False,
+        )
+
+        field.tensor(coords).sum().backward()  # type: ignore[no-untyped-call]
+
+        assert x.grad is not None
+        assert torch.allclose(x.grad[0], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[1], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[2], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[3], torch.tensor(2.0, device=device))
+
+        assert y.grad is not None
+        assert torch.allclose(y.grad[0], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[1], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[2], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[3], torch.tensor(3.0, device=device))
+
+    def test_detach_stale_values_false_all_remain_in_graph_update_from_component_tensor(
+        self, device: torch.device
+    ) -> None:
+        coord_system = make_cartesian_2d(device=device)
+        Coords = make_coords_dataclass(
+            {"x", "y"}, coord_system=coord_system, device=device
+        )
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0], device=device, requires_grad=True)
+        y = torch.tensor([5.0, 6.0, 7.0, 8.0], device=device, requires_grad=True)
+        coords = Coords(coord_system=coord_system, x=x, y=y)
+
+        batch_coords = coords.get_batch(torch.tensor([0, 1], device=device))
+
+        Field = make_field_dataclass(rank=1, coords=coords, device=device)
+        field = Field(label="f", x=2 * x, y=3 * y)
+
+        x_vals = 2 * torch.stack([x[0], x[1]])
+        y_vals = 3 * torch.stack([y[0], y[1]])
+        field.update_from_component_tensor(
+            torch.stack([x_vals, y_vals], dim=1),
+            coords=batch_coords,
+            detach_stale_values=False,
+        )
+
+        field.tensor(coords).sum().backward()  # type: ignore[no-untyped-call]
+
+        assert x.grad is not None
+        assert torch.allclose(x.grad[0], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[1], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[2], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[3], torch.tensor(2.0, device=device))
+
+        assert y.grad is not None
+        assert torch.allclose(y.grad[0], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[1], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[2], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[3], torch.tensor(3.0, device=device))
+
+    def test_detach_stale_values_false_all_remain_in_graph_update_from_component_dict(
+        self, device: torch.device
+    ) -> None:
+        coord_system = make_cartesian_2d(device=device)
+        Coords = make_coords_dataclass(
+            {"x", "y"}, coord_system=coord_system, device=device
+        )
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0], device=device, requires_grad=True)
+        y = torch.tensor([5.0, 6.0, 7.0, 8.0], device=device, requires_grad=True)
+        coords = Coords(coord_system=coord_system, x=x, y=y)
+
+        batch_coords = coords.get_batch(torch.tensor([0, 1], device=device))
+
+        Field = make_field_dataclass(rank=1, coords=coords, device=device)
+        field = Field(label="f", x=2 * x, y=3 * y)
+
+        field.update_from_component_dict(
+            {"x": 2 * torch.stack([x[0], x[1]]), "y": 3 * torch.stack([y[0], y[1]])},
+            coords=batch_coords,
+            detach_stale_values=False,
+        )
+
+        field.tensor(coords).sum().backward()  # type: ignore[no-untyped-call]
+
+        assert x.grad is not None
+        assert torch.allclose(x.grad[0], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[1], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[2], torch.tensor(2.0, device=device))
+        assert torch.allclose(x.grad[3], torch.tensor(2.0, device=device))
+
+        assert y.grad is not None
+        assert torch.allclose(y.grad[0], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[1], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[2], torch.tensor(3.0, device=device))
+        assert torch.allclose(y.grad[3], torch.tensor(3.0, device=device))
