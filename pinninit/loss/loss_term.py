@@ -5,9 +5,10 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from .loss_function import LOSS_FUNCTION_REGISTRY, LossFunctionLabels
+from .loss_function import LOSS_FUNCTION_REGISTRY
 
 if TYPE_CHECKING:
+    from ..data_structure.coords_dataclass import CoordsProtocol
     from .evaluation_context import EvaluationContext
 
 
@@ -17,18 +18,14 @@ class LossTerm(ABC):
     def __init__(
         self,
         field_label: str,
-        component_label: str,
-        loss_function_label: LossFunctionLabels,
     ):
         self.field_label = field_label
-        self.component_label = component_label
-        self.loss_function_label = loss_function_label
-        self.loss_func = LOSS_FUNCTION_REGISTRY[loss_function_label]
 
     @abstractmethod
     def compute_residual(
         self,
         eval_context: EvaluationContext,
+        eval_coords: CoordsProtocol,
     ) -> torch.Tensor:
         """Subclasses must implement this method to compute residual."""
         pass
@@ -36,16 +33,21 @@ class LossTerm(ABC):
     def compute_loss(
         self,
         eval_context: EvaluationContext,
+        eval_coords: CoordsProtocol,
     ) -> torch.Tensor:
-        residuals = self.compute_residual(eval_context)
+        residuals = self.compute_residual(eval_context, eval_coords)
         point_weights = None
         if eval_context.point_weights is not None:
-            point_weights = eval_context.point_weights.tensor(eval_context.coords)
-            if point_weights.shape != residuals.shape:
+            point_weights = eval_context.point_weights.component_tensor(eval_coords)
+            if point_weights.shape[0] != residuals.shape[0]:
                 raise ValueError(
-                    "point_weights and residuals must have the same shape."
+                    "point_weights and residuals must have the same length."
                 )
-        return self.loss_func(residuals=residuals, point_weights=point_weights)
+
+        # Get loss function
+        loss_func = LOSS_FUNCTION_REGISTRY[eval_context.loss_function_label]
+
+        return loss_func(residuals=residuals, point_weights=point_weights)
 
 
 class DataLoss(LossTerm):
@@ -54,12 +56,13 @@ class DataLoss(LossTerm):
     def compute_residual(
         self,
         eval_context: EvaluationContext,
+        eval_coords: CoordsProtocol,
     ) -> torch.Tensor:
-        target = eval_context.input_data.get_field_component(
-            self.field_label, self.component_label, eval_context.coords
+        target = eval_context.input_data.get_field_component_tensor(
+            self.field_label, eval_coords
         )
-        predicted = eval_context.output_data.get_field_component(
-            self.field_label, self.component_label, eval_context.coords
+        predicted = eval_context.output_data.get_field_component_tensor(
+            self.field_label, eval_coords
         )
         return predicted - target
 
@@ -70,7 +73,8 @@ class PhysicsLoss(LossTerm):
     def compute_residual(
         self,
         eval_context: EvaluationContext,
+        eval_coords: CoordsProtocol,
     ) -> torch.Tensor:
-        return eval_context.output_data.get_field_component(
-            self.field_label, self.component_label, eval_context.coords
+        return eval_context.output_data.get_field_component_tensor(
+            self.field_label, eval_coords
         )

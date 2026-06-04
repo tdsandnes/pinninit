@@ -6,9 +6,12 @@ from typing import TYPE_CHECKING
 import torch
 
 if TYPE_CHECKING:
+    from torch.utils.data import DataLoader
+
     from ..data_structure.coords_dataclass import CoordsProtocol
     from ..data_structure.data_container import DataContainer
     from ..data_structure.field_dataclass import FieldProtocol
+    from .loss_function import LossFunctionLabels
 
 
 @dataclass(frozen=False, slots=True)
@@ -19,6 +22,8 @@ class EvaluationContext:
 
     input_data: DataContainer
     output_data: DataContainer
+    loss_function_label: LossFunctionLabels
+    dataloader: DataLoader[CoordsProtocol] | None = None
     point_weights: FieldProtocol | None = None
 
     coords: CoordsProtocol = field(init=False)
@@ -30,11 +35,7 @@ class EvaluationContext:
         input_coords = self.input_data.coords
         output_coords = self.output_data.coords
 
-        if (
-            input_coords is not None
-            and output_coords is not None
-            and input_coords is not output_coords
-        ):
+        if input_coords is not output_coords:
             raise ValueError(
                 "Input and output DataContainer must share identical coordinates."
             )
@@ -45,7 +46,7 @@ class EvaluationContext:
 
     def _validate_point_weights(self, field: FieldProtocol) -> None:
         # Must use same coords as data containers
-        if field.coords != self.coords:
+        if field.coords is not self.coords:
             raise ValueError("point_weights field coords mismatch")
 
         # Must be scalar field
