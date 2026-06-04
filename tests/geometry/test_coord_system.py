@@ -33,6 +33,10 @@ def device() -> torch.device:
     return make_device()
 
 
+def make_bounds(d: dict[str, float], device: torch.device) -> dict[str, torch.Tensor]:
+    return {k: torch.tensor(v, device=device) for k, v in d.items()}
+
+
 # Construction
 class TestCartesianConstruction:
     def test_1d(self, device: torch.device) -> None:
@@ -494,3 +498,190 @@ class TestSphericalMetric:
         phi = torch.tensor([0.5, 1.0, 1.5, 2.0, 2.5], device=device)
         metric = coord_system.metric_tensor(n, {"r": r, "theta": theta, "phi": phi})
         assert torch.allclose(metric.sqrt_det, r**2 * torch.sin(theta))
+
+
+class TestCartesianInternalBounds:
+    def test_passthrough(self, device: torch.device) -> None:
+        coord_system = CartesianCoords(
+            dim_geometric=2, coord_axes={"x", "y"}, device=device
+        )
+        lb = make_bounds({"x": -1.0, "y": -2.0}, device)
+        ub = make_bounds({"x": 3.0, "y": 4.0}, device)
+        out_lb, out_ub = coord_system.internal_bounds_from_geometric(lb, ub)
+        assert torch.allclose(out_lb["x"], lb["x"])
+        assert torch.allclose(out_lb["y"], lb["y"])
+        assert torch.allclose(out_ub["x"], ub["x"])
+        assert torch.allclose(out_ub["y"], ub["y"])
+
+    def test_3d_passthrough(self, device: torch.device) -> None:
+        coord_system = CartesianCoords(
+            dim_geometric=3, coord_axes={"x", "y", "z"}, device=device
+        )
+        lb = make_bounds({"x": 0.0, "y": -1.0, "z": -5.0}, device)
+        ub = make_bounds({"x": 1.0, "y": 1.0, "z": 5.0}, device)
+        out_lb, out_ub = coord_system.internal_bounds_from_geometric(lb, ub)
+        for axis in ["x", "y", "z"]:
+            assert torch.allclose(out_lb[axis], lb[axis])
+            assert torch.allclose(out_ub[axis], ub[axis])
+
+
+class TestCylindricalInternalBounds:
+    def test_full_circle_tight_r(self, device: torch.device) -> None:
+        # theta spans full [0, 2pi]: x, y bounds should be [-r_ub, r_ub]
+        coord_system = CylindricalCoords(
+            dim_geometric=2, coord_axes={"r", "theta"}, device=device
+        )
+        lb = make_bounds({"r": 1.0, "theta": 0.0}, device)
+        ub = make_bounds({"r": 2.0, "theta": 2 * torch.pi}, device)
+        out_lb, out_ub = coord_system.internal_bounds_from_geometric(lb, ub)
+        assert torch.allclose(out_lb["x"], torch.tensor(-2.0), atol=1e-5)
+        assert torch.allclose(out_ub["x"], torch.tensor(2.0), atol=1e-5)
+        assert torch.allclose(out_lb["y"], torch.tensor(-2.0), atol=1e-5)
+        assert torch.allclose(out_ub["y"], torch.tensor(2.0), atol=1e-5)
+
+    def test_first_quadrant_only(self, device: torch.device) -> None:
+        # theta in [0, pi/2]: x = r*cos(theta) in [0, r_ub],
+        # y = r*sin(theta) in [0, r_ub]
+        coord_system = CylindricalCoords(
+            dim_geometric=2, coord_axes={"r", "theta"}, device=device
+        )
+        lb = make_bounds({"r": 0.0, "theta": 0.0}, device)
+        ub = make_bounds({"r": 3.0, "theta": torch.pi / 2}, device)
+        out_lb, out_ub = coord_system.internal_bounds_from_geometric(lb, ub)
+        assert torch.allclose(out_lb["x"], torch.tensor(0.0), atol=1e-5)
+        assert torch.allclose(out_ub["x"], torch.tensor(3.0), atol=1e-5)
+        assert torch.allclose(out_lb["y"], torch.tensor(0.0), atol=1e-5)
+        assert torch.allclose(out_ub["y"], torch.tensor(3.0), atol=1e-5)
+
+    def test_theta_crosses_pi(self, device: torch.device) -> None:
+        # theta in [pi/2, 3pi/2]: cos hits -1 at pi, so x_lb = -r_ub
+        coord_system = CylindricalCoords(
+            dim_geometric=2, coord_axes={"r", "theta"}, device=device
+        )
+        lb = make_bounds({"r": 1.0, "theta": torch.pi / 2}, device)
+        ub = make_bounds({"r": 2.0, "theta": 3 * torch.pi / 2}, device)
+        out_lb, out_ub = coord_system.internal_bounds_from_geometric(lb, ub)
+        assert torch.allclose(out_lb["x"], torch.tensor(-2.0), atol=1e-5)
+        # cos(pi/2) = cos(3pi/2) = 0, so x_ub = 0
+        assert torch.allclose(out_ub["x"], torch.tensor(0.0), atol=1e-5)
+        # sin hits 1 at pi/2 and -1 at 3pi/2
+        assert torch.allclose(out_lb["y"], torch.tensor(-2.0), atol=1e-5)
+        assert torch.allclose(out_ub["y"], torch.tensor(2.0), atol=1e-5)
+
+    def test_nonzero_r_lb_first_quadrant(self, device: torch.device) -> None:
+        # r in [1, 2], theta in [0, pi/2]: x in [0, 2], y in [0, 2]
+        # but minimum x is r_lb * cos(pi/2) = 0, minimum y is r_lb * sin(0) = 0
+        coord_system = CylindricalCoords(
+            dim_geometric=2, coord_axes={"r", "theta"}, device=device
+        )
+        lb = make_bounds({"r": 1.0, "theta": 0.0}, device)
+        ub = make_bounds({"r": 2.0, "theta": torch.pi / 2}, device)
+        out_lb, out_ub = coord_system.internal_bounds_from_geometric(lb, ub)
+        assert torch.allclose(out_lb["x"], torch.tensor(0.0), atol=1e-5)
+        assert torch.allclose(out_ub["x"], torch.tensor(2.0), atol=1e-5)
+        assert torch.allclose(out_lb["y"], torch.tensor(0.0), atol=1e-5)
+        assert torch.allclose(out_ub["y"], torch.tensor(2.0), atol=1e-5)
+
+    def test_includes_z_when_selected(self, device: torch.device) -> None:
+        coord_system = CylindricalCoords(
+            dim_geometric=3, coord_axes={"r", "theta", "z"}, device=device
+        )
+        lb = make_bounds({"r": 0.0, "theta": 0.0, "z": -3.0}, device)
+        ub = make_bounds({"r": 1.0, "theta": 2 * torch.pi, "z": 5.0}, device)
+        out_lb, out_ub = coord_system.internal_bounds_from_geometric(lb, ub)
+        assert "z" in out_lb and "z" in out_ub
+        assert torch.allclose(out_lb["z"], torch.tensor(-3.0))
+        assert torch.allclose(out_ub["z"], torch.tensor(5.0))
+
+    def test_z_not_in_output_when_not_selected(self, device: torch.device) -> None:
+        coord_system = CylindricalCoords(
+            dim_geometric=2, coord_axes={"r", "theta"}, device=device
+        )
+        lb = make_bounds({"r": 0.0, "theta": 0.0}, device)
+        ub = make_bounds({"r": 1.0, "theta": 2 * torch.pi}, device)
+        out_lb, out_ub = coord_system.internal_bounds_from_geometric(lb, ub)
+        assert "z" not in out_lb
+        assert "z" not in out_ub
+
+
+class TestSphericalInternalBounds:
+    def test_no_phi_theta_spans_0_to_pi(self, device: torch.device) -> None:
+        # theta in [0, pi]: sin hits max of 1 at pi/2, x_ub = r_ub
+        # cos goes from 1 to -1, z in [-r_ub, r_ub]
+        coord_system = SphericalCoords(
+            dim_geometric=2, coord_axes={"r", "theta"}, device=device
+        )
+        lb = make_bounds({"r": 0.0, "theta": 0.0}, device)
+        ub = make_bounds({"r": 2.0, "theta": torch.pi}, device)
+        out_lb, out_ub = coord_system.internal_bounds_from_geometric(lb, ub)
+        assert "y" not in out_lb
+        assert torch.allclose(out_lb["x"], torch.tensor(0.0), atol=1e-5)
+        assert torch.allclose(out_ub["x"], torch.tensor(2.0), atol=1e-5)
+        assert torch.allclose(out_lb["z"], torch.tensor(-2.0), atol=1e-5)
+        assert torch.allclose(out_ub["z"], torch.tensor(2.0), atol=1e-5)
+
+    def test_no_phi_theta_upper_hemisphere_only(self, device: torch.device) -> None:
+        # theta in [0, pi/2]: sin in [0, 1], cos in [0, 1]
+        coord_system = SphericalCoords(
+            dim_geometric=2, coord_axes={"r", "theta"}, device=device
+        )
+        lb = make_bounds({"r": 1.0, "theta": 0.0}, device)
+        ub = make_bounds({"r": 3.0, "theta": torch.pi / 2}, device)
+        out_lb, out_ub = coord_system.internal_bounds_from_geometric(lb, ub)
+        assert torch.allclose(out_lb["x"], torch.tensor(0.0), atol=1e-5)
+        assert torch.allclose(out_ub["x"], torch.tensor(3.0), atol=1e-5)
+        assert torch.allclose(out_lb["z"], torch.tensor(0.0), atol=1e-5)
+        assert torch.allclose(out_ub["z"], torch.tensor(3.0), atol=1e-5)
+
+    def test_with_phi_full_sphere(self, device: torch.device) -> None:
+        # Full sphere: x, y, z all in [-r_ub, r_ub]
+        coord_system = SphericalCoords(
+            dim_geometric=3, coord_axes={"r", "theta", "phi"}, device=device
+        )
+        lb = make_bounds({"r": 0.0, "theta": 0.0, "phi": 0.0}, device)
+        ub = make_bounds({"r": 2.0, "theta": torch.pi, "phi": 2 * torch.pi}, device)
+        out_lb, out_ub = coord_system.internal_bounds_from_geometric(lb, ub)
+        for axis in ["x", "y", "z"]:
+            assert torch.allclose(out_lb[axis], torch.tensor(-2.0), atol=1e-5)
+            assert torch.allclose(out_ub[axis], torch.tensor(2.0), atol=1e-5)
+
+    def test_with_phi_first_octant(self, device: torch.device) -> None:
+        # theta in [0, pi/2], phi in [0, pi/2]: all components >= 0
+        coord_system = SphericalCoords(
+            dim_geometric=3, coord_axes={"r", "theta", "phi"}, device=device
+        )
+        lb = make_bounds({"r": 0.0, "theta": 0.0, "phi": 0.0}, device)
+        ub = make_bounds({"r": 1.0, "theta": torch.pi / 2, "phi": torch.pi / 2}, device)
+        out_lb, out_ub = coord_system.internal_bounds_from_geometric(lb, ub)
+        assert torch.allclose(out_lb["x"], torch.tensor(0.0), atol=1e-5)
+        assert torch.allclose(out_lb["y"], torch.tensor(0.0), atol=1e-5)
+        assert torch.allclose(out_lb["z"], torch.tensor(0.0), atol=1e-5)
+        assert torch.allclose(out_ub["x"], torch.tensor(1.0), atol=1e-5)
+        assert torch.allclose(out_ub["y"], torch.tensor(1.0), atol=1e-5)
+        assert torch.allclose(out_ub["z"], torch.tensor(1.0), atol=1e-5)
+
+    def test_y_not_in_output_when_phi_not_selected(self, device: torch.device) -> None:
+        coord_system = SphericalCoords(
+            dim_geometric=2, coord_axes={"r", "theta"}, device=device
+        )
+        lb = make_bounds({"r": 0.0, "theta": 0.0}, device)
+        ub = make_bounds({"r": 1.0, "theta": torch.pi}, device)
+        out_lb, out_ub = coord_system.internal_bounds_from_geometric(lb, ub)
+        assert "y" not in out_lb
+        assert "y" not in out_ub
+
+    def test_fixed_r_cylindrical(self, device: torch.device) -> None:
+        # r is fixed, so bounds should use fixed value for r
+        coord_system = SphericalCoords(
+            dim_geometric=2,
+            coord_axes={"theta"},
+            device=device,
+            fixed_axes={"r": 2.0},
+        )
+        lb = make_bounds({"theta": 0.0}, device)
+        ub = make_bounds({"theta": torch.pi / 2}, device)
+        out_lb, out_ub = coord_system.internal_bounds_from_geometric(lb, ub)
+        # sin(theta) in [0, 1], r fixed at 2: x in [0, 2]
+        assert torch.allclose(out_ub["x"], torch.tensor(2.0), atol=1e-5)
+        # cos(theta) in [0, 1]: z in [0, 2]
+        assert torch.allclose(out_ub["z"], torch.tensor(2.0), atol=1e-5)

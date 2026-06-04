@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from .coordinate_system import CoordSystem, CoordSystemLabels
+from .coordinate_system import COORD_SYSTEM_REGISTRY, CoordSystem, CoordSystemLabels
 
 
 class Domain:
@@ -16,31 +16,25 @@ class Domain:
     ):
         self.coord_system = coord_system
         self.geometric_labels = coord_system.axes_labels_selected
+        self.metadata_selected_bounds = coord_system.axes_bounds_selected
         self.device = device
 
-        self._set_bounds(geometric_bounds)
+        self._set_geometric_bounds(geometric_bounds)
+        self._set_internal_bounds()
         self._set_periodic_coords(periodic_coords)
 
-    def _set_bounds(
+    def _set_geometric_bounds(
         self,
         geometric_bounds: dict[str, tuple[float | None, float | None]] | None,
     ) -> None:
-        metadata_axes = self.coord_system.metadata.axes_labels
-        metadata_bounds = self.coord_system.metadata.axes_bounds
-
-        # Map metadata bounds by axis label
-        metadata_bounds_dict: dict[str, tuple[float, float]] = {
-            axis: metadata_bounds[i] for i, axis in enumerate(metadata_axes)
-        }
-
-        lbs: list[float] = []
-        ubs: list[float] = []
+        self.geometric_lb: dict[str, torch.Tensor] = {}
+        self.geometric_ub: dict[str, torch.Tensor] = {}
 
         for axis in self.geometric_labels:
-            if axis not in metadata_bounds_dict:
+            if axis not in self.metadata_selected_bounds:
                 raise ValueError(f"No metadata bounds defined for axis '{axis}'")
 
-            meta_lb, meta_ub = metadata_bounds_dict[axis]
+            meta_lb, meta_ub = self.metadata_selected_bounds[axis]
 
             # Use user-provided bounds if available, else fall back to metadata
             if geometric_bounds is None or axis not in geometric_bounds:
@@ -66,19 +60,21 @@ class Domain:
                     f"got [{lb}, {ub}]"
                 )
 
-            lbs.append(lb)
-            ubs.append(ub)
+            self.geometric_lb[axis] = torch.tensor(lb, device=self.device)
+            self.geometric_ub[axis] = torch.tensor(ub, device=self.device)
 
-        self.geometric_lb = torch.tensor(lbs, device=self.device)
-        self.geometric_ub = torch.tensor(ubs, device=self.device)
+    def _set_internal_bounds(self) -> None:
+        # Derive internal bounds from coord system
+        self.internal_lb, self.internal_ub = (
+            self.coord_system.internal_bounds_from_geometric(
+                self.geometric_lb, self.geometric_ub
+            )
+        )
 
-    def contains_geometric(
-        self,
-        geometric: torch.Tensor,
-    ) -> torch.Tensor:
-        return (
-            (geometric >= self.geometric_lb) & (geometric <= self.geometric_ub)
-        ).all(dim=1)
+    def contains_geometric(self, geometric: torch.Tensor) -> torch.Tensor:
+        lb = torch.stack([self.geometric_lb[label] for label in self.geometric_labels])
+        ub = torch.stack([self.geometric_ub[label] for label in self.geometric_labels])
+        return ((geometric >= lb) & (geometric <= ub)).all(dim=1)
 
     def _set_periodic_coords(
         self,
@@ -94,15 +90,14 @@ class Domain:
         ----------
         periodic_coords : set[str] | None
             Set of geometric axis labels to treat as periodic. None means no
-            periodicity.
+            periodicity.f
         """
         if periodic_coords is None:
             self.periodic_coords: dict[str, float] = {}
             return
 
-        if (
-            self.coord_system.metadata.internal_coord_system
-            != CoordSystemLabels.CARTESIAN
+        if not isinstance(
+            self.coord_system, COORD_SYSTEM_REGISTRY[CoordSystemLabels.CARTESIAN]
         ):
             raise ValueError(
                 "Periodic boundary conditions are currently only supported for "
@@ -119,7 +114,7 @@ class Domain:
 
         # Infer period from domain bounds for each periodic axis
         self.periodic_coords = {
-            label: (self.geometric_ub[i] - self.geometric_lb[i]).item()
-            for i, label in enumerate(self.geometric_labels)
+            label: (self.geometric_ub[label] - self.geometric_lb[label]).item()
+            for label in self.geometric_labels
             if label in periodic_coords
         }

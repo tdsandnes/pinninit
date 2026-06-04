@@ -3,11 +3,13 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
+from itertools import product
 from typing import TYPE_CHECKING
 
 import numpy as np
 import torch
 
+from .geometry_utils import trig_bounds
 from .metric_tensor import DiagonalMetricTensor, IdentityMetricTensor
 
 if TYPE_CHECKING:
@@ -29,7 +31,7 @@ class CoordSystemMetadata:
     name: str
     is_orthogonal: bool
     axes_labels: tuple[str, ...]
-    axes_bounds: tuple[tuple[float, float], ...]
+    axes_bounds: dict[str, tuple[float, float]]
     max_dim_geometric: int
     internal_coord_system: CoordSystemLabels
     required_axes: set[str]
@@ -68,9 +70,10 @@ class CoordSystem(ABC):
         self.axes_labels_selected = tuple(
             self.metadata.axes_labels[i] for i in self.indices_selected
         )
-        self.axes_bounds_selected = tuple(
-            self.metadata.axes_bounds[i] for i in self.indices_selected
-        )
+        self.axes_bounds_selected = {
+            label: self.metadata.axes_bounds[label]
+            for label in self.axes_labels_selected
+        }
         self.fixed_axes = (
             {
                 label: fixed_axes[label]
@@ -98,6 +101,14 @@ class CoordSystem(ABC):
     def map_geometric_to_internal_geometric(
         self, geometric_coords: dict[str, torch.Tensor]
     ) -> dict[str, torch.Tensor]:
+        pass
+
+    @abstractmethod
+    def internal_bounds_from_geometric(
+        self,
+        geometric_lb: dict[str, torch.Tensor],
+        geometric_ub: dict[str, torch.Tensor],
+    ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
         pass
 
     def _get_coord(
@@ -183,7 +194,11 @@ class CartesianCoords(CoordSystem):
         name="Cartesian Coordinates",
         is_orthogonal=True,
         axes_labels=("x", "y", "z"),
-        axes_bounds=((-np.inf, np.inf), (-np.inf, np.inf), (-np.inf, np.inf)),
+        axes_bounds={
+            "x": (-np.inf, np.inf),
+            "y": (-np.inf, np.inf),
+            "z": (-np.inf, np.inf),
+        },
         max_dim_geometric=3,
         internal_coord_system=CoordSystemLabels.CARTESIAN,
         required_axes=set(),
@@ -229,6 +244,14 @@ class CartesianCoords(CoordSystem):
         # For Cartesian, internal geometric coords are the same as geometric coords
         return geometric_coords
 
+    def internal_bounds_from_geometric(
+        self,
+        geometric_lb: dict[str, torch.Tensor],
+        geometric_ub: dict[str, torch.Tensor],
+    ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+        # For Cartesian, internal geometric coords are the same as geometric coords
+        return geometric_lb, geometric_ub
+
 
 class CylindricalCoords(CoordSystem):
     """Cylindrical polar coordinate system: r, theta, z."""
@@ -238,7 +261,7 @@ class CylindricalCoords(CoordSystem):
         name="Cylindrical Polar Coordinates",
         is_orthogonal=True,
         axes_labels=("r", "theta", "z"),
-        axes_bounds=((0, np.inf), (0, 2 * np.pi), (-np.inf, np.inf)),
+        axes_bounds={"r": (0, np.inf), "theta": (0, 2 * np.pi), "z": (-np.inf, np.inf)},
         max_dim_geometric=3,
         internal_coord_system=CoordSystemLabels.CARTESIAN,
         required_axes={"r"},
@@ -334,6 +357,46 @@ class CylindricalCoords(CoordSystem):
             internal_geometric_coords["z"] = self._get_coord("z", geometric_coords)
         return internal_geometric_coords
 
+    def internal_bounds_from_geometric(
+        self,
+        geometric_lb: dict[str, torch.Tensor],
+        geometric_ub: dict[str, torch.Tensor],
+    ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+        # r and theta bounds
+        r_lb = self._get_coord("r", geometric_lb)
+        r_ub = self._get_coord("r", geometric_ub)
+        theta_lb = self._get_coord("theta", geometric_lb)
+        theta_ub = self._get_coord("theta", geometric_ub)
+
+        # sin(theta) and cos(theta) bounds
+        sin_lb, sin_ub = trig_bounds("sin", theta_lb, theta_ub)
+        cos_lb, cos_ub = trig_bounds("cos", theta_lb, theta_ub)
+
+        # x = r cos(theta), y = r sin(theta)
+        x_candidates = torch.stack(
+            [r * c for r, c in product([r_lb, r_ub], [cos_lb, cos_ub])]
+        )
+        y_candidates = torch.stack(
+            [r * s for r, s in product([r_lb, r_ub], [sin_lb, sin_ub])]
+        )
+
+        internal_lb = {
+            "x": torch.min(x_candidates),
+            "y": torch.min(y_candidates),
+        }
+        internal_ub = {
+            "x": torch.max(x_candidates),
+            "y": torch.max(y_candidates),
+        }
+
+        if "z" in self.axes_labels_selected:
+            z_lb = self._get_coord("z", geometric_lb)
+            z_ub = self._get_coord("z", geometric_ub)
+            internal_lb["z"] = z_lb
+            internal_ub["z"] = z_ub
+
+        return internal_lb, internal_ub
+
 
 class SphericalCoords(CoordSystem):
     """Spherical polar coordinate system: r, theta, phi."""
@@ -343,7 +406,7 @@ class SphericalCoords(CoordSystem):
         name="Spherical Polar Coordinates",
         is_orthogonal=True,
         axes_labels=("r", "theta", "phi"),
-        axes_bounds=((0, np.inf), (0, np.pi), (0, 2 * np.pi)),
+        axes_bounds={"r": (0, np.inf), "theta": (0, np.pi), "phi": (0, 2 * np.pi)},
         max_dim_geometric=3,
         internal_coord_system=CoordSystemLabels.CARTESIAN,
         required_axes={"r", "theta"},
@@ -445,6 +508,79 @@ class SphericalCoords(CoordSystem):
                 "x": r * torch.sin(theta),
                 "z": r * torch.cos(theta),
             }
+
+    def internal_bounds_from_geometric(
+        self,
+        geometric_lb: dict[str, torch.Tensor],
+        geometric_ub: dict[str, torch.Tensor],
+    ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+        # Extract bounds
+        r_lb = self._get_coord("r", geometric_lb)
+        r_ub = self._get_coord("r", geometric_ub)
+        theta_lb = self._get_coord("theta", geometric_lb)
+        theta_ub = self._get_coord("theta", geometric_ub)
+
+        # Trig bounds for theta
+        sin_t_lb, sin_t_ub = trig_bounds("sin", theta_lb, theta_ub)
+        cos_t_lb, cos_t_ub = trig_bounds("cos", theta_lb, theta_ub)
+
+        # z = r cos(theta)
+        z_bound_combinations = torch.stack(
+            [r * c for r, c in product([r_lb, r_ub], [cos_t_lb, cos_t_ub])]
+        )
+
+        if "phi" in self.axes_labels_selected:
+            phi_lb = self._get_coord("phi", geometric_lb)
+            phi_ub = self._get_coord("phi", geometric_ub)
+
+            sin_p_lb, sin_p_ub = trig_bounds("sin", phi_lb, phi_ub)
+            cos_p_lb, cos_p_ub = trig_bounds("cos", phi_lb, phi_ub)
+
+            # x = r sin(theta) cos(phi), y = r sin(theta) sin(phi)
+            x_bound_combinations = torch.stack(
+                [
+                    r * s * c
+                    for r, s, c in product(
+                        [r_lb, r_ub], [sin_t_lb, sin_t_ub], [cos_p_lb, cos_p_ub]
+                    )
+                ]
+            )
+            y_bound_combinations = torch.stack(
+                [
+                    r * s * c
+                    for r, s, c in product(
+                        [r_lb, r_ub], [sin_t_lb, sin_t_ub], [sin_p_lb, sin_p_ub]
+                    )
+                ]
+            )
+
+            internal_lb = {
+                "x": torch.min(x_bound_combinations),
+                "y": torch.min(y_bound_combinations),
+                "z": torch.min(z_bound_combinations),
+            }
+            internal_ub = {
+                "x": torch.max(x_bound_combinations),
+                "y": torch.max(y_bound_combinations),
+                "z": torch.max(z_bound_combinations),
+            }
+
+        else:
+            # x = r sin(theta), no phi
+            x_bound_combinations = torch.stack(
+                [r * s for r, s in product([r_lb, r_ub], [sin_t_lb, sin_t_ub])]
+            )
+
+            internal_lb = {
+                "x": torch.min(x_bound_combinations),
+                "z": torch.min(z_bound_combinations),
+            }
+            internal_ub = {
+                "x": torch.max(x_bound_combinations),
+                "z": torch.max(z_bound_combinations),
+            }
+
+        return internal_lb, internal_ub
 
 
 # Mapping from coordinate system labels to classes
