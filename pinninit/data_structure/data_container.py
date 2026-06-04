@@ -87,6 +87,18 @@ class DataContainer:
         self._validate_eval_coords(label, active_coords, coords, enforce_ancestry)
         return self.get_field(label).tensor(coords)
 
+    def get_field_component(
+        self,
+        field_label: str,
+        component_label: str,
+        coords: CoordsProtocol | None = None,
+        enforce_ancestry: bool = True,
+    ) -> torch.Tensor:
+        coords = coords or self.coords
+        active_coords = self._get_active_coords(field_label)
+        self._validate_eval_coords(field_label, active_coords, coords, enforce_ancestry)
+        return self.get_field(field_label).get_component(component_label, coords)
+
     def get_field_component_tensor(
         self,
         label: str,

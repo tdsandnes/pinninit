@@ -30,7 +30,9 @@ class FieldProtocol(Protocol):
     def _root_indices_for_coords(
         self, coords: CoordsProtocol
     ) -> torch.Tensor | None: ...
-    def get_component(self, label: str) -> torch.Tensor: ...
+    def get_component(
+        self, label: str, coords: CoordsProtocol | None = None
+    ) -> torch.Tensor: ...
     def component_tensor(self, coords: CoordsProtocol) -> torch.Tensor: ...
     def tensor(self, coords: CoordsProtocol) -> torch.Tensor: ...
     def update_from_component_dict(
@@ -38,18 +40,21 @@ class FieldProtocol(Protocol):
         new_components: dict[str, torch.Tensor],
         coords: CoordsProtocol | None = None,
         detach_stale_values: bool = True,
+        detach_new_values: bool = False,
     ) -> None: ...
     def update_from_component_tensor(
         self,
         new_tensor: torch.Tensor,
         coords: CoordsProtocol | None = None,
         detach_stale_values: bool = True,
+        detach_new_values: bool = False,
     ) -> None: ...
     def update_from_tensor(
         self,
         new_tensor: torch.Tensor,
         coords: CoordsProtocol | None = None,
         detach_stale_values: bool = True,
+        detach_new_values: bool = False,
     ) -> None: ...
     def _validate_inputs(self) -> None: ...
     @property
@@ -120,36 +125,44 @@ def _root_indices_for_coords(
     return parent_indices[coords.parent_idx]
 
 
-def get_component(self: FieldProtocol, label: str) -> torch.Tensor:
+def get_component(
+    self: FieldProtocol, label: str, coords: CoordsProtocol | None = None
+) -> torch.Tensor:
     """Get a specific component of the field by label."""
+    coords = coords or self.coords
     if label not in self.component_labels:
         raise KeyError(f"Component label '{label}' not found in field components")
+    root_indices = self._root_indices_for_coords(coords)
     component: torch.Tensor = getattr(self, label)
-    return component
+    return component if root_indices is None else component[root_indices]
 
 
-def component_tensor(self: FieldProtocol, coords: CoordsProtocol) -> torch.Tensor:
+def component_tensor(
+    self: FieldProtocol, coords: CoordsProtocol | None = None
+) -> torch.Tensor:
     """
     Field values arranged in tensor of shape (n_points, n_components).
     Useful for e.g. component-wise comparisons.
 
     Note: scalar fields have shape (n_points, 1).
     """
+    coords = coords or self.coords
     root_indices = self._root_indices_for_coords(coords)
+    return (
+        self._component_tensor
+        if root_indices is None
+        else self._component_tensor[root_indices]
+    )
 
-    if root_indices is None:
-        return self._component_tensor
 
-    return self._component_tensor[root_indices]
-
-
-def tensor(self: FieldProtocol, coords: CoordsProtocol) -> torch.Tensor:
+def tensor(self: FieldProtocol, coords: CoordsProtocol | None = None) -> torch.Tensor:
     """
     Field values arranged in tensor of shape (n_points, n_geometric, ..., n_geometric).
     Useful for e.g. linear algebra.
 
     Note: scalar fields have shape (n_points,).
     """
+    coords = coords or self.coords
 
     # If full original coords
     if coords is self.coords:
@@ -172,6 +185,7 @@ def update_from_component_dict(
     new_components: dict[str, torch.Tensor],
     coords: CoordsProtocol | None = None,
     detach_stale_values: bool = True,
+    detach_new_values: bool = False,
 ) -> None:
     """Update field from dict of components in form
     dict[component label: tensor with shape (n_points,)]
@@ -203,7 +217,10 @@ def update_from_component_dict(
         dim=1,
     )
     self.update_from_component_tensor(
-        new_tensor, coords=coords, detach_stale_values=detach_stale_values
+        new_tensor,
+        coords=coords,
+        detach_stale_values=detach_stale_values,
+        detach_new_values=detach_new_values,
     )
 
 
@@ -212,6 +229,7 @@ def update_from_component_tensor(
     new_tensor: torch.Tensor,
     coords: CoordsProtocol | None = None,
     detach_stale_values: bool = True,
+    detach_new_values: bool = False,
 ) -> None:
     """Update the field from a component tensor of shape (n_points, n_components).
 
@@ -233,6 +251,9 @@ def update_from_component_tensor(
         raise ValueError(
             f"Component tensor is on {new_tensor.device}, expected {self.device}"
         )
+
+    if detach_new_values:
+        new_tensor = new_tensor.detach()
 
     root_indices = self._root_indices_for_coords(coords)
 
@@ -257,6 +278,7 @@ def update_from_tensor(
     new_tensor: torch.Tensor,
     coords: CoordsProtocol | None = None,
     detach_stale_values: bool = True,
+    detach_new_values: bool = False,
 ) -> None:
     """Update the field from a structured tensor of shape
     (n_points, n_geometric, ..., n_geometric)
@@ -287,7 +309,10 @@ def update_from_tensor(
     component_tensor = new_tensor.reshape(coords.n_points, -1)
 
     self.update_from_component_tensor(
-        component_tensor, coords=coords, detach_stale_values=detach_stale_values
+        component_tensor,
+        coords=coords,
+        detach_stale_values=detach_stale_values,
+        detach_new_values=detach_new_values,
     )
 
 

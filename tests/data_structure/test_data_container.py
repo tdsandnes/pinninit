@@ -272,6 +272,79 @@ class TestDataContainerBatching:
         with pytest.raises(ValueError, match="Evaluation coords"):
             data.set_field_from_tensor("u", values, coords=unrelated_coords)
 
+    def test_get_field_component_full_coords(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        device: torch.device,
+    ) -> None:
+        data = build_container(cartesian_2d, xy_2d)
+        coords = data.coords
+        values = coords.get_coord("x") + coords.get_coord("y")
+        data.set_field_from_tensor("u", values)
+
+        component = data.get_field_component("u", "value")
+        assert torch.allclose(component, values)
+
+    def test_get_field_component_batch_coords(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        device: torch.device,
+    ) -> None:
+        data = build_container(cartesian_2d, xy_2d)
+        coords = data.coords
+        values = coords.get_coord("x") + coords.get_coord("y")
+        data.set_field_from_tensor("u", values)
+
+        idx = torch.tensor([0, 2, 4], dtype=torch.long, device=device)
+        batch_coords = coords.get_batch(idx)
+
+        component = data.get_field_component("u", "value", batch_coords)
+        assert torch.allclose(component, values[idx])
+
+    def test_get_field_component_vector_field(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        device: torch.device,
+    ) -> None:
+        data = build_container(cartesian_2d, xy_2d)
+        coords = data.coords
+        component_tensor = torch.stack(
+            [coords.get_coord("x"), coords.get_coord("y")], dim=1
+        )
+        data.set_field_from_component_tensor("v", component_tensor)
+
+        x_component = data.get_field_component("v", "x")
+        y_component = data.get_field_component("v", "y")
+
+        assert torch.allclose(x_component, coords.get_coord("x"))
+        assert torch.allclose(y_component, coords.get_coord("y"))
+
+    def test_get_field_component_unset_raises(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        data = build_container(cartesian_2d, xy_2d)
+
+        with pytest.raises(ValueError, match="has not been set yet"):
+            data.get_field_component("u", "value")
+
+    def test_get_field_component_invalid_component_raises(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        device: torch.device,
+    ) -> None:
+        data = build_container(cartesian_2d, xy_2d)
+        values = torch.ones(data.coords.n_points, device=device)
+        data.set_field_from_tensor("u", values)
+
+        with pytest.raises(KeyError, match="not found in field components"):
+            data.get_field_component("u", "invalid_component")
+
 
 class TestDataContainerConsts:
     def test_set_and_get_const(

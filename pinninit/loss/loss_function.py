@@ -5,8 +5,6 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from .loss_utils import is_loss_input_residual
-
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -14,45 +12,60 @@ if TYPE_CHECKING:
 class LossFunctionLabels(str, Enum):
     """Enumeration of loss function labels."""
 
-    MSE = "mse"  # Mean Square Error
+    MSE = "mse"  # Mean Square Error: sum(res^2) / n_points
+    WEIGHTED_MEAN_MSE = "weighted_mean_mse"  # sum(w * res^2) / sum(weight)
+    WEIGHTED_POINT_AVERAGED_MSE = (
+        "weighted_point_avg_mse_loss"  # sum(w *res^2)/n_points
+    )
 
 
 def mse_loss(
-    f_pred: torch.Tensor | None = None,
-    f_target: torch.Tensor | None = None,
-    f_residual: torch.Tensor | None = None,
+    residuals: torch.Tensor,
+    _point_weights: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """
     Mean Squared Error (MSE) loss between predicted and exact function values.
-
-    There are two valid ways to call this function:
-        (1) Provide both f_pred and f_target
-        (2) Provide f_residual only
-
-    Parameters
-    ----------
-    f_pred : torch.Tensor
-        Predicted function values.
-    f_target : torch.Tensor
-        Target function values.
-    f_residual : torch.Tensor, optional
-        Precomputed residual (f_pred - f_target)
-
-    Returns
-    -------
-    torch.Tensor
-        MSE loss.
     """
-    # Use residual value if provided. Otherwise, use f_pred and f_target.
-    loss: torch.Tensor
-    if is_loss_input_residual(f_pred, f_target, f_residual):
-        assert f_residual is not None
-        loss = (f_residual**2).mean()
-    else:
-        assert f_pred is not None and f_target is not None
-        loss = ((f_pred - f_target) ** 2).mean()
+    if _point_weights is not None:
+        raise ValueError("point_weights should not be provided for MSE loss")
 
-    return loss
+    return (residuals**2).mean()
+
+
+def weighted_mean_mse_loss(
+    residuals: torch.Tensor,
+    point_weights: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """
+    Weight mean square loss between predicted and exact function values.
+    """
+    if point_weights is None:
+        raise ValueError("point_weights must be provided for weighted MSE loss")
+
+    if point_weights.shape != residuals.shape:
+        raise ValueError(
+            f"point_weights shape {point_weights.shape} "
+            f"must match residual shape {residuals.shape}"
+        )
+    return (point_weights * residuals**2).sum() / point_weights.sum()
+
+
+def weighted_point_avg_mse_loss(
+    residuals: torch.Tensor,
+    point_weights: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """
+    Weight mean square loss, but not divided by total weight.
+    """
+    if point_weights is None:
+        raise ValueError("point_weights must be provided for weighted MSE loss")
+
+    if point_weights.shape != residuals.shape:
+        raise ValueError(
+            f"point_weights shape {point_weights.shape} "
+            f"must match residual shape {residuals.shape}"
+        )
+    return (point_weights * residuals**2).mean()
 
 
 # Mapping from loss function labels to python functions
@@ -61,4 +74,6 @@ LOSS_FUNCTION_REGISTRY: dict[
     Callable[..., torch.Tensor],
 ] = {
     LossFunctionLabels.MSE: mse_loss,
+    LossFunctionLabels.WEIGHTED_MEAN_MSE: weighted_mean_mse_loss,
+    LossFunctionLabels.WEIGHTED_POINT_AVERAGED_MSE: weighted_point_avg_mse_loss,
 }

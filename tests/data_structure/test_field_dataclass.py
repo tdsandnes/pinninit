@@ -764,19 +764,64 @@ class TestFieldNeuralNetworkIntegration:
         )
 
 
-class TestGetComponentErrors:
-    def test_invalid_component_label_raises_keyerror(
-        self,
-        coords_2d: CoordsProtocol,
-        device: torch.device,
+class TestGetComponent:
+    def test_get_component_full_coords(
+        self, coords_2d: CoordsProtocol, device: torch.device
     ) -> None:
-        field = make_field(rank=2, coords=coords_2d, device=device)
+        field = make_field(rank=1, coords=coords_2d, device=device)
+        component = field.get_component("x", coords_2d)
+        assert component.shape == (coords_2d.n_points,)
+        assert torch.allclose(component, field.x)  # type: ignore[attr-defined]
 
+    def test_get_component_batch_coords(self, device: torch.device) -> None:
+        coord_system = make_cartesian_2d(device=device)
+        Coords = make_coords_dataclass(
+            {"x", "y"}, coord_system=coord_system, device=device
+        )
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0], device=device)
+        y = torch.tensor([5.0, 6.0, 7.0, 8.0], device=device)
+        coords = Coords(x=x, y=y)
+
+        Field = make_field_dataclass(rank=1, coords=coords, device=device)
+        f_x = torch.tensor([10.0, 20.0, 30.0, 40.0], device=device)
+        f_y = torch.tensor([50.0, 60.0, 70.0, 80.0], device=device)
+        field = Field(label="f", x=f_x, y=f_y)
+
+        idx = torch.tensor([0, 2], device=device)
+        batch_coords = coords.get_batch(idx)
+
+        component = field.get_component("x", batch_coords)
+        assert torch.allclose(component, f_x[idx])
+
+    def test_get_component_nested_batch(self, device: torch.device) -> None:
+        coord_system = make_cartesian_2d(device=device)
+        Coords = make_coords_dataclass(
+            {"x", "y"}, coord_system=coord_system, device=device
+        )
+        x = torch.tensor([1.0, 2.0, 3.0, 4.0], device=device)
+        y = torch.tensor([5.0, 6.0, 7.0, 8.0], device=device)
+        coords = Coords(x=x, y=y)
+
+        Field = make_field_dataclass(rank=1, coords=coords, device=device)
+        f_x = torch.tensor([10.0, 20.0, 30.0, 40.0], device=device)
+        field = Field(label="f", x=f_x, y=torch.zeros_like(f_x))
+
+        idx1 = torch.tensor([0, 2, 3], device=device)
+        idx2 = torch.tensor([0, 2], device=device)
+        batch2 = coords.get_batch(idx1).get_batch(idx2)
+
+        component = field.get_component("x", batch2)
+        assert torch.allclose(component, f_x[idx1[idx2]])
+
+    def test_get_component_invalid_label_raises(
+        self, coords_2d: CoordsProtocol, device: torch.device
+    ) -> None:
+        field = make_field(rank=1, coords=coords_2d, device=device)
         with pytest.raises(KeyError, match="not found in field components"):
-            field.get_component("invalid_label")
+            field.get_component("z", coords_2d)
 
 
-class TestDetachStaleValues:
+class TestDetachValues:
     def test_detach_stale_values_true_across_two_batches_update_from_tensor(
         self, device: torch.device
     ) -> None:
@@ -1062,3 +1107,46 @@ class TestDetachStaleValues:
         assert torch.allclose(y.grad[1], torch.tensor(3.0, device=device))
         assert torch.allclose(y.grad[2], torch.tensor(3.0, device=device))
         assert torch.allclose(y.grad[3], torch.tensor(3.0, device=device))
+
+    def test_update_from_tensor_with_detach_new_values_true(
+        self, coords_2d: CoordsProtocol, device: torch.device
+    ) -> None:
+        field = make_field(rank=1, coords=coords_2d, device=device)
+        source_tensor = torch.ones(
+            (coords_2d.n_points, 2), device=device, requires_grad=True
+        )
+        dependent_tensor = source_tensor * 3.0
+        field.update_from_tensor(dependent_tensor, detach_new_values=True)
+        assert torch.allclose(
+            field.get_component("x"), torch.full_like(field.get_component("x"), 3.0)
+        )
+        assert field.get_component("x").requires_grad is False
+        assert field.get_component("x").grad_fn is None
+        assert field.tensor(coords_2d).requires_grad is False
+
+    def test_update_from_tensor_with_detach_new_values_false(
+        self, coords_2d: CoordsProtocol, device: torch.device
+    ) -> None:
+        field = make_field(rank=1, coords=coords_2d, device=device)
+        source_tensor = torch.ones(
+            (coords_2d.n_points, 2), device=device, requires_grad=True
+        )
+        dependent_tensor = source_tensor * 4.0
+        field.update_from_tensor(dependent_tensor, detach_new_values=False)
+        assert field.get_component("x").requires_grad is True
+        assert field.get_component("x").grad_fn is not None
+        assert field.tensor(coords_2d).requires_grad is True
+
+    def test_update_from_component_dict_detachment_chaining(
+        self, coords_2d: CoordsProtocol, device: torch.device
+    ) -> None:
+        field = make_field(rank=1, coords=coords_2d, device=device)
+        source = torch.ones(coords_2d.n_points, device=device, requires_grad=True)
+        component_dict = {
+            "x": source * 5.0,
+            "y": source * 10.0,
+        }
+
+        field.update_from_component_dict(component_dict, detach_new_values=True)
+        assert field.get_component("x").grad_fn is None
+        assert field.get_component("y").grad_fn is None
