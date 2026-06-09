@@ -38,6 +38,11 @@ def build_coords_class(
         A dynamically-created Coords dataclass.
     """
     coord_labels = set(coord_system_config.all_axis_labels)
+    if not set(coord_system.axes_labels_selected).issubset(coord_labels):
+        raise ValueError(
+            f"CoordSystem geometric axes {coord_system.axes_labels_selected} "
+            f"are not a subset of coord_labels {coord_labels}."
+        )
     return make_coords_dataclass(
         coord_labels=coord_labels,
         coord_system=coord_system,

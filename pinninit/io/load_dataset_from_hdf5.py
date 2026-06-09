@@ -50,13 +50,6 @@ def load_coords_from_hdf5(
             f"Dataset '{dataset_label}' has no file_path. Cannot load from HDF5."
         )
 
-    # Geometric axes must be a subset of the requested coord labels
-    if not set(Coords.coord_system.axes_labels_selected).issubset(set(coord_labels)):
-        raise ValueError(
-            f"Coord system geometric axes {Coords.coord_system.axes_labels_selected} "
-            f"are not a subset of coord_labels {coord_labels}."
-        )
-
     with h5py.File(file_path, "r") as f:
         # Check dataset
         if dataset_label not in f:

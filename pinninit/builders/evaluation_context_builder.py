@@ -28,6 +28,9 @@ if TYPE_CHECKING:
     from ..geometry.domain import Domain
     from ..loss.loss_function import LossFunctionLabels
 
+# Loss function used for validation loss
+_VAL_LOSS_FN = LossFunctionLabels.MSE
+
 
 def build_evaluation_contexts(
     loss_term_config: LossTermConfig,
@@ -133,7 +136,7 @@ def build_evaluation_contexts(
         fields_config=fields_config,
         const_configs=const_configs,
         equations=equations,
-        loss_fn_label=LossFunctionLabels.MSE,  # Validation loss fn is always MSE
+        loss_fn_label=_VAL_LOSS_FN,  # Validation loss fn is always MSE
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,

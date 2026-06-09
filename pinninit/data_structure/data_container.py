@@ -55,20 +55,28 @@ class DataContainer:
             const_labels or set(), None
         )
 
+        # Cache for accessing fields
+        self._fields_cache: dict[str, FieldProtocol] | None = None
+        self._fields_active_coords_cache: dict[str, CoordsProtocol | None] | None = None
+
     @property
     def field_labels(self) -> set[str]:
         return self.primary_field_labels | self.derived_field_labels
 
     @property
     def fields(self) -> dict[str, FieldProtocol]:
-        return {**self.primary_fields, **self.derived_fields}
+        if self._fields_cache is None:
+            self._fields_cache = {**self.primary_fields, **self.derived_fields}
+        return self._fields_cache
 
     @property
     def fields_active_coords(self) -> dict[str, CoordsProtocol | None]:
-        return {
-            **self.primary_fields_active_coords,
-            **self.derived_fields_active_coords,
-        }
+        if self._fields_active_coords_cache is None:
+            self._fields_active_coords_cache = {
+                **self.primary_fields_active_coords,
+                **self.derived_fields_active_coords,
+            }
+        return self._fields_active_coords_cache
 
     def get_field(self, label: str) -> FieldProtocol:
         if label not in self.field_labels:
@@ -156,6 +164,10 @@ class DataContainer:
         elif label in self.derived_field_labels:
             self.derived_fields_active_coords[label] = coords
 
+        # Reset field cache
+        self._fields_cache = None
+        self._fields_active_coords_cache = None
+
     def set_field_from_component_tensor(
         self,
         label: str,
@@ -183,6 +195,10 @@ class DataContainer:
         elif label in self.derived_field_labels:
             self.derived_fields_active_coords[label] = coords
 
+        # Reset field cache
+        self._fields_cache = None
+        self._fields_active_coords_cache = None
+
     def set_field_from_component_dict(
         self,
         label: str,
@@ -209,6 +225,10 @@ class DataContainer:
             self.primary_fields_active_coords[label] = coords
         elif label in self.derived_field_labels:
             self.derived_fields_active_coords[label] = coords
+
+        # Reset field cache
+        self._fields_cache = None
+        self._fields_active_coords_cache = None
 
     def set_const(
         self, label: str, value: torch.Tensor, coords: CoordsProtocol | None = None
@@ -261,30 +281,28 @@ class DataContainer:
     def _validate_eval_coords(
         self,
         label: str,
-        active_coords: CoordsProtocol,
+        active_coords: CoordsProtocol | None,
         coords: CoordsProtocol,
         enforce_ancestry: bool,
     ) -> None:
+        if active_coords is None:
+            raise ValueError(f"'{label}' has not been initialised.")
+
         # Bypasses the tree search if not enforcing coord ancestry
         if not enforce_ancestry:
             return
 
         if not active_coords.is_ancestor_of(coords):
             raise ValueError(
-                f"Evaluation coords for '{label}' must be the active coords or a "
-                "descendant of them."
+                f"Evaluation coords for '{label}' must be the active coords "
+                "or a descendant of them."
             )
 
-    def _get_active_coords(self, label: str) -> CoordsProtocol:
+    def _get_active_coords(self, label: str) -> CoordsProtocol | None:
         # Check for label in fields and consts
         if label in self.field_labels:
-            active_coords = self.fields_active_coords[label]
+            return self.fields_active_coords[label]
         elif label in self.consts:
-            active_coords = self.consts_active_coords[label]
+            return self.consts_active_coords[label]
         else:
-            raise KeyError(f"Label '{label}' not found in fields of consts.")
-
-        # Make sure coords have been set
-        if active_coords is None:
-            raise ValueError(f"'{label}' has not been set yet.")
-        return active_coords
+            raise KeyError(f"Label '{label}' not found in fields or consts.")
