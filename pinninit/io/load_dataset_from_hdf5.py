@@ -8,12 +8,10 @@ import torch
 from ..config.config import DatasetConfig
 from ..data_structure.field_dataclass import (
     generate_tensor_component_labels,
-    make_field_dataclass,
 )
 
 if TYPE_CHECKING:
     from ..data_structure.coords_dataclass import CoordsProtocol
-    from ..data_structure.field_dataclass import FieldProtocol
 
 
 def load_coords_from_hdf5(
@@ -98,10 +96,9 @@ def load_fields_from_hdf5(
     role: str,
     coords: CoordsProtocol,
     field_label_to_rank: dict[str, int],
-) -> dict[str, FieldProtocol]:
+) -> dict[str, dict[str, torch.Tensor]]:
     """
-    Load field tensors from an HDF5 file and return a dict of FieldProtocol instances
-    bound to the provided coords.
+    Load field tensors from an HDF5 file and return a dict of component dicts.
 
     Expected HDF5 structure (matches generate_tensor_component_labels conventions):
         Rank 0:   file[dataset_label][role]/Fields/<field_label>            shape: (n,)
@@ -121,8 +118,10 @@ def load_fields_from_hdf5(
 
     Returns
     -------
-    dict[str, FieldProtocol]
-        Keys are field labels, values are FieldProtocol instances bound to coords.
+    dict[str, dict[str, torch.Tensor]]
+        Outer key: field label.
+        Inner key: component label (e.g. "value", "x", "x_x").
+        Value: tensor of shape (n_points,).
     """
     dataset_label = dataset_config.label
     file_path = dataset_config.file_path
@@ -132,7 +131,7 @@ def load_fields_from_hdf5(
             f"Dataset '{dataset_label}' has no file_path. Cannot load from HDF5."
         )
 
-    fields: dict[str, FieldProtocol] = {}
+    fields: dict[str, dict[str, torch.Tensor]] = {}
 
     with h5py.File(file_path, "r") as f:
         # Check dataset
@@ -162,25 +161,21 @@ def load_fields_from_hdf5(
                 )
 
             item = fields_group[field_label]
-            Field = make_field_dataclass(rank=rank, coords=coords, device=coords.device)
             expected_components = generate_tensor_component_labels(
                 coords.geometric_labels, rank
             )
 
             if rank == 0:
-                # Scalar field: stored directly as a dataset
                 if not isinstance(item, h5py.Dataset):
                     raise TypeError(
                         f"Rank-0 field '{field_label}' should be an HDF5 Dataset, "
                         f"got {type(item).__name__}."
                     )
-                fields[field_label] = Field(
-                    label=field_label,
-                    value=torch.tensor(item[()], device=coords.device),
-                )
+                fields[field_label] = {
+                    "value": torch.tensor(item[()], device=coords.device)
+                }
 
             else:
-                # Higher-rank field: stored as a group of component datasets
                 if not isinstance(item, h5py.Group):
                     raise TypeError(
                         f"Rank-{rank} field '{field_label}' should be an HDF5 Group "
@@ -194,10 +189,9 @@ def load_fields_from_hdf5(
                         f"in '{dataset_label}/{role}/Fields'."
                     )
 
-                component_kwargs = {
+                fields[field_label] = {
                     comp: torch.tensor(item[comp][()], device=coords.device)
                     for comp in expected_components
                 }
-                fields[field_label] = Field(label=field_label, **component_kwargs)
 
     return fields

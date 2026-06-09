@@ -20,7 +20,7 @@ class DataContainer:
         self.coords = coords
         self.coord_labels = coords.coord_labels
         self.device = coords.device
-        self.equations = equations or ()
+        self.equations = equations or []
         self.equation_evaluator = EquationEvaluator(self)
 
         # Store field labels

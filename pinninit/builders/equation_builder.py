@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import inspect
 import sys
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,18 @@ def build_equation(config: EquationConfig, base_dir: Path | None = None) -> Equa
     Equation
     """
     function = _load_function(config.file_path, config.function_name, base_dir)
+
+    # Validate config input_labels against function signature (excluding 'operators')
+    sig_labels = tuple(
+        name for name in inspect.signature(function).parameters if name != "operators"
+    )
+    config_labels = tuple(config.input_labels)
+    if config_labels != sig_labels:
+        raise ValueError(
+            f"Equation '{config.label}': input_labels in config {list(config_labels)} "
+            f"do not match function signature {list(sig_labels)}."
+        )
+
     return Equation(
         label=config.label,
         function=function,

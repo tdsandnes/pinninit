@@ -21,7 +21,6 @@ from .data_container_builder import build_data_container, populate_consts
 if TYPE_CHECKING:
     from ..data_structure.coords_dataclass import CoordsProtocol
     from ..data_structure.data_container import DataContainer
-    from ..data_structure.field_dataclass import FieldProtocol
     from ..geometry.domain import Domain
     from ..loss.loss_function import LossFunctionLabels
 
@@ -141,7 +140,7 @@ def build_evaluation_contexts(
 
 def _build_one_eval_context(
     coords: CoordsProtocol,
-    loaded_input_fields: dict[str, FieldProtocol],
+    loaded_input_fields: dict[str, dict[str, torch.Tensor]],
     fields_config: FieldsConfig,
     const_configs: list[ConstConfig],
     equations: list[Equation],
@@ -166,10 +165,10 @@ def _build_one_eval_context(
             use_input_fields=True,
         )
         # Populate input container with tensors loaded from file
-        for field_label, field_obj in loaded_input_fields.items():
-            input_dc.set_field_from_component_tensor(
+        for field_label, component_dict in loaded_input_fields.items():
+            input_dc.set_field_from_component_dict(
                 label=field_label,
-                component_tensor=field_obj.component_tensor(coords),
+                component_dict=component_dict,
                 coords=coords,
             )
 

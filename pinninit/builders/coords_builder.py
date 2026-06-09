@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 
-from ..config.config import CoordinatesConfig
+from ..config.config import CoordinatesConfig, CoordSystemConfig
 from ..data_structure.coords_dataclass import CoordsProtocol, make_coords_dataclass
 from ..geometry.coordinate_system import CoordSystem
 from ..geometry.domain import Domain
@@ -10,6 +10,7 @@ from ..geometry.domain import Domain
 
 def build_coords_class(
     coords_config: CoordinatesConfig,
+    coord_system_config: CoordSystemConfig,
     coord_system: CoordSystem,
     device: torch.device,
 ) -> type[CoordsProtocol]:
@@ -24,6 +25,8 @@ def build_coords_class(
     ----------
     coords_config:
         Config for this set of coordinates.
+    coord_system_config:
+        The matching CoordSystemConfig.
     coord_system:
         The already-built CoordSystem runtime object.
     device:
@@ -34,7 +37,7 @@ def build_coords_class(
     type[CoordsProtocol]
         A dynamically-created Coords dataclass.
     """
-    coord_labels = {coord.label for coord in coords_config.coords}
+    coord_labels = set(coord_system_config.all_axis_labels)
     return make_coords_dataclass(
         coord_labels=coord_labels,
         coord_system=coord_system,
@@ -78,6 +81,7 @@ def build_domain(
 
 def build_coords_classes(
     coords_configs: list[CoordinatesConfig],
+    coord_system_config: CoordSystemConfig,
     coord_systems: dict[str, CoordSystem],
     device: torch.device,
 ) -> dict[str, type[CoordsProtocol]]:
@@ -98,6 +102,7 @@ def build_coords_classes(
 
         result[coords_config.label] = build_coords_class(
             coords_config=coords_config,
+            coord_system_config=coord_system_config,
             coord_system=coord_systems[cs_label],
             device=device,
         )

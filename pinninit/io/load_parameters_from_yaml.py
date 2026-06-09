@@ -303,8 +303,8 @@ def _parse_loss(raw: list[dict[str, Any]]) -> list[LossTermConfig]:
                 loss_type=loss_type,
                 loss_function=loss_function,
                 weight_value=float(term.get("weight_value", 1.0)),
-                weight_method_label=term["weight_method_label"],
-                weight_group_label=term["weight_group_label"],
+                weight_method_label=term.get("weight_method_label"),
+                weight_group_label=term.get("weight_group_label"),
             )
         )
 

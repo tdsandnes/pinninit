@@ -76,7 +76,6 @@ class CoordinatesConfig:
     """One coord system and one domain for one CoordsProtocol instance."""
 
     label: str
-    coords: list[CoordConfig]
     coord_system_label: str
     domain: DomainConfig
 
@@ -128,7 +127,7 @@ class FieldsConfig:
             ("output_fields", self.output_fields),
             ("derivable_fields", self.derivable_fields),
         ):
-            labels = [field.label for field in fields]
+            labels = [f.label for f in fields]
             if len(labels) != len(set(labels)):
                 raise ValueError(f"Duplicate labels in {section}: {labels}.")
 
@@ -214,8 +213,8 @@ class LossTermConfig:
     loss_type: LossTermLabels
     loss_function: LossFunctionLabels
     weight_value: float
-    weight_method_label: str
-    weight_group_label: str
+    weight_method_label: str | None
+    weight_group_label: str | None
 
 
 # Neural Network Architecture Config

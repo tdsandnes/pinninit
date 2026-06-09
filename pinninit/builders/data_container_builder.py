@@ -79,6 +79,3 @@ def populate_consts(
             data_container.set_const(cfg.label, value, coords=coords)
         # Learnable constants are handled separately by the NN/trainer builder
         # since they need to be registered as nn.Parameters.
-
-
-# def populate_fields_from_hdf5 ?
