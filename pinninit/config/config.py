@@ -76,6 +76,7 @@ class CoordinatesConfig:
     """One coord system and one domain for one CoordsProtocol instance."""
 
     label: str
+    coords: list[CoordConfig]
     coord_system_label: str
     domain: DomainConfig
 
@@ -87,6 +88,8 @@ class DatasetConfig:
 
     label: str
     source: DataSetSourceLabels = DataSetSourceLabels.FILE
+    train_label: str = "train"
+    val_label: str = "val"
     file_path: str | None = None
     sampling: DataSetSamplerLabels = DataSetSamplerLabels.NONE
 

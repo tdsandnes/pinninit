@@ -23,8 +23,8 @@ class EvaluationContext:
 
     output_data: DataContainer
     loss_function: Callable[..., torch.Tensor]
+    dataloader: DataLoader[CoordsProtocol]
     input_data: DataContainer | None = None
-    dataloader: DataLoader[CoordsProtocol] | None = None
     point_weights: FieldProtocol | None = None
 
     coords: CoordsProtocol = field(init=False)

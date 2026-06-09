@@ -13,8 +13,9 @@ if TYPE_CHECKING:
     from .loss_term import LossTerm
 
 
-class LossTermGroup:
-    """Grouping of loss terms"""
+class LossTermContainer:
+    """Container of a loss term and relevant parameters needed for it's evaluation
+    and its contribution to the full loss function."""
 
     def __init__(
         self,
@@ -22,14 +23,14 @@ class LossTermGroup:
         train_eval_context: EvaluationContext,
         val_eval_context: EvaluationContext,
         domain: Domain,
-        loss_terms: list[LossTerm],
+        loss_term: LossTerm,
         loss_term_weight: float = 1.0,
     ) -> None:
         self.label = label
         self.train_eval_context = train_eval_context
         self.val_eval_context = val_eval_context
         self.domain = domain
-        self.loss_terms = loss_terms
+        self.loss_term = loss_term
         self.loss_term_weight = loss_term_weight
 
         # Check that training and validation points are in the specified domain
@@ -65,9 +66,7 @@ class LossTermGroup:
         detach: bool,
     ) -> torch.Tensor:
         self._apply_model(model, eval_coords, eval_context)
-        loss = torch.stack(
-            [term.compute_loss(eval_context, eval_coords) for term in self.loss_terms]
-        ).sum()
+        loss = self.loss_term.compute_loss(eval_context, eval_coords).sum()
         return loss.detach() if detach else loss
 
     def _loss_generator(
@@ -77,13 +76,8 @@ class LossTermGroup:
         detach: bool,
     ) -> Generator[torch.Tensor, None, None]:
         """Yield one batch loss at a time."""
-        if eval_context.dataloader is None:
-            yield self.compute_loss(
-                model, eval_context, eval_context.coords, detach=detach
-            )
-        else:
-            for batch_coords in eval_context.dataloader:
-                yield self.compute_loss(model, eval_context, batch_coords, detach)
+        for batch_coords in eval_context.dataloader:
+            yield self.compute_loss(model, eval_context, batch_coords, detach)
 
     def compute_unweighted_train_loss(
         self, model: NeuralNetwork, detach: bool = True
