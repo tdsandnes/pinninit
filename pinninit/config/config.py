@@ -18,14 +18,6 @@ if TYPE_CHECKING:
 
 # Geometry Config
 @dataclass(frozen=True, slots=True)
-class CoordConfig:
-    """A single coordinate axis."""
-
-    label: str
-    is_geometric: bool
-
-
-@dataclass(frozen=True, slots=True)
 class DomainConfig:
     """Coordinate domain."""
 
@@ -35,9 +27,9 @@ class DomainConfig:
 
     def __post_init__(self) -> None:
         for axis, (lb, ub) in self.bounds.items():
-            if lb is not None and ub is not None and lb >= ub:
+            if lb is not None and ub is not None and lb > ub:
                 raise ValueError(
-                    f"Axis '{axis}' lower bound {lb} must be < upper bound {ub}."
+                    f"Axis '{axis}' lower bound {lb} must be <= upper bound {ub}."
                 )
         invalid_periodic = self.periodic_axes - set(self.bounds)
         if invalid_periodic:
@@ -52,23 +44,20 @@ class CoordSystemConfig:
 
     label: str
     coord_system: CoordSystemLabels
-    axes: list[CoordConfig]
+    geometric_axis_labels: list[str]
+    non_geometric_axis_labels: list[str] = field(default_factory=list)
     fixed_axes: dict[str, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        labels = [axis.label for axis in self.axes]
-        if len(labels) != len(set(labels)):
-            raise ValueError(f"Duplicate axis labels in {labels}.")
-        if overlap := set(labels) & set(self.fixed_axes):
+        all_labels = self.geometric_axis_labels + self.non_geometric_axis_labels
+        if len(all_labels) != len(set(all_labels)):
+            raise ValueError(f"Duplicate axis labels in {all_labels}.")
+        if overlap := set(all_labels) & set(self.fixed_axes):
             raise ValueError(f"Axes {overlap} appear in both axes and fixed_axes.")
 
     @property
-    def geometric_axis_labels(self) -> list[str]:
-        return [axis.label for axis in self.axes if axis.is_geometric]
-
-    @property
     def all_axis_labels(self) -> list[str]:
-        return [axis.label for axis in self.axes]
+        return self.geometric_axis_labels + self.non_geometric_axis_labels
 
 
 @dataclass(frozen=True, slots=True)

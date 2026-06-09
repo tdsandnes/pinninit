@@ -8,49 +8,31 @@ from ..data_structure.data_container import DataContainer
 from ..data_structure.equation import Equation
 
 
-def build_data_container(
+def build_input_data_container(
+    coords: CoordsProtocol,
+    fields_config: FieldsConfig,
+    const_configs: list[ConstConfig],
+) -> DataContainer:
+    return DataContainer(
+        coords=coords,
+        primary_field_label_to_rank=fields_config.input_field_label_to_rank,
+        derived_field_label_to_rank={},
+        const_labels={cfg.label for cfg in const_configs} if const_configs else None,
+        equations=None,
+    )
+
+
+def build_output_data_container(
     coords: CoordsProtocol,
     fields_config: FieldsConfig,
     const_configs: list[ConstConfig],
     equations: list[Equation],
-    *,
-    use_input_fields: bool,
 ) -> DataContainer:
-    """
-    Build a DataContainer bound to the given coords.
-
-    Parameters
-    ----------
-    coords:
-        The CoordsProtocol instance these fields live on.
-    fields_config:
-        Describes which fields exist and their ranks.
-    const_configs:
-        Describes scalar constants.
-    equations:
-        Already-built Equation objects for derived fields.
-    use_input_fields:
-        If True, primary fields are the *input* fields (for input DataContainers
-        that hold ground-truth / boundary data loaded from file).
-        If False, primary fields are the *output* fields (for the model's
-        prediction DataContainer).
-
-    Returns
-    -------
-    DataContainer
-    """
-    if use_input_fields:
-        primary_field_label_to_rank = fields_config.input_field_label_to_rank
-    else:
-        primary_field_label_to_rank = fields_config.output_field_label_to_rank
-
-    const_labels = {cfg.label for cfg in const_configs} if const_configs else None
-
     return DataContainer(
         coords=coords,
-        primary_field_label_to_rank=primary_field_label_to_rank,
+        primary_field_label_to_rank=fields_config.output_field_label_to_rank,
         derived_field_label_to_rank=fields_config.derivable_field_label_to_rank,
-        const_labels=const_labels,
+        const_labels={cfg.label for cfg in const_configs} if const_configs else None,
         equations=equations if equations else None,
     )
 

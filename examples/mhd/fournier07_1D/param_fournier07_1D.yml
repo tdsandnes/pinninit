@@ -3,11 +3,10 @@ model_name: fournier07_1D
 CoordSystems:
   - label: cartesian_xt
     coord_system: cartesian
-    axes:
-      - label: t
-        is_geometric: false
-      - label: x
-        is_geometric: true
+    geometric_axis_labels:
+      - x
+    non_geometric_axis_labels:
+      - t
 
 Coordinates:
   - label: data_coords
@@ -36,19 +35,7 @@ Coordinates:
           periodic: false
 
 DataSets:
-  - label: data_loss
-    source: file
-    file_path: ./data/fournier07_1D_train_val.hdf5
-    sampling: none
-  - label: data_bc_loss
-    source: file
-    file_path: ./data/fournier07_1D_train_val.hdf5
-    sampling: none
-  - label: phys_momentum_loss
-    source: file
-    file_path: ./data/fournier07_1D_train_val.hdf5
-    sampling: none
-  - label: phys_induction_loss
+  - label: dataset
     source: file
     file_path: ./data/fournier07_1D_train_val.hdf5
     sampling: none
@@ -88,7 +75,7 @@ LossTerms:
   - label: data_b
     field_label: b
     coordinates_label: data_coords
-    dataset_label: data_loss
+    dataset_label: dataset
     loss_type: data
     loss_function: mse
     weight_method_label: adaptive_grad_balance
@@ -97,7 +84,7 @@ LossTerms:
   - label: bc_b
     field_label: b
     coordinates_label: full_coords
-    dataset_label: data_bc_loss
+    dataset_label: dataset
     loss_type: data
     loss_function: mse
     weight_method_label: adaptive_grad_balance
@@ -106,7 +93,7 @@ LossTerms:
   - label: bc_u
     field_label: u
     coordinates_label: full_coords
-    dataset_label: data_bc_loss
+    dataset_label: dataset
     loss_type: data
     loss_function: mse
     weight_method_label: adaptive_grad_balance
@@ -115,7 +102,7 @@ LossTerms:
   - label: momentum_eqn
     field_label: momentum_residual
     coordinates_label: full_coords
-    dataset_label: phys_momentum_loss
+    dataset_label: dataset
     loss_type: physics
     loss_function: mse
     weight_method_label: adaptive_grad_balance
@@ -124,7 +111,7 @@ LossTerms:
   - label: induction_eqn
     field_label: induction_residual
     coordinates_label: full_coords
-    dataset_label: phys_induction_loss
+    dataset_label: dataset
     loss_type: physics
     loss_function: mse
     weight_method_label: adaptive_grad_balance

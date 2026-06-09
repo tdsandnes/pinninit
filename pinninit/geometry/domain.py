@@ -54,9 +54,9 @@ class Domain:
                     f"Upper bound for axis '{axis}' must be <= {meta_ub}, got {ub}"
                 )
 
-            if lb >= ub:
+            if lb > ub:
                 raise ValueError(
-                    f"Lower bound must be < upper bound for axis '{axis}', "
+                    f"Lower bound must be <= upper bound for axis '{axis}', "
                     f"got [{lb}, {ub}]"
                 )
 

@@ -9,7 +9,6 @@ import yaml
 
 from ..config.config import (
     ConstConfig,
-    CoordConfig,
     CoordinatesConfig,
     CoordSystemConfig,
     DatasetConfig,
@@ -140,22 +139,15 @@ def _parse_coord_systems(raw: list[dict[str, Any]]) -> list[CoordSystemConfig]:
 
 
 def _parse_coord_system(raw: dict[str, Any]) -> CoordSystemConfig:
-    coord_system_str: str = raw["coord_system"]
-    coord_system = _parse_enum(
-        coord_system_str,
-        CoordSystemLabels,
-    )
-    axes = [
-        CoordConfig(label=ax["label"], is_geometric=bool(ax["is_geometric"]))
-        for ax in raw.get("axes", [])
-    ]
+    coord_system = _parse_enum(raw["coord_system"], CoordSystemLabels)
     fixed_axes: dict[str, float] = {
         ax["label"]: float(ax["value"]) for ax in raw.get("fixed_axes", [])
     }
     return CoordSystemConfig(
         label=raw["label"],
         coord_system=coord_system,
-        axes=axes,
+        geometric_axis_labels=raw.get("geometric_axis_labels", []),
+        non_geometric_axis_labels=raw.get("non_geometric_axis_labels", []),
         fixed_axes=fixed_axes,
     )
 

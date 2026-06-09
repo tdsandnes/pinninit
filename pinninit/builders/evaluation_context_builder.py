@@ -16,7 +16,11 @@ from ..data_structure.equation import Equation
 from ..io.load_dataset_from_hdf5 import load_coords_from_hdf5, load_fields_from_hdf5
 from ..loss.evaluation_context import EvaluationContext
 from ..loss.loss_function import LOSS_FUNCTION_REGISTRY
-from .data_container_builder import build_data_container, populate_consts
+from .data_container_builder import (
+    build_input_data_container,
+    build_output_data_container,
+    populate_consts,
+)
 
 if TYPE_CHECKING:
     from ..data_structure.coords_dataclass import CoordsProtocol
@@ -149,20 +153,18 @@ def _build_one_eval_context(
     shuffle: bool = True,
     num_workers: int = 0,
 ) -> EvaluationContext:
+    """Build a single EvaluationContext for one data role."""
     # Get loss function
     loss_fn = LOSS_FUNCTION_REGISTRY[loss_fn_label]
 
-    """Build a single EvaluationContext for one data role."""
     # Input DataContainer holds the ground-truth / boundary data loaded from file
     # Only built when there are input fields to compare against
     input_dc: DataContainer | None = None
     if fields_config.input_field_label_to_rank:
-        input_dc = build_data_container(
+        input_dc = build_input_data_container(
             coords=coords,
             fields_config=fields_config,
             const_configs=const_configs,
-            equations=[],  # input container doesn't evaluate equations
-            use_input_fields=True,
         )
         # Populate input container with tensors loaded from file
         for field_label, component_dict in loaded_input_fields.items():
@@ -173,12 +175,11 @@ def _build_one_eval_context(
             )
 
     # Output DataContainer holds the model predictions
-    output_dc = build_data_container(
+    output_dc = build_output_data_container(
         coords=coords,
         fields_config=fields_config,
         const_configs=const_configs,
         equations=equations,
-        use_input_fields=False,
     )
     populate_consts(output_dc, const_configs, coords)
 

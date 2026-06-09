@@ -81,48 +81,29 @@ def build_domain(
 
 def build_coords_classes(
     coords_configs: list[CoordinatesConfig],
-    coord_system_config: CoordSystemConfig,
+    coord_system_configs: list[CoordSystemConfig],
     coord_systems: dict[str, CoordSystem],
     device: torch.device,
-) -> dict[str, type[CoordsProtocol]]:
+) -> dict[str, tuple[type[CoordsProtocol], Domain]]:
     """
-    Build a label-keyed dict of Coords *classes* for all CoordinatesConfigs.
+    Build a label-keyed dict of Coords *classes* and domains for all CoordinatesConfigs.
     """
-    result: dict[str, type[CoordsProtocol]] = {}
+    coord_system_configs_by_label = {cfg.label: cfg for cfg in coord_system_configs}
+    result: dict[str, tuple[type[CoordsProtocol], Domain]] = {}
     for coords_config in coords_configs:
         if coords_config.label in result:
             raise ValueError(f"Duplicate Coordinates label: '{coords_config.label}'.")
-
         cs_label = coords_config.coord_system_label
         if cs_label not in coord_systems:
             raise ValueError(
                 f"CoordinatesConfig '{coords_config.label}' references unknown "
                 f"CoordSystem '{cs_label}'."
             )
-
-        result[coords_config.label] = build_coords_class(
-            coords_config=coords_config,
-            coord_system_config=coord_system_config,
-            coord_system=coord_systems[cs_label],
-            device=device,
+        coord_system = coord_systems[cs_label]
+        cs_config = coord_system_configs_by_label[cs_label]
+        coords_class = build_coords_class(
+            coords_config, cs_config, coord_system, device
         )
-    return result
-
-
-def build_domains(
-    coords_configs: list[CoordinatesConfig],
-    coord_systems: dict[str, CoordSystem],
-    device: torch.device,
-) -> dict[str, Domain]:
-    """
-    Build a label-keyed dict of Domain objects for all CoordinatesConfigs.
-    """
-    result: dict[str, Domain] = {}
-    for coords_config in coords_configs:
-        cs_label = coords_config.coord_system_label
-        result[coords_config.label] = build_domain(
-            coords_config=coords_config,
-            coord_system=coord_systems[cs_label],
-            device=device,
-        )
+        domain = build_domain(coords_config, coord_system, device)
+        result[coords_config.label] = (coords_class, domain)
     return result
