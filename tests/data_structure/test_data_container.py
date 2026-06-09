@@ -176,7 +176,7 @@ class TestDataContainerFieldSettersAndGetters:
     ) -> None:
         data = build_container(cartesian_2d, xy_2d)
 
-        with pytest.raises(ValueError, match="'u' has not been set yet"):
+        with pytest.raises(ValueError, match="'u' has not been initialised"):
             data.get_field_tensor("u")
 
     def test_setting_derived_field_without_allow_derived_raises(
@@ -329,7 +329,7 @@ class TestDataContainerBatching:
     ) -> None:
         data = build_container(cartesian_2d, xy_2d)
 
-        with pytest.raises(ValueError, match="has not been set yet"):
+        with pytest.raises(ValueError, match="has not been initialised"):
             data.get_field_component("u", "value")
 
     def test_get_field_component_invalid_component_raises(
@@ -390,7 +390,7 @@ class TestDataContainerConsts:
     ) -> None:
         data = build_container(cartesian_2d, xy_2d)
 
-        with pytest.raises(ValueError, match="'c' has not been set yet"):
+        with pytest.raises(ValueError, match="'c' has not been initialised"):
             data.get_const("c")
 
 

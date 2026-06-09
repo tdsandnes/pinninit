@@ -134,21 +134,22 @@ class TestDomainGeometricBounds:
                 device=device,
             )
 
-    def test_lb_equals_ub_raises(
+    def test_lb_equals_ub_does_not_raise(
         self, cartesian_2d: CoordSystem, device: torch.device
     ) -> None:
-        with pytest.raises(ValueError, match="Lower bound must be < upper bound"):
-            Domain(
-                coord_system=cartesian_2d,
-                geometric_bounds={"x": (1.0, 1.0), "y": (0.0, 1.0)},
-                periodic_coords=None,
-                device=device,
-            )
+        domain = Domain(
+            coord_system=cartesian_2d,
+            geometric_bounds={"x": (1.0, 1.0), "y": (0.0, 1.0)},
+            periodic_coords=None,
+            device=device,
+        )
+
+        torch.allclose(domain.geometric_lb["x"], domain.geometric_ub["x"])
 
     def test_lb_greater_than_ub_raises(
         self, cartesian_2d: CoordSystem, device: torch.device
     ) -> None:
-        with pytest.raises(ValueError, match="Lower bound must be < upper bound"):
+        with pytest.raises(ValueError, match="Lower bound must be <= upper bound"):
             Domain(
                 coord_system=cartesian_2d,
                 geometric_bounds={"x": (2.0, 1.0), "y": (0.0, 1.0)},
