@@ -24,7 +24,6 @@ class LossTermGroup:
         domain: Domain,
         loss_terms: list[LossTerm],
         loss_term_weight: float = 1.0,
-        staggering: int = 0,
     ) -> None:
         self.label = label
         self.train_eval_context = train_eval_context
@@ -32,7 +31,6 @@ class LossTermGroup:
         self.domain = domain
         self.loss_terms = loss_terms
         self.loss_term_weight = loss_term_weight
-        self.staggering = staggering
 
         # Check that training and validation points are in the specified domain
         train_eval_context.coords.validate_in_domain(domain)
@@ -59,13 +57,6 @@ class LossTermGroup:
             )
             idx += n_components
 
-    def _sum_loss_terms(
-        self, eval_context: EvaluationContext, eval_coords: CoordsProtocol
-    ) -> torch.Tensor:
-        return torch.stack(
-            [term.compute_loss(eval_context, eval_coords) for term in self.loss_terms]
-        ).sum()
-
     def compute_loss(
         self,
         model: NeuralNetwork,
@@ -74,7 +65,9 @@ class LossTermGroup:
         detach: bool,
     ) -> torch.Tensor:
         self._apply_model(model, eval_coords, eval_context)
-        loss = self._sum_loss_terms(eval_context, eval_coords)
+        loss = torch.stack(
+            [term.compute_loss(eval_context, eval_coords) for term in self.loss_terms]
+        ).sum()
         return loss.detach() if detach else loss
 
     def _loss_generator(

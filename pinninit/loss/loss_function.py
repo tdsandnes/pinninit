@@ -8,6 +8,9 @@ import torch
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from ..data_structure.coords_dataclass import CoordsProtocol
+    from .evaluation_context import EvaluationContext
+
 
 class LossFunctionLabels(str, Enum):
     """Enumeration of loss function labels."""
@@ -21,26 +24,29 @@ class LossFunctionLabels(str, Enum):
 
 def mse_loss(
     residuals: torch.Tensor,
-    point_weights: torch.Tensor | None = None,
+    eval_context: EvaluationContext | None = None,
+    eval_coords: CoordsProtocol | None = None,
 ) -> torch.Tensor:
     """
     Mean Squared Error (MSE) loss between predicted and exact function values.
     """
-    if point_weights is not None:
-        raise ValueError("point_weights should not be provided for MSE loss")
-
     return (residuals**2).mean()
 
 
 def weighted_mean_mse_loss(
     residuals: torch.Tensor,
-    point_weights: torch.Tensor | None = None,
+    eval_context: EvaluationContext,
+    eval_coords: CoordsProtocol,
 ) -> torch.Tensor:
     """
     Weight mean square loss between predicted and exact function values.
     """
-    if point_weights is None:
+
+    if eval_context.point_weights is None:
         raise ValueError("point_weights must be provided for weighted MSE loss")
+
+    # Get weights of individual points
+    point_weights = eval_context.point_weights.component_tensor(eval_coords)
 
     if point_weights.shape[0] != residuals.shape[0]:
         raise ValueError(
@@ -52,13 +58,17 @@ def weighted_mean_mse_loss(
 
 def weighted_point_avg_mse_loss(
     residuals: torch.Tensor,
-    point_weights: torch.Tensor | None = None,
+    eval_context: EvaluationContext,
+    eval_coords: CoordsProtocol,
 ) -> torch.Tensor:
     """
     Weight mean square loss, but not divided by total weight.
     """
-    if point_weights is None:
+    if eval_context.point_weights is None:
         raise ValueError("point_weights must be provided for weighted MSE loss")
+
+    # Get weights of individual points
+    point_weights = eval_context.point_weights.component_tensor(eval_coords)
 
     if point_weights.shape[0] != residuals.shape[0]:
         raise ValueError(

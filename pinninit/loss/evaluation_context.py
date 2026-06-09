@@ -6,12 +6,13 @@ from typing import TYPE_CHECKING
 import torch
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from torch.utils.data import DataLoader
 
     from ..data_structure.coords_dataclass import CoordsProtocol
     from ..data_structure.data_container import DataContainer
     from ..data_structure.field_dataclass import FieldProtocol
-    from .loss_function import LossFunctionLabels
 
 
 @dataclass(frozen=False, slots=True)
@@ -20,26 +21,26 @@ class EvaluationContext:
     Shared evaluation state for loss computation.
     """
 
-    input_data: DataContainer
     output_data: DataContainer
-    loss_function_label: LossFunctionLabels
+    loss_function: Callable[..., torch.Tensor]
+    input_data: DataContainer | None = None
     dataloader: DataLoader[CoordsProtocol] | None = None
     point_weights: FieldProtocol | None = None
 
     coords: CoordsProtocol = field(init=False)
 
     def __post_init__(self) -> None:
-        """
-        Enforce consistency between input and output data containers.
-        """
-        input_coords = self.input_data.coords
-        output_coords = self.output_data.coords
+        # Get shared coords from output_data (always present)
+        self.coords = self.output_data.coords
 
-        if input_coords is not output_coords:
+        # When input_data is provided, enforce that both containers share coords
+        if (
+            self.input_data is not None
+            and self.input_data.coords is not self.output_data.coords
+        ):
             raise ValueError(
-                "Input and output DataContainer must share identical coordinates."
+                "input_data and output_data must share identical coordinates."
             )
-        self.coords = self.input_data.coords
 
         if self.point_weights is not None:
             self._validate_point_weights(self.point_weights)

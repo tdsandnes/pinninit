@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from enum import Enum
 from typing import TYPE_CHECKING
 
 import torch
 
-from .loss_function import LOSS_FUNCTION_REGISTRY
-
 if TYPE_CHECKING:
     from ..data_structure.coords_dataclass import CoordsProtocol
     from .evaluation_context import EvaluationContext
+
+
+class LossTermLabels(str, Enum):
+    """Enumeration of loss term labels."""
+
+    DATA = "data"
+    PHYSICS = "physics"
 
 
 class LossTerm(ABC):
@@ -36,18 +42,11 @@ class LossTerm(ABC):
         eval_coords: CoordsProtocol,
     ) -> torch.Tensor:
         residuals = self.compute_residual(eval_context, eval_coords)
-        point_weights = None
-        if eval_context.point_weights is not None:
-            point_weights = eval_context.point_weights.component_tensor(eval_coords)
-            if point_weights.shape[0] != residuals.shape[0]:
-                raise ValueError(
-                    "point_weights and residuals must have the same length."
-                )
 
-        # Get loss function
-        loss_func = LOSS_FUNCTION_REGISTRY[eval_context.loss_function_label]
-
-        return loss_func(residuals=residuals, point_weights=point_weights)
+        # Pass to loss function
+        return eval_context.loss_function(
+            residuals=residuals, eval_context=eval_context, eval_coords=eval_coords
+        )
 
 
 class DataLoss(LossTerm):
@@ -58,6 +57,12 @@ class DataLoss(LossTerm):
         eval_context: EvaluationContext,
         eval_coords: CoordsProtocol,
     ) -> torch.Tensor:
+        if eval_context.input_data is None:
+            raise ValueError(
+                f"DataLoss on field '{self.field_label}' requires input_data, "
+                "but EvaluationContext.input_data is None."
+            )
+
         target = eval_context.input_data.get_field_component_tensor(
             self.field_label, eval_coords
         )
@@ -78,3 +83,10 @@ class PhysicsLoss(LossTerm):
         return eval_context.output_data.get_field_component_tensor(
             self.field_label, eval_coords
         )
+
+
+# Mapping from loss term labels to classes
+LOSS_TERM_REGISTRY: dict[LossTermLabels, type[LossTerm]] = {
+    LossTermLabels.DATA: DataLoss,
+    LossTermLabels.PHYSICS: PhysicsLoss,
+}
