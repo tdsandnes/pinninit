@@ -8,7 +8,7 @@ import torch.optim as optim
 if TYPE_CHECKING:
     from typing import ClassVar
 
-    from ..training.trainer import Trainer
+    from ..trainer.trainer import Trainer
 
 
 class Optimizer(ABC):
