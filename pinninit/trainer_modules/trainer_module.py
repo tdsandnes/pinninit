@@ -54,10 +54,12 @@ class TrainerModule:
 class PlateauTrainerModule(TrainerModule):
     """Base class for trainer modules that act when validation loss plateaus."""
 
-    def __init__(self, patience: int, frac_tol: float = 0.0, min_iter: int = 0) -> None:
+    def __init__(
+        self, patience: int, frac_tol: float = 0.0, min_epoch: int = 0
+    ) -> None:
         self.patience = patience
         self.frac_tol = frac_tol
-        self.min_iter = min_iter
+        self.min_epoch = min_epoch
 
         self.weighted_avg_label = "weighted_avg"
         self.plateau_detectors: dict[str, LossPlateauDetector] = {}
@@ -105,7 +107,7 @@ class PlateauTrainerModule(TrainerModule):
             if label in full_losses:
                 detector.step(full_losses[label])
             elif label == self.weighted_avg_label:
-                detector.step(trainer.compute_full_weighted_avg_val_loss)
+                detector.step(trainer.full_weighted_avg_val_loss)
             else:
                 raise KeyError(f"No loss value found for label {label}")
         return all(d.plateau_detected for d in self.plateau_detectors.values())

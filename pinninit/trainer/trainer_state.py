@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 class TrainerState:
     def __init__(self) -> None:
         self.state_updated = False
-        self.coast_until_iter: int = 0
+        self.coast_until_epoch: int = 0
         self.stop_requested: bool = False
 
         self._stop_barriers: dict[str, bool] = {}
@@ -45,7 +45,7 @@ class TrainerState:
         return label in self._stop_barriers
 
     def on_step_start(self, trainer: Trainer, logger: TrainerLogger | None) -> None:
-        self._is_coasting = trainer.iter <= self.coast_until_iter
+        self._is_coasting = trainer.epoch <= self.coast_until_epoch
         self._check_coast_transition(trainer, logger)
 
     def on_step_end(self, trainer: Trainer, logger: TrainerLogger | None) -> None:
@@ -78,20 +78,20 @@ class TrainerState:
 
         # Entering coast
         if not self._was_prev_step_coast and self.is_coasting:
-            print(f"Coasting started on iteration {trainer.iter}")
+            print(f"Coasting started on epoch {trainer.epoch}")
 
             if logger is not None:
-                logger.log_event("enter_coast", trainer.iter)
+                logger.log_event("enter_coast", trainer.epoch)
 
             for module in trainer.trainer_modules:
                 module.on_state_change(trainer, logger)
 
         # Exiting coast
         elif self._was_prev_step_coast and not self.is_coasting:
-            print(f"Coasting ended on iteration {trainer.iter}")
+            print(f"Coasting ended on epoch {trainer.epoch}")
 
             if logger is not None:
-                logger.log_event("exit_coast", trainer.iter)
+                logger.log_event("exit_coast", trainer.epoch)
 
             for module in trainer.trainer_modules:
                 module.on_state_change(trainer, logger)

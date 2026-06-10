@@ -317,7 +317,7 @@ class TrainerConfig:
     optimizer: OptimizerConfig
     trainer_modules: list[TrainerModuleConfig] = field(default_factory=list)
     max_iter: int | None = None
-    warmup_iters: int = 0
+    warmup_epochs: int = 0
     print_freq: int = 500
     batch_size: int | None = None
     shuffle: bool = True
@@ -329,8 +329,8 @@ class TrainerConfig:
             raise ValueError(f"Duplicate module labels in {labels}.")
         if self.max_iter is not None and self.max_iter <= 0:
             raise ValueError(f"max_iter must be > 0, got {self.max_iter}.")
-        if self.warmup_iters < 0:
-            raise ValueError(f"warmup_iters must be >= 0, got {self.warmup_iters}.")
+        if self.warmup_epochs < 0:
+            raise ValueError(f"warmup_epochs must be >= 0, got {self.warmup_epochs}.")
         if self.batch_size is not None and self.batch_size <= 0:
             raise ValueError(f"batch_size must be > 0, got {self.batch_size}.")
 

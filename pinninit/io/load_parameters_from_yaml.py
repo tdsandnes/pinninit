@@ -393,7 +393,7 @@ def _parse_trainer(raw: dict[str, Any]) -> TrainerConfig:
         optimizer=optimizer,
         trainer_modules=modules,
         max_iter=int(max_iter) if max_iter is not None else None,
-        warmup_iters=int(raw.get("warmup_iters", 0)),
+        warmup_epochs=int(raw.get("warmup_epochs", 0)),
         print_freq=int(raw.get("print_freq", 500)),
         batch_size=int(batch_size) if batch_size is not None else None,
         shuffle=bool(raw.get("shuffle", True)),

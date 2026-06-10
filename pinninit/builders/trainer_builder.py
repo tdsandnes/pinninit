@@ -99,6 +99,6 @@ def build_trainer(
         loss_containers=loss_containers,
         trainer_modules=trainer_modules,
         max_iter=config.max_iter,
-        warmup_iters=config.warmup_iters,
+        warmup_epochs=config.warmup_epochs,
         print_freq=config.print_freq,
     )

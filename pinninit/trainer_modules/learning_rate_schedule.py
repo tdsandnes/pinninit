@@ -20,20 +20,20 @@ class LearningRateSchedule(PlateauTrainerModule):
         decay_factor: float,
         n_events: int,
         patience: int,
-        warmup_iters: int = 0,
+        warmup_epochs: int = 0,
         lr_init: float | None = None,
         lr_after_warmup: float | None = None,
         frac_tol: float = 0.0,
-        min_iter: int = 0,
-        coast_iters_after_update: int = 0,
+        min_epoch: int = 0,
+        coast_epochs_after_update: int = 0,
     ) -> None:
-        super().__init__(patience, frac_tol, min_iter)
+        super().__init__(patience, frac_tol, min_epoch)
         self.decay_factor = decay_factor
         self.n_events = n_events
-        self.warmup_iters = warmup_iters
+        self.warmup_epochs = warmup_epochs
         self.lr_init = lr_init
         self.lr_after_warmup = lr_after_warmup
-        self.coast_iters_after_update = coast_iters_after_update
+        self.coast_epochs_after_update = coast_epochs_after_update
         self.event_count = 0
         self.stop_barrier_label = self.__class__.__name__
 
@@ -68,30 +68,30 @@ class LearningRateSchedule(PlateauTrainerModule):
         if self.event_count >= self.n_events:
             return
 
-        # Wait until min_iter to update learning rate
-        if trainer.iter < self.min_iter:
+        # Wait until min_epoch to update learning rate
+        if trainer.epoch < self.min_epoch:
             return
 
         # Linear warmup
         if (
-            self.warmup_iters > 0
+            self.warmup_epochs > 0
             and self.lr_init is not None
             and self.lr_after_warmup is not None
-            and trainer.iter < self.warmup_iters
+            and trainer.epoch < self.warmup_epochs
         ):
-            current_iter_in_warmup = trainer.iter + 1
-            total_warmup_iters = self.warmup_iters
+            current_epoch_in_warmup = trainer.epoch + 1
+            total_warmup_epochs = self.warmup_epochs
             lr = self.lr_init + (self.lr_after_warmup - self.lr_init) * (
-                current_iter_in_warmup / total_warmup_iters
+                current_epoch_in_warmup / total_warmup_epochs
             )
             for group in trainer.optimizer.optimizer.param_groups:
                 group["lr"] = lr
 
             # Print message when warmup finishes
-            if trainer.iter + 1 == self.warmup_iters:
-                print(f"Learning rate warmup completed on iteration {trainer.iter}.")
+            if trainer.epoch + 1 == self.warmup_epochs:
+                print(f"Learning rate warmup completed on epoch {trainer.epoch}.")
                 if logger is not None:
-                    logger.log_event("learning_rate_warmup_complete", trainer.iter)
+                    logger.log_event("learning_rate_warmup_complete", trainer.epoch)
 
             return
 
@@ -111,21 +111,21 @@ class LearningRateSchedule(PlateauTrainerModule):
                 group["lr"] = new_lr
                 print(
                     f"Learning rate decayed from {old_lr:.6g} to {new_lr:.6g} on "
-                    f"iteration {trainer.iter}."
+                    f"epoch {trainer.epoch}."
                 )
 
             # Log learning rate decay
             if logger is not None:
-                logger.log_event("learning_rate_decay", trainer.iter)
+                logger.log_event("learning_rate_decay", trainer.epoch)
 
             # Notify trainer that its state has changed
             trainer.state.state_updated = True
 
-            # Set coast phase for a number of iterations
-            if self.coast_iters_after_update > 0:
-                trainer.state.coast_until_iter = max(
-                    trainer.state.coast_until_iter,
-                    trainer.iter + self.coast_iters_after_update,
+            # Set coast phase for a number of epochs
+            if self.coast_epochs_after_update > 0:
+                trainer.state.coast_until_epoch = max(
+                    trainer.state.coast_until_epoch,
+                    trainer.epoch + 1 + self.coast_epochs_after_update,
                 )
 
             # Re-initialise plateau detectors

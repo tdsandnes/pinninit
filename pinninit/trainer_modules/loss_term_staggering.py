@@ -21,11 +21,11 @@ class LossTermStaggering(PlateauTrainerModule):
         self,
         patience: int,
         frac_tol: float = 0.0,
-        min_iter: int = 0,
-        coast_iters_after_update: int = 0,
+        min_epoch: int = 0,
+        coast_epochs_after_update: int = 0,
     ) -> None:
-        super().__init__(patience, frac_tol, min_iter)
-        self.coast_iters_after_update = coast_iters_after_update
+        super().__init__(patience, frac_tol, min_epoch)
+        self.coast_epochs_after_update = coast_epochs_after_update
 
         self.staggering_container_dict: dict[int, list[str]] = {}
         self.current_stagger_idx = 0
@@ -63,8 +63,8 @@ class LossTermStaggering(PlateauTrainerModule):
     def on_epoch_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        # Wait until min_iter to update plateau detectors
-        if trainer.iter < self.min_iter:
+        # Wait until min_epoch to update plateau detectors
+        if trainer.epoch < self.min_epoch:
             return
 
         # All stagger groups already activated
@@ -89,9 +89,9 @@ class LossTermStaggering(PlateauTrainerModule):
                 trainer.loss_containers[label] = trainer.all_loss_containers[label]
 
                 # Log loss container activation
-                print(f"Activated loss term {label} on iteration {trainer.iter}.")
+                print(f"Activated loss term {label} on epoch {trainer.epoch}.")
                 if logger is not None:
-                    logger.log_event("activated_loss_term_" + label, trainer.iter)
+                    logger.log_event("activated_loss_term_" + label, trainer.epoch)
 
             # Init new plateau detectors, including the newly activated containers
             self._init_plateau_detectors(trainer)
@@ -106,11 +106,11 @@ class LossTermStaggering(PlateauTrainerModule):
             # Notify trainer that its state has changed
             trainer.state.state_updated = True
 
-            # Set coast phase for a number of iterations
-            if self.coast_iters_after_update > 0:
-                trainer.state.coast_until_iter = max(
-                    trainer.state.coast_until_iter,
-                    trainer.iter + self.coast_iters_after_update,
+            # Set coast phase for a number of epochs
+            if self.coast_epochs_after_update > 0:
+                trainer.state.coast_until_epoch = max(
+                    trainer.state.coast_until_epoch,
+                    trainer.epoch + 1 + self.coast_epochs_after_update,
                 )
 
     def on_state_change(

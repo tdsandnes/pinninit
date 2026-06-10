@@ -22,11 +22,11 @@ class UpdateOptimizer(PlateauTrainerModule):
         new_optimizer: Optimizer,
         patience: int,
         frac_tol: float = 0.0,
-        min_iter: int = 0,
-        coast_iters_after_update: int = 0,
+        min_epoch: int = 0,
+        coast_epochs_after_update: int = 0,
     ) -> None:
-        super().__init__(patience, frac_tol, min_iter)
-        self.coast_iters_after_update = coast_iters_after_update
+        super().__init__(patience, frac_tol, min_epoch)
+        self.coast_epochs_after_update = coast_epochs_after_update
         self.new_optimizer = new_optimizer
         self.updated = False
         self.stop_barrier_label = self.__class__.__name__
@@ -47,8 +47,8 @@ class UpdateOptimizer(PlateauTrainerModule):
         if self.updated:
             return
 
-        # Wait until min_iter to update plateau detector
-        if trainer.iter < self.min_iter:
+        # Wait until min_epoch to update plateau detector
+        if trainer.epoch < self.min_epoch:
             return
 
         # Do nothing until all staggered loss terms are active (if staggering is used)
@@ -71,7 +71,7 @@ class UpdateOptimizer(PlateauTrainerModule):
             trainer.optimizer = self.new_optimizer
             trainer.optimizer.attach_trainer(trainer)
             self.updated = True
-            print(f"Optimizer updated on iteration {trainer.iter}.")
+            print(f"Optimizer updated on epoch {trainer.epoch}.")
 
             # Restart batch cycling so full-batch optimizers see fresh state
             for container in trainer.loss_containers.values():
@@ -79,16 +79,16 @@ class UpdateOptimizer(PlateauTrainerModule):
 
             # Log optimizer update
             if logger is not None:
-                logger.log_event("optimizer_update", trainer.iter)
+                logger.log_event("optimizer_update", trainer.epoch)
 
             # Notify trainer that its state has changed
             trainer.state.state_updated = True
 
-            # Set coast phase for a number of iterations
-            if self.coast_iters_after_update > 0:
-                trainer.state.coast_until_iter = max(
-                    trainer.state.coast_until_iter,
-                    trainer.iter + self.coast_iters_after_update,
+            # Set coast phase for a number of epochs
+            if self.coast_epochs_after_update > 0:
+                trainer.state.coast_until_epoch = max(
+                    trainer.state.coast_until_epoch,
+                    trainer.epoch + 1 + self.coast_epochs_after_update,
                 )
 
             # Remove stop barrier

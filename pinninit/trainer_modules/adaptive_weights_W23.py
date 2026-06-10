@@ -27,11 +27,11 @@ class AdaptiveWeightsW23(TrainerModule):
         self,
         alpha: float = 0.1,  # NOTE: Wang et al. 2021 alpha definition
         update_frequency: int = 1,
-        min_iter: int = 0,
+        min_epoch: int = 0,
     ):
         self.alpha = alpha
         self.update_frequency = update_frequency
-        self.min_iter = min_iter
+        self.min_epoch = min_epoch
 
         # Maps weight_group_label to LossTermContainers
         self.adaptive_groups: dict[str, list[LossTermContainer]] = {}
@@ -49,7 +49,7 @@ class AdaptiveWeightsW23(TrainerModule):
     def on_epoch_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        if trainer.iter < self.min_iter:
+        if trainer.epoch < self.min_epoch:
             return
         if trainer.epoch % self.update_frequency == 0:
             self._update_weights(trainer, logger)
@@ -57,7 +57,7 @@ class AdaptiveWeightsW23(TrainerModule):
     def on_state_change(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        if trainer.iter < self.min_iter:
+        if trainer.epoch < self.min_epoch:
             return
 
         # Add any newly activated containers
@@ -119,4 +119,4 @@ class AdaptiveWeightsW23(TrainerModule):
 
         # Log weight update
         if logger is not None:
-            logger.log_event("weight_update_W23", trainer.iter)
+            logger.log_event("weight_update_W23", trainer.epoch)

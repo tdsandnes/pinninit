@@ -24,8 +24,8 @@ class EarlyStopping(PlateauTrainerModule):
     def on_epoch_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        # Wait until min_iter to update plateau detectors
-        if trainer.iter < self.min_iter:
+        # Wait until min_epoch to update plateau detectors
+        if trainer.epoch < self.min_epoch:
             return
 
         # If validation loss has plateaued, request stop
@@ -34,7 +34,7 @@ class EarlyStopping(PlateauTrainerModule):
 
             # Log early stopping request
             if logger is not None:
-                logger.log_event("early_stopping_requested", trainer.iter)
+                logger.log_event("early_stopping_requested", trainer.epoch)
 
     def on_state_change(
         self, trainer: Trainer, logger: TrainerLogger | None = None

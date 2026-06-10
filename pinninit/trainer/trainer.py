@@ -29,7 +29,7 @@ class Trainer:
         loss_containers: dict[str, LossTermContainer],
         trainer_modules: list[TrainerModule],
         max_iter: int | None = None,
-        warmup_iters: int = 0,
+        warmup_epochs: int = 0,
         print_freq: int = 500,
     ) -> None:
         self.model = model
@@ -59,7 +59,7 @@ class Trainer:
 
         # TrainerState handles current state of training
         self.state = TrainerState()
-        self.state.coast_until_iter = warmup_iters
+        self.state.coast_until_epoch = warmup_epochs
 
         # Pass trainer to optimizer
         self.optimizer.attach_trainer(self)
@@ -281,7 +281,7 @@ class Trainer:
         }
 
     @property
-    def compute_full_weighted_avg_val_loss(self) -> float:
+    def full_weighted_avg_val_loss(self) -> float:
         """Weighted-average val loss over the full val set."""
         total = 0.0
         weight_sum = 0.0
