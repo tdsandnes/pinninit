@@ -107,7 +107,11 @@ class LossTermContainer:
         """Return the next batch of training coords, cycling the dataloader."""
         if self._train_batch_iter is None:
             self._train_batch_iter = iter(self.train_eval_context.dataloader)
-        return next(self._train_batch_iter)
+        try:
+            return next(self._train_batch_iter)
+        except StopIteration:
+            self._train_batch_iter = iter(self.train_eval_context.dataloader)
+            return next(self._train_batch_iter)
 
     def reset_train_batches(self) -> None:
         """Restart batch cycling from the beginning of the dataloader."""
@@ -117,7 +121,11 @@ class LossTermContainer:
         """Return the next batch of validation coords, cycling the dataloader."""
         if self._val_batch_iter is None:
             self._val_batch_iter = iter(self.val_eval_context.dataloader)
-        return next(self._val_batch_iter)
+        try:
+            return next(self._val_batch_iter)
+        except StopIteration:
+            self._val_batch_iter = iter(self.val_eval_context.dataloader)
+            return next(self._val_batch_iter)
 
     def reset_val_batches(self) -> None:
         """Restart batch cycling from the beginning of the dataloader."""
