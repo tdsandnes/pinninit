@@ -1,16 +1,27 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from enum import Enum
 from typing import TYPE_CHECKING
 
 import torch
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from ..data_structure.coords_dataclass import CoordsProtocol
     from ..geometry.domain import Domain
     from ..nn.neural_network import NeuralNetwork
     from .evaluation_context import EvaluationContext
     from .loss_term import LossTerm
+
+
+class WeightMethodLabels(str, Enum):
+    """Enumeration of loss term weight method labels."""
+
+    CONSTANT = "constant"
+    ADAPTIVE_W21 = "adaptive_w21"
+    ADAPTIVE_W23 = "adaptive_w23"
 
 
 class LossTermContainer:
@@ -25,6 +36,9 @@ class LossTermContainer:
         domain: Domain,
         loss_term: LossTerm,
         loss_term_weight: float = 1.0,
+        weight_method_label: WeightMethodLabels = WeightMethodLabels.CONSTANT,
+        weight_group_label: str | None = None,
+        staggering: int = 0,
     ) -> None:
         self.label = label
         self.train_eval_context = train_eval_context
@@ -32,6 +46,15 @@ class LossTermContainer:
         self.domain = domain
         self.loss_term = loss_term
         self.loss_term_weight = loss_term_weight
+
+        # Weighting and staggering parameters used by the trainer and its modules
+        self.initial_weight = loss_term_weight
+        self.weight_method_label = weight_method_label
+        self.weight_group_label = weight_group_label
+        self.staggering = staggering
+
+        # Iterator that cycles through training batches across steps
+        self._train_batch_iter: Iterator[CoordsProtocol] | None = None
 
         # Check that training and validation points are in the specified domain
         train_eval_context.coords.validate_in_domain(domain)
@@ -79,6 +102,23 @@ class LossTermContainer:
         for batch_coords in eval_context.dataloader:
             yield self.compute_loss(model, eval_context, batch_coords, detach)
 
+    def next_train_batch(self) -> CoordsProtocol:
+        """Return the next batch of training coords, cycling the dataloader."""
+        if self._train_batch_iter is None:
+            self._train_batch_iter = iter(self.train_eval_context.dataloader)
+        return next(self._train_batch_iter)
+
+    def reset_train_batches(self) -> None:
+        """Restart batch cycling from the beginning of the dataloader."""
+        self._train_batch_iter = None
+
+    def compute_train_batch_loss(
+        self, model: NeuralNetwork, batch_coords: CoordsProtocol, detach: bool = False
+    ) -> torch.Tensor:
+        return self.compute_loss(
+            model, self.train_eval_context, batch_coords, detach=detach
+        )
+
     def compute_unweighted_train_loss(
         self, model: NeuralNetwork, detach: bool = True
     ) -> torch.Tensor:
@@ -107,6 +147,15 @@ class LossTermContainer:
     ) -> torch.Tensor:
         loss = self.compute_unweighted_val_loss(model, detach=detach)
         return self.loss_term_weight * loss
+
+    def compute_train_residuals(
+        self, model: NeuralNetwork, detach: bool = True
+    ) -> torch.Tensor:
+        """Compute per-point residuals on the full training set."""
+        coords = self.train_eval_context.coords
+        self._apply_model(model, coords, self.train_eval_context)
+        residuals = self.loss_term.compute_residual(self.train_eval_context, coords)
+        return residuals.detach() if detach else residuals
 
     def iter_train_loss(
         self, model: NeuralNetwork, detach: bool = False

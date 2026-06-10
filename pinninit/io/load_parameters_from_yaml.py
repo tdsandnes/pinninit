@@ -27,12 +27,14 @@ from ..io.dataset_sampler import DataSetSamplerLabels
 from ..io.dataset_source import DataSetSourceLabels
 from ..loss.loss_function import LossFunctionLabels
 from ..loss.loss_term import LossTermLabels
+from ..loss.loss_term_container import WeightMethodLabels
 from ..nn.activation_function import ActivationFuncLabels
 from ..nn.initialise_biases import BiasInitLabels
 from ..nn.initialise_weights import WeightInitLabels
 from ..nn.input_transformation import InputTransformationLabels
 from ..nn.layers import LayerTypeLabels
 from ..nn.neural_network import NNTypeLabels
+from ..optimizer.optimizer_registry import OptimizerLabels
 
 E = TypeVar("E", bound=Enum)
 
@@ -287,6 +289,13 @@ def _parse_loss(raw: list[dict[str, Any]]) -> list[LossTermConfig]:
         loss_type = _parse_enum(loss_type_str, LossTermLabels)
         loss_function = _parse_enum(loss_fn_str, LossFunctionLabels)
 
+        weight_method_str: str | None = term.get("weight_method_label")
+        weight_method_label = (
+            _parse_enum(weight_method_str, WeightMethodLabels)
+            if weight_method_str
+            else WeightMethodLabels.CONSTANT
+        )
+
         terms.append(
             LossTermConfig(
                 label=term["label"],
@@ -296,8 +305,9 @@ def _parse_loss(raw: list[dict[str, Any]]) -> list[LossTermConfig]:
                 loss_type=loss_type,
                 loss_function=loss_function,
                 weight_value=float(term.get("weight_value", 1.0)),
-                weight_method_label=term.get("weight_method_label"),
+                weight_method_label=weight_method_label,
                 weight_group_label=term.get("weight_group_label"),
+                staggering=int(term.get("staggering", 0)),
             )
         )
 
@@ -375,7 +385,20 @@ def _parse_trainer(raw: dict[str, Any]) -> TrainerConfig:
     modules = [
         _parse_trainer_module(module) for module in raw.get("TrainerModules", [])
     ]
-    return TrainerConfig(optimizer=optimizer, trainer_modules=modules)
+
+    max_iter = raw.get("max_iter")
+    batch_size = raw.get("batch_size")
+
+    return TrainerConfig(
+        optimizer=optimizer,
+        trainer_modules=modules,
+        max_iter=int(max_iter) if max_iter is not None else None,
+        warmup_iters=int(raw.get("warmup_iters", 0)),
+        print_freq=int(raw.get("print_freq", 500)),
+        batch_size=int(batch_size) if batch_size is not None else None,
+        shuffle=bool(raw.get("shuffle", True)),
+        num_workers=int(raw.get("num_workers", 0)),
+    )
 
 
 def _parse_optimizer(raw: dict[str, Any]) -> OptimizerConfig:
@@ -384,7 +407,7 @@ def _parse_optimizer(raw: dict[str, Any]) -> OptimizerConfig:
         key: value for key, value in raw.items() if key not in known_keys
     }
     return OptimizerConfig(
-        optimizer=raw["optimizer"],
+        optimizer=_parse_enum(raw["optimizer"], OptimizerLabels),
         learning_rate=float(raw["learning_rate"]),
         hyperparameters=hyperparameters,
     )

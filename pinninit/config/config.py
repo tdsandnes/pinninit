@@ -3,18 +3,21 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from ..io.dataset_sampler import DataSetSamplerLabels
+from ..io.dataset_source import DataSetSourceLabels
+
 if TYPE_CHECKING:
     from ..geometry.coordinate_system import CoordSystemLabels
-    from ..io.dataset_sampler import DataSetSamplerLabels
-    from ..io.dataset_source import DataSetSourceLabels
     from ..loss.loss_function import LossFunctionLabels
     from ..loss.loss_term import LossTermLabels
+    from ..loss.loss_term_container import WeightMethodLabels
     from ..nn.activation_function import ActivationFuncLabels
     from ..nn.initialise_biases import BiasInitLabels
     from ..nn.initialise_weights import WeightInitLabels
     from ..nn.input_transformation import InputTransformationLabels
     from ..nn.layers import LayerTypeLabels
     from ..nn.neural_network import NNTypeLabels
+    from ..optimizer.optimizer_registry import OptimizerLabels
 
 
 # Geometry Config
@@ -203,8 +206,16 @@ class LossTermConfig:
     loss_type: LossTermLabels
     loss_function: LossFunctionLabels
     weight_value: float
-    weight_method_label: str | None
+    weight_method_label: WeightMethodLabels
     weight_group_label: str | None
+    staggering: int = 0
+
+    def __post_init__(self) -> None:
+        if self.staggering < 0:
+            raise ValueError(
+                f"LossTermConfig '{self.label}': staggering must be >= 0, got "
+                f"{self.staggering}."
+            )
 
 
 # Neural Network Architecture Config
@@ -257,7 +268,7 @@ class NNConfig:
 class OptimizerConfig:
     """Optimiser configuration."""
 
-    optimizer: str
+    optimizer: OptimizerLabels
     learning_rate: float
     hyperparameters: dict[str, float | int | str] = field(default_factory=dict)
 
@@ -305,11 +316,23 @@ class TrainerConfig:
 
     optimizer: OptimizerConfig
     trainer_modules: list[TrainerModuleConfig] = field(default_factory=list)
+    max_iter: int | None = None
+    warmup_iters: int = 0
+    print_freq: int = 500
+    batch_size: int | None = None
+    shuffle: bool = True
+    num_workers: int = 0
 
     def __post_init__(self) -> None:
         labels = [module.label for module in self.trainer_modules]
         if len(labels) != len(set(labels)):
             raise ValueError(f"Duplicate module labels in {labels}.")
+        if self.max_iter is not None and self.max_iter <= 0:
+            raise ValueError(f"max_iter must be > 0, got {self.max_iter}.")
+        if self.warmup_iters < 0:
+            raise ValueError(f"warmup_iters must be >= 0, got {self.warmup_iters}.")
+        if self.batch_size is not None and self.batch_size <= 0:
+            raise ValueError(f"batch_size must be > 0, got {self.batch_size}.")
 
     @property
     def by_label(self) -> dict[str, TrainerModuleConfig]:
