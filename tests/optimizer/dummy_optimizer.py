@@ -59,7 +59,7 @@ class DummyPinninitOptimizer(PinninitOptimizer):
 
         # Backprop
         self.optimizer.zero_grad()
-        train_loss.backward(retain_graph=True)
+        train_loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
 
         return float(train_loss)
 
