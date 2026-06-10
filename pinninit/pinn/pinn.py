@@ -78,7 +78,7 @@ class PINN:
         """Evaluate the unweighted validation loss of each loss term."""
         self.model.eval()
         val_losses = {
-            label: container.compute_unweighted_val_loss(self.model).item()
+            label: container.compute_full_val_loss(self.model).item()
             for label, container in self.loss_containers.items()
         }
         self.model.train()

@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from typing import cast
 
 import torch
@@ -48,3 +49,35 @@ def make_dataloader(
 
     # Return the DataLoader with the correct type annotation
     return cast(DataLoader[CoordsProtocol], loader)
+
+
+def iter_batches(
+    dataloader: DataLoader[CoordsProtocol],
+) -> Iterator[CoordsProtocol]:
+    """Typed boundary around DataLoader iteration"""
+    yield from dataloader
+
+
+class BatchCycler:
+    """Cycles indefinitely through a dataloader's batches, restarting (and
+    reshuffling) each time the dataloader is exhausted."""
+
+    def __init__(self, dataloader: DataLoader[CoordsProtocol]) -> None:
+        self.dataloader = dataloader
+        self._iter: Iterator[CoordsProtocol] | None = None
+
+    def __len__(self) -> int:
+        return len(self.dataloader)
+
+    def next(self) -> CoordsProtocol:
+        if self._iter is None:
+            self._iter = iter_batches(self.dataloader)
+        try:
+            return next(self._iter)
+        except StopIteration:
+            self._iter = iter_batches(self.dataloader)
+            return next(self._iter)
+
+    def reset(self) -> None:
+        """Restart cycling from the beginning of the dataloader."""
+        self._iter = None

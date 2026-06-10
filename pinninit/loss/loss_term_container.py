@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Generator
 from enum import Enum
 from typing import TYPE_CHECKING
 
 import torch
-from torch.utils.data import DataLoader
+
+from ..data_structure.batching import BatchCycler, iter_batches
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
-
     from ..data_structure.coords_dataclass import CoordsProtocol
     from ..geometry.domain import Domain
     from ..nn.neural_network import NeuralNetwork
@@ -25,16 +23,8 @@ class WeightMethodLabels(str, Enum):
     ADAPTIVE_W23 = "adaptive_w23"
 
 
-def _iter_batches(
-    dataloader: DataLoader[CoordsProtocol],
-) -> Iterator[CoordsProtocol]:
-    """Typed boundary around DataLoader iteration: torch's stubs type the
-    iterator's __next__ as Any, hiding the collate_fn's return type."""
-    yield from dataloader
-
-
 class LossTermContainer:
-    """Container of a loss term and relevant parameters needed for it's evaluation
+    """Container of a loss term and relevant parameters needed for its evaluation
     and its contribution to the full loss function."""
 
     def __init__(
@@ -62,9 +52,9 @@ class LossTermContainer:
         self.weight_group_label = weight_group_label
         self.staggering = staggering
 
-        # Iterators that cycle through training and validation batches across steps
-        self._train_batch_iter: Iterator[CoordsProtocol] | None = None
-        self._val_batch_iter: Iterator[CoordsProtocol] | None = None
+        # Cycle through training and validation batches across steps
+        self._train_batches = BatchCycler(train_eval_context.dataloader)
+        self._val_batches = BatchCycler(val_eval_context.dataloader)
 
         # Check that training and validation points are in the specified domain
         train_eval_context.coords.validate_in_domain(domain)
@@ -106,43 +96,43 @@ class LossTermContainer:
         loss = self.loss_term.compute_loss(eval_context, eval_coords).sum()
         return loss.detach() if detach else loss
 
-    def _loss_generator(
-        self,
-        model: NeuralNetwork,
-        eval_context: EvaluationContext,
-        detach: bool,
-    ) -> Generator[torch.Tensor, None, None]:
-        """Yield one batch loss at a time."""
-        for batch_coords in eval_context.dataloader:
-            yield self.compute_loss(model, eval_context, batch_coords, detach)
+    def _compute_full_loss(
+        self, model: NeuralNetwork, eval_context: EvaluationContext
+    ) -> torch.Tensor:
+        """Loss over an eval context's full point set, evaluated
+        in dataloader-sized chunks so only one chunk's autograd graph is alive
+        at a time.
+        """
+        total: torch.Tensor | None = None
+        n_total = 0
+        for batch_coords in iter_batches(eval_context.dataloader):
+            batch_loss = self.compute_loss(
+                model, eval_context, batch_coords, detach=True
+            )
+            n = batch_coords.n_points
+            total = batch_loss * n if total is None else total + batch_loss * n
+            n_total += n
+
+        if total is None:
+            raise RuntimeError(f"Dataloader for '{self.label}' is empty.")
+
+        return total / n_total
 
     def next_train_batch(self) -> CoordsProtocol:
         """Return the next batch of training coords, cycling the dataloader."""
-        if self._train_batch_iter is None:
-            self._train_batch_iter = _iter_batches(self.train_eval_context.dataloader)
-        try:
-            return next(self._train_batch_iter)
-        except StopIteration:
-            self._train_batch_iter = _iter_batches(self.train_eval_context.dataloader)
-            return next(self._train_batch_iter)
+        return self._train_batches.next()
 
     def reset_train_batches(self) -> None:
         """Restart batch cycling from the beginning of the dataloader."""
-        self._train_batch_iter = None
+        self._train_batches.reset()
 
     def next_val_batch(self) -> CoordsProtocol:
         """Return the next batch of validation coords, cycling the dataloader."""
-        if self._val_batch_iter is None:
-            self._val_batch_iter = _iter_batches(self.val_eval_context.dataloader)
-        try:
-            return next(self._val_batch_iter)
-        except StopIteration:
-            self._val_batch_iter = _iter_batches(self.val_eval_context.dataloader)
-            return next(self._val_batch_iter)
+        return self._val_batches.next()
 
     def reset_val_batches(self) -> None:
         """Restart batch cycling from the beginning of the dataloader."""
-        self._val_batch_iter = None
+        self._val_batches.reset()
 
     def compute_train_batch_loss(
         self, model: NeuralNetwork, batch_coords: CoordsProtocol, detach: bool = False
@@ -161,6 +151,8 @@ class LossTermContainer:
     def compute_unweighted_train_loss(
         self, model: NeuralNetwork, detach: bool = True
     ) -> torch.Tensor:
+        """Training loss over the full set in a single graph. Use when the
+        graph is needed."""
         return self.compute_loss(
             model,
             self.train_eval_context,
@@ -168,70 +160,22 @@ class LossTermContainer:
             detach=detach,
         )
 
-    def compute_weighted_train_loss(
-        self, model: NeuralNetwork, detach: bool = True
-    ) -> torch.Tensor:
-        loss = self.compute_unweighted_train_loss(model, detach=detach)
-        return self.loss_term_weight * loss
+    def compute_full_train_loss(self, model: NeuralNetwork) -> torch.Tensor:
+        """Full unweighted training loss over the full set, chunked and detached."""
+        return self._compute_full_loss(model, self.train_eval_context)
 
-    def compute_unweighted_val_loss(
-        self, model: NeuralNetwork, detach: bool = True
-    ) -> torch.Tensor:
-        return self.compute_loss(
-            model, self.val_eval_context, self.val_eval_context.coords, detach=detach
-        )
-
-    def compute_weighted_val_loss(
-        self, model: NeuralNetwork, detach: bool = True
-    ) -> torch.Tensor:
-        loss = self.compute_unweighted_val_loss(model, detach=detach)
-        return self.loss_term_weight * loss
+    def compute_full_val_loss(self, model: NeuralNetwork) -> torch.Tensor:
+        """Full unweighted validation loss over the full set, chunked and detached."""
+        return self._compute_full_loss(model, self.val_eval_context)
 
     def compute_train_residuals(
-        self, model: NeuralNetwork, detach: bool = True
+        self,
+        model: NeuralNetwork,
+        coords: CoordsProtocol | None = None,
+        detach: bool = True,
     ) -> torch.Tensor:
-        """Compute per-point residuals on the full training set."""
-        coords = self.train_eval_context.coords
+        """Compute per-point residuals on the training set (or a batch of it)."""
+        coords = coords or self.train_eval_context.coords
         self._apply_model(model, coords, self.train_eval_context)
         residuals = self.loss_term.compute_residual(self.train_eval_context, coords)
         return residuals.detach() if detach else residuals
-
-    def iter_train_loss(
-        self, model: NeuralNetwork, detach: bool = False
-    ) -> Generator[torch.Tensor, None, None]:
-        yield from self._loss_generator(model, self.train_eval_context, detach)
-
-    def iter_weighted_train_loss(
-        self, model: NeuralNetwork, detach: bool = False
-    ) -> Generator[torch.Tensor, None, None]:
-        for loss in self._loss_generator(model, self.train_eval_context, detach):
-            yield self.loss_term_weight * loss
-
-    def iter_val_loss(
-        self, model: NeuralNetwork, detach: bool = True
-    ) -> Generator[torch.Tensor, None, None]:
-        yield from self._loss_generator(model, self.val_eval_context, detach)
-
-    def iter_weighted_val_loss(
-        self, model: NeuralNetwork, detach: bool = True
-    ) -> Generator[torch.Tensor, None, None]:
-        for loss in self._loss_generator(model, self.val_eval_context, detach):
-            yield self.loss_term_weight * loss
-
-    def compute_full_val_loss(self, model: NeuralNetwork) -> torch.Tensor:
-        """Exact unweighted loss over the full validation set, evaluated in
-        dataloader-sized chunks."""
-        total: torch.Tensor | None = None
-        n_total = 0
-        for batch_coords in self.val_eval_context.dataloader:
-            batch_loss = self.compute_loss(
-                model, self.val_eval_context, batch_coords, detach=True
-            )
-            n = batch_coords.n_points
-            total = batch_loss * n if total is None else total + batch_loss * n
-            n_total += n
-
-        if total is None:
-            raise RuntimeError(f"Validation dataloader for '{self.label}' is empty.")
-
-        return total / n_total

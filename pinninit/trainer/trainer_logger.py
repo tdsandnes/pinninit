@@ -153,7 +153,7 @@ class TrainerLogger:
             container.loss_term_weight for container in trainer.loss_containers.values()
         ]
         train_losses = [
-            container.compute_unweighted_train_loss(trainer.model).item()
+            container.compute_full_train_loss(trainer.model).item()
             for container in trainer.loss_containers.values()
         ]
         val_losses = [
