@@ -52,6 +52,7 @@ class Trainer:
 
         # Batch coords used for the current step
         self._current_train_batches: dict[str, CoordsProtocol] = {}
+        self._current_val_batches: dict[str, CoordsProtocol] = {}
 
         # Best model info
         self.best_model_iter: int | None = None
@@ -82,7 +83,8 @@ class Trainer:
         self.optimizer.prepare_for_step()
         self.optimizer.step()
 
-        # Calculate validation losses at end of step
+        # Draw validation batches and calculate validation losses at end of step
+        self._set_current_val_batches()
         self.post_step_val_loss = self.compute_val_loss()
 
         # Update best model if needed
@@ -153,6 +155,19 @@ class Trainer:
                 for label, container in self.loss_containers.items()
             }
 
+    def _set_current_val_batches(self) -> None:
+        """Set the validation batch coords each active loss container uses this step."""
+        if self.optimizer.requires_full_batch:
+            self._current_val_batches = {
+                label: container.val_eval_context.coords
+                for label, container in self.loss_containers.items()
+            }
+        else:
+            self._current_val_batches = {
+                label: container.next_val_batch()
+                for label, container in self.loss_containers.items()
+            }
+
     def compute_train_loss(self) -> torch.Tensor:
         # New containers may have been activated since batches were drawn
         for label, container in self.loss_containers.items():
@@ -191,9 +206,16 @@ class Trainer:
         return train_loss
 
     def compute_val_loss(self) -> torch.Tensor:
-        #  Compute validation loss
+        # New containers may have been activated since batches were drawn
+        for label, container in self.loss_containers.items():
+            if label not in self._current_val_batches:
+                self._current_val_batches[label] = container.next_val_batch()
+
+        #  Compute validation loss on the current batches
         unweighted_val_losses = {
-            label: container.compute_unweighted_val_loss(self.model)
+            label: container.compute_val_batch_loss(
+                self.model, self._current_val_batches[label]
+            )
             for label, container in self.loss_containers.items()
         }
 

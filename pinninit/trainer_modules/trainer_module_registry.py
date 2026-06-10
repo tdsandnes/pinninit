@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from enum import Enum
 
-from .adaptive_weights_grad_balance import AdaptiveWeightsGradBalance
 from .adaptive_weights_W21 import AdaptiveWeightsW21
+from .adaptive_weights_W23 import AdaptiveWeightsW23
 from .early_stopping import EarlyStopping
 from .learning_rate_schedule import LearningRateSchedule
 from .loss_term_staggering import LossTermStaggering
@@ -28,5 +28,5 @@ TRAINER_MODULE_REGISTRY: dict[TrainerModuleLabels, type[TrainerModule]] = {
     TrainerModuleLabels.LEARNING_RATE_SCHEDULE: LearningRateSchedule,
     TrainerModuleLabels.LOSS_TERM_STAGGERING: LossTermStaggering,
     TrainerModuleLabels.ADAPTIVE_WEIGHTS_W21: AdaptiveWeightsW21,
-    TrainerModuleLabels.ADAPTIVE_WEIGHTS_GRAD_BALANCE: AdaptiveWeightsGradBalance,
+    TrainerModuleLabels.ADAPTIVE_WEIGHTS_GRAD_BALANCE: AdaptiveWeightsW23,
 }

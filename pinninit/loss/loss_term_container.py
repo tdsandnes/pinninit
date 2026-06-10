@@ -53,8 +53,9 @@ class LossTermContainer:
         self.weight_group_label = weight_group_label
         self.staggering = staggering
 
-        # Iterator that cycles through training batches across steps
+        # Iterators that cycle through training and validation batches across steps
         self._train_batch_iter: Iterator[CoordsProtocol] | None = None
+        self._val_batch_iter: Iterator[CoordsProtocol] | None = None
 
         # Check that training and validation points are in the specified domain
         train_eval_context.coords.validate_in_domain(domain)
@@ -112,11 +113,28 @@ class LossTermContainer:
         """Restart batch cycling from the beginning of the dataloader."""
         self._train_batch_iter = None
 
+    def next_val_batch(self) -> CoordsProtocol:
+        """Return the next batch of validation coords, cycling the dataloader."""
+        if self._val_batch_iter is None:
+            self._val_batch_iter = iter(self.val_eval_context.dataloader)
+        return next(self._val_batch_iter)
+
+    def reset_val_batches(self) -> None:
+        """Restart batch cycling from the beginning of the dataloader."""
+        self._val_batch_iter = None
+
     def compute_train_batch_loss(
         self, model: NeuralNetwork, batch_coords: CoordsProtocol, detach: bool = False
     ) -> torch.Tensor:
         return self.compute_loss(
             model, self.train_eval_context, batch_coords, detach=detach
+        )
+
+    def compute_val_batch_loss(
+        self, model: NeuralNetwork, batch_coords: CoordsProtocol, detach: bool = True
+    ) -> torch.Tensor:
+        return self.compute_loss(
+            model, self.val_eval_context, batch_coords, detach=detach
         )
 
     def compute_unweighted_train_loss(
