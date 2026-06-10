@@ -30,7 +30,7 @@ def mse_loss(
     """
     Mean Squared Error (MSE) loss between predicted and exact function values.
     """
-    return (residuals**2).mean()
+    return (residuals**2).mean(dim=0)
 
 
 def weighted_mean_mse_loss(
@@ -53,7 +53,7 @@ def weighted_mean_mse_loss(
             f"point_weights length {point_weights.shape[0]} "
             f"must match residual length {residuals.shape[0]}"
         )
-    return (point_weights * residuals**2).sum() / point_weights.sum()
+    return (point_weights * residuals**2).sum(dim=0) / point_weights.sum()
 
 
 def weighted_point_avg_mse_loss(
@@ -75,7 +75,7 @@ def weighted_point_avg_mse_loss(
             f"point_weights length {point_weights.shape[0]} "
             f"must match residual length {residuals.shape[0]}"
         )
-    return (point_weights * residuals**2).mean()
+    return (point_weights * residuals**2).mean(dim=0)
 
 
 # Mapping from loss function labels to python functions
