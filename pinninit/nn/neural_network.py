@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
+from enum import Enum
 from typing import TYPE_CHECKING
 
-from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
-from enum import Enum
 
 from .activation_function import ACTIVATION_FUNC_REGISTRY
 from .initialise_biases import BIAS_INIT_REGISTRY
@@ -24,9 +24,9 @@ class NNTypeLabels(str, Enum):
 
 class NeuralNetwork(nn.Module, ABC):
     """Base class for all network architectures."""
-    
+
     output_field_labels: tuple[str, ...]
-    
+
     @abstractmethod
     def evaluate(self, coords: CoordsProtocol) -> torch.Tensor:
         pass
@@ -92,6 +92,7 @@ class FeedforwardNN(NeuralNetwork):
             tensor = self.activation_funcs[i](tensor)  # Call activation function
 
         return tensor
+
 
 # Mapping from NN type labels to classes
 NN_TYPE_REGISTRY: dict[NNTypeLabels, type[NeuralNetwork]] = {

@@ -6,7 +6,6 @@ import torch
 
 from ..config.config import (
     ConstConfig,
-    CoordSystemConfig,
     DatasetConfig,
     FieldsConfig,
     LossTermConfig,
@@ -25,7 +24,6 @@ from .data_container_builder import (
 if TYPE_CHECKING:
     from ..data_structure.coords_dataclass import CoordsProtocol
     from ..data_structure.data_container import DataContainer
-    from ..geometry.domain import Domain
     from ..loss.loss_function import LossFunctionLabels
 
 # Loss function used for validation loss

@@ -103,9 +103,7 @@ def build_coords_classes(
             )
         coord_system = coord_systems[cs_label]
         cs_config = coord_system_configs_by_label[cs_label]
-        coords_class = build_coords_class(
-            cs_config, coord_system, device
-        )
+        coords_class = build_coords_class(cs_config, coord_system, device)
         domain = build_domain(coords_config, coord_system, device)
         result[coords_config.label] = (coords_class, domain)
     return result
