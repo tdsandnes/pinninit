@@ -66,10 +66,8 @@ class TrainerLogger:
             {label: loss.detach().cpu().item() for label, loss in losses.items()}
         )
 
-    def record_loss_term_weights(self, weights: dict[str, torch.Tensor]) -> None:
-        self.loss_term_weights.record(
-            {label: weight.detach().cpu().item() for label, weight in weights.items()}
-        )
+    def record_loss_term_weights(self, weights: dict[str, float]) -> None:
+        self.loss_term_weights.record(dict(weights))
 
     def log_event(self, event: str, iter: int) -> None:
         self.events.append(
@@ -81,15 +79,16 @@ class TrainerLogger:
 
     def print_losses_and_weights(self, trainer: Trainer, timing_str: str) -> None:
         loss_term_weights = [
-            group.weight.detach().cpu().item() for group in trainer.loss_groups.values()
+            container.loss_term_weight
+            for container in trainer.loss_containers.values()
         ]
         train_losses = [
-            group.compute_unweighted_loss_train(trainer.model).item()
-            for group in trainer.loss_groups.values()
+            container.compute_unweighted_train_loss(trainer.model).item()
+            for container in trainer.loss_containers.values()
         ]
         val_losses = [
-            group.compute_unweighted_loss_val(trainer.model).item()
-            for group in trainer.loss_groups.values()
+            container.compute_unweighted_val_loss(trainer.model).item()
+            for container in trainer.loss_containers.values()
         ]
 
         print(
