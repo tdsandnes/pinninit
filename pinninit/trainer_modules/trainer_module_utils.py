@@ -1,12 +1,36 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 
 from ..data_structure.coords_dataclass import make_coords_dataclass
 from ..geometry.coordinate_system import CoordSystem
 from ..geometry.domain import Domain
+
+if TYPE_CHECKING:
+    from ..loss.loss_term_container import LossTermContainer
+    from ..nn.neural_network import NeuralNetwork
+
+
+def compute_flat_train_grads(
+    model: NeuralNetwork, containers: list[LossTermContainer]
+) -> torch.Tensor:
+    """Concatenated flat gradient of the containers' unweighted training losses
+    with respect to the model parameters."""
+    all_grads_flat_list = []
+    for container in containers:
+        loss = container.compute_unweighted_train_loss(model, detach=False)
+        grads = torch.autograd.grad(
+            loss,
+            list(model.parameters()),
+            retain_graph=True,
+            allow_unused=True,
+        )
+        grads_flat = torch.cat([g.detach().reshape(-1) for g in grads if g is not None])
+        all_grads_flat_list.append(grads_flat)
+
+    return torch.cat(all_grads_flat_list)
 
 
 class LossPlateauDetector:

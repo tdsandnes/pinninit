@@ -2,15 +2,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..trainer.trainer import Trainer
-from .trainer_module import TrainerModule
-from .trainer_module_utils import LossPlateauDetector
+from .trainer_module import PlateauTrainerModule
 
 if TYPE_CHECKING:
+    from ..trainer.trainer import Trainer
     from ..trainer.trainer_logger import TrainerLogger
 
 
-class LearningRateSchedule(TrainerModule):
+class LearningRateSchedule(PlateauTrainerModule):
     """Trainer module for updating the optimizer learning rate dynamically."""
 
     # Class attributes
@@ -28,14 +27,12 @@ class LearningRateSchedule(TrainerModule):
         min_iter: int = 0,
         coast_iters_after_update: int = 0,
     ) -> None:
+        super().__init__(patience, frac_tol, min_iter)
         self.decay_factor = decay_factor
         self.n_events = n_events
-        self.patience = patience
         self.warmup_iters = warmup_iters
         self.lr_init = lr_init
         self.lr_after_warmup = lr_after_warmup
-        self.frac_tol = frac_tol
-        self.min_iter = min_iter
         self.coast_iters_after_update = coast_iters_after_update
         self.event_count = 0
         self.stop_barrier_label = self.__class__.__name__
@@ -56,23 +53,13 @@ class LearningRateSchedule(TrainerModule):
         if self.lr_after_warmup is None:
             self.lr_after_warmup = param_groups[0]["lr"]
 
-        # If lr_init not provided, default to 0
+        # If lr_init not provided, default to lr_after_warmup
         if self.lr_init is None:
             self.lr_init = self.lr_after_warmup
 
         # Set initial LR
         for group in param_groups:
             group["lr"] = self.lr_init
-
-    def on_train_end(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
-        pass
-
-    def on_step_start(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
-        pass
 
     def on_step_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
@@ -112,27 +99,8 @@ class LearningRateSchedule(TrainerModule):
         if trainer.state.is_coasting:
             return
 
-        # Get validation losses
-        if trainer.logger.unweighted_val_losses.has_value:
-            unweighted_val_losses = trainer.logger.unweighted_val_losses.value
-        else:
-            raise RuntimeError(
-                f"Validation losses have not been recorded for iter {trainer.iter}."
-            )
-
-        # Update loss plateau detectors
-        for label, plateau_detector in self.plateau_detectors.items():
-            if label in unweighted_val_losses:
-                plateau_detector.step(unweighted_val_losses[label])
-            elif label == self.weighted_avg_label:
-                plateau_detector.step(float(trainer.weighted_avg_val_loss))
-            else:
-                raise KeyError(f"No loss value found for label {label}")
-
         # If validation loss has plateaued, decay learning rate
-        if all(
-            detector.plateau_detected for detector in self.plateau_detectors.values()
-        ):
+        if self._step_plateau_detectors(trainer):
             # Reset the best model tracker
             trainer.reset_best_model()
 
@@ -176,17 +144,5 @@ class LearningRateSchedule(TrainerModule):
         if self.event_count < self.n_events:
             return
 
-        # Fully re-initialise plateau detectors in case new loss groups have been added
+        # Fully re-initialise plateau detectors in case new containers were added
         self._init_plateau_detectors(trainer)
-
-    def _init_plateau_detectors(self, trainer: Trainer) -> None:
-        # Initialise plateau detector for each loss term group
-        self.plateau_detectors = {}
-        #    group_label: LossPlateauDetector(self.patience, self.frac_tol)
-        #    for group_label in trainer.loss_groups
-        # }
-        # Add plateau detector for weighted average val loss
-        self.weighted_avg_label = "weighted_avg"
-        self.plateau_detectors[self.weighted_avg_label] = LossPlateauDetector(
-            self.patience, self.frac_tol
-        )

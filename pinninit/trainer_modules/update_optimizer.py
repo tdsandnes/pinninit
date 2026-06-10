@@ -2,17 +2,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ..optimizer.optimizer import Optimizer
-from ..trainer.trainer import Trainer
 from .loss_term_staggering import LossTermStaggering
-from .trainer_module import TrainerModule
-from .trainer_module_utils import LossPlateauDetector
+from .trainer_module import PlateauTrainerModule
 
 if TYPE_CHECKING:
+    from ..optimizer.optimizer import Optimizer
+    from ..trainer.trainer import Trainer
     from ..trainer.trainer_logger import TrainerLogger
 
 
-class UpdateOptimizer(TrainerModule):
+class UpdateOptimizer(PlateauTrainerModule):
     """Trainer module for updating the optimizer based on validation loss."""
 
     # Class attributes
@@ -26,9 +25,7 @@ class UpdateOptimizer(TrainerModule):
         min_iter: int = 0,
         coast_iters_after_update: int = 0,
     ) -> None:
-        self.patience = patience
-        self.frac_tol = frac_tol
-        self.min_iter = min_iter
+        super().__init__(patience, frac_tol, min_iter)
         self.coast_iters_after_update = coast_iters_after_update
         self.new_optimizer = new_optimizer
         self.updated = False
@@ -42,16 +39,6 @@ class UpdateOptimizer(TrainerModule):
 
         # Training can only stop after optimizer has been updated
         trainer.state.init_stop_barrier(self.stop_barrier_label)
-
-    def on_train_end(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
-        pass
-
-    def on_step_start(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
-        pass
 
     def on_step_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
@@ -70,27 +57,8 @@ class UpdateOptimizer(TrainerModule):
             if isinstance(module, LossTermStaggering) and not module.completed:
                 return
 
-        # Get validation losses
-        if trainer.logger.unweighted_val_losses.has_value:
-            unweighted_val_losses = trainer.logger.unweighted_val_losses.value
-        else:
-            raise RuntimeError(
-                f"Validation losses have not been recorded for iter {trainer.iter}."
-            )
-
-        # Update loss plateau detectors
-        for label, plateau_detector in self.plateau_detectors.items():
-            if label in unweighted_val_losses:
-                plateau_detector.step(unweighted_val_losses[label])
-            elif label == self.weighted_avg_label:
-                plateau_detector.step(float(trainer.weighted_avg_val_loss))
-            else:
-                raise KeyError(f"No loss value found for label {label}")
-
         # If validation loss has plateaued, update optimizer
-        if all(
-            detector.plateau_detected for detector in self.plateau_detectors.values()
-        ):
+        if self._step_plateau_detectors(trainer):
             # Reload the best model before switching optimizer
             trainer.load_best_model()
 
@@ -103,14 +71,9 @@ class UpdateOptimizer(TrainerModule):
             self.updated = True
             print(f"Optimizer updated on iteration {trainer.iter}.")
 
-            # Set batching of loss term groups if needed
-            if self.new_optimizer.requires_full_batch:
-                for group in trainer.loss_groups.values():
-                    group.set_batching(batch_size_train=None, batch_size_val=None)
-            else:
-                for group in trainer.loss_groups.values():
-                    if not group.is_default_batching:
-                        group.reset_to_default_batching()
+            # Restart batch cycling so full-batch optimizers see fresh state
+            for container in trainer.loss_containers.values():
+                container.reset_train_batches()
 
             # Log optimizer update
             if logger is not None:
@@ -135,17 +98,5 @@ class UpdateOptimizer(TrainerModule):
         if self.updated:
             return
 
-        # Fully re-initialise plateau detectors in case new loss groups have been added
+        # Fully re-initialise plateau detectors in case new containers were added
         self._init_plateau_detectors(trainer)
-
-    def _init_plateau_detectors(self, trainer: Trainer) -> None:
-        # Initialise plateau detector for each loss term group
-        self.plateau_detectors = {}
-        #    group_label: LossPlateauDetector(self.patience, self.frac_tol)
-        #    for group_label in trainer.loss_groups
-        # }
-        # Add plateau detector for weighted average val loss
-        self.weighted_avg_label = "weighted_avg"
-        self.plateau_detectors[self.weighted_avg_label] = LossPlateauDetector(
-            self.patience, self.frac_tol
-        )
