@@ -36,13 +36,9 @@ class AdaptiveWeightsW23(TrainerModule):
         # Maps weight_group_label to LossTermContainers
         self.adaptive_groups: dict[str, list[LossTermContainer]] = {}
 
-        # Keep track of the previous weight update
-        self._prev_update_iter: int | None = None
-
     def on_train_start(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        self._prev_update_iter = None
         self.adaptive_groups.clear()
 
         for container in trainer.loss_containers.values():
@@ -50,18 +46,13 @@ class AdaptiveWeightsW23(TrainerModule):
             if container.weight_method_label == WeightMethodLabels.ADAPTIVE_W23:
                 self._add_container(container)
 
-    def on_step_start(
+    def on_epoch_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
         if trainer.iter < self.min_iter:
             return
-
-        if (
-            self._prev_update_iter is None
-            or (trainer.iter - self._prev_update_iter) >= self.update_frequency
-        ):
+        if trainer.epoch % self.update_frequency == 0:
             self._update_weights(trainer, logger)
-            self._prev_update_iter = trainer.iter
 
     def on_state_change(
         self, trainer: Trainer, logger: TrainerLogger | None = None
@@ -89,7 +80,6 @@ class AdaptiveWeightsW23(TrainerModule):
 
         # Update weights
         self._update_weights(trainer, logger)
-        self._prev_update_iter = trainer.iter
 
     def _add_container(self, container: LossTermContainer) -> None:
         if container.weight_group_label is None:

@@ -37,6 +37,12 @@ class TrainerModule:
     ) -> None:
         pass
 
+    def on_epoch_end(
+        self, trainer: Trainer, logger: TrainerLogger | None = None
+    ) -> None:
+        """Called at the end of each epoch (a full pass over the training data)."""
+        pass
+
     def on_state_change(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
@@ -90,3 +96,16 @@ class PlateauTrainerModule(TrainerModule):
     def _reset_plateau_detectors(self) -> None:
         for plateau_detector in self.plateau_detectors.values():
             plateau_detector.reset()
+
+    def _step_plateau_detectors_full(self, trainer: Trainer) -> bool:
+        """Feed full-set validation losses to detectors. Returns True if all
+        detectors have detected a plateau."""
+        full_losses = trainer.compute_full_unweighted_val_losses()
+        for label, detector in self.plateau_detectors.items():
+            if label in full_losses:
+                detector.step(full_losses[label])
+            elif label == self.weighted_avg_label:
+                detector.step(trainer.compute_full_weighted_avg_val_loss)
+            else:
+                raise KeyError(f"No loss value found for label {label}")
+        return all(d.plateau_detected for d in self.plateau_detectors.values())

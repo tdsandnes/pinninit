@@ -21,7 +21,7 @@ class EarlyStopping(PlateauTrainerModule):
         # Initialise plateau detectors
         self._init_plateau_detectors(trainer)
 
-    def on_step_end(
+    def on_epoch_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
         # Wait until min_iter to update plateau detectors
@@ -29,7 +29,7 @@ class EarlyStopping(PlateauTrainerModule):
             return
 
         # If validation loss has plateaued, request stop
-        if self._step_plateau_detectors(trainer):
+        if self._step_plateau_detectors_full(trainer):
             trainer.state.stop_requested = True
 
             # Log early stopping request

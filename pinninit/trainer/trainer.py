@@ -52,6 +52,11 @@ class Trainer:
         # Initialise iterations at 0
         self.iter = 0
 
+        # Epoch tracking
+        self.epoch = 0
+        self.is_epoch_end = False
+        self._steps_in_epoch = 0
+
         # TrainerState handles current state of training
         self.state = TrainerState()
         self.state.coast_until_iter = warmup_iters
@@ -73,6 +78,10 @@ class Trainer:
         self.logger = TrainerLogger(self, print_freq=print_freq)
 
     def step(self) -> None:
+        # Mark whether this step completes an epoch (full pass over the training data)
+        self._steps_in_epoch += 1
+        self.is_epoch_end = self._steps_in_epoch >= self._steps_per_epoch()
+
         # Update trainer state for current step
         self.state.on_step_start(self, self.logger)
 
@@ -108,10 +117,24 @@ class Trainer:
             if not self.state.is_coasting or module.runs_during_coast:
                 module.on_step_end(self, self.logger)
 
+        # Execute epoch-end hooks when a full pass over the data completes
+        if self.is_epoch_end:
+            for module in self.trainer_modules:
+                if not self.state.is_coasting or module.runs_during_coast:
+                    module.on_epoch_end(self, self.logger)
+            self.logger.on_epoch_end()
+
         # Notify all modules of any state change
         if self.state.state_updated:
+            # A structural change restarts the epoch count
+            self._steps_in_epoch = 0
             for module in self.trainer_modules:
                 module.on_state_change(self, self.logger)
+
+        # Roll over the epoch counter
+        if self.is_epoch_end:
+            self.epoch += 1
+            self._steps_in_epoch = 0
 
         # Update trainer state for next step
         self.state.on_step_end(self, self.logger)
@@ -132,9 +155,6 @@ class Trainer:
             # Step the trainer
             self.step()
 
-            # Print to terminal
-            self.logger.print_after_step()
-
             # Check max iterations
             if self.max_iter is not None and self.iter >= self.max_iter:
                 self.logger.log_event("max_iter_reached", self.iter)
@@ -154,6 +174,18 @@ class Trainer:
         # Execute all trainer modules at end of training
         for module in self.trainer_modules:
             module.on_train_end(self, self.logger)
+
+    def _steps_per_epoch(self) -> int:
+        """Steps for every active container to cycle its full training set once."""
+        if self.optimizer.requires_full_batch:
+            return 1
+        return max(
+            (
+                len(container.train_eval_context.dataloader)
+                for container in self.loss_containers.values()
+            ),
+            default=1,
+        )
 
     def _set_current_train_batches(self) -> None:
         """Set the batch coords each active loss container uses this step."""
@@ -240,6 +272,24 @@ class Trainer:
         )
 
         return self.post_step_val_loss.detach() / loss_term_weight_sum
+
+    def compute_full_unweighted_val_losses(self) -> dict[str, float]:
+        """Unweighted val loss of each active container over its full val set."""
+        return {
+            label: container.compute_full_val_loss(self.model).item()
+            for label, container in self.loss_containers.items()
+        }
+
+    @property
+    def compute_full_weighted_avg_val_loss(self) -> float:
+        """Weighted-average val loss over the full val set."""
+        total = 0.0
+        weight_sum = 0.0
+        for _, container in self.loss_containers.items():
+            loss = container.compute_full_val_loss(self.model).item()
+            total += container.loss_term_weight * loss
+            weight_sum += container.loss_term_weight
+        return total / weight_sum
 
     @property
     def all_loss_containers(self) -> dict[str, LossTermContainer]:

@@ -40,7 +40,7 @@ class UpdateOptimizer(PlateauTrainerModule):
         # Training can only stop after optimizer has been updated
         trainer.state.init_stop_barrier(self.stop_barrier_label)
 
-    def on_step_end(
+    def on_epoch_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
         # Don't do anything if already updated
@@ -60,7 +60,7 @@ class UpdateOptimizer(PlateauTrainerModule):
             return
 
         # If validation loss has plateaued, update optimizer
-        if self._step_plateau_detectors(trainer):
+        if self._step_plateau_detectors_full(trainer):
             # Reload the best model before switching optimizer
             trainer.load_best_model()
 

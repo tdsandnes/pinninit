@@ -5,6 +5,7 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 import torch
+from torch.utils.data import DataLoader
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -22,6 +23,14 @@ class WeightMethodLabels(str, Enum):
     CONSTANT = "constant"
     ADAPTIVE_W21 = "adaptive_w21"
     ADAPTIVE_W23 = "adaptive_w23"
+
+
+def _iter_batches(
+    dataloader: DataLoader[CoordsProtocol],
+) -> Iterator[CoordsProtocol]:
+    """Typed boundary around DataLoader iteration: torch's stubs type the
+    iterator's __next__ as Any, hiding the collate_fn's return type."""
+    yield from dataloader
 
 
 class LossTermContainer:
@@ -110,11 +119,11 @@ class LossTermContainer:
     def next_train_batch(self) -> CoordsProtocol:
         """Return the next batch of training coords, cycling the dataloader."""
         if self._train_batch_iter is None:
-            self._train_batch_iter = iter(self.train_eval_context.dataloader)
+            self._train_batch_iter = _iter_batches(self.train_eval_context.dataloader)
         try:
             return next(self._train_batch_iter)
         except StopIteration:
-            self._train_batch_iter = iter(self.train_eval_context.dataloader)
+            self._train_batch_iter = _iter_batches(self.train_eval_context.dataloader)
             return next(self._train_batch_iter)
 
     def reset_train_batches(self) -> None:
@@ -124,11 +133,11 @@ class LossTermContainer:
     def next_val_batch(self) -> CoordsProtocol:
         """Return the next batch of validation coords, cycling the dataloader."""
         if self._val_batch_iter is None:
-            self._val_batch_iter = iter(self.val_eval_context.dataloader)
+            self._val_batch_iter = _iter_batches(self.val_eval_context.dataloader)
         try:
             return next(self._val_batch_iter)
         except StopIteration:
-            self._val_batch_iter = iter(self.val_eval_context.dataloader)
+            self._val_batch_iter = _iter_batches(self.val_eval_context.dataloader)
             return next(self._val_batch_iter)
 
     def reset_val_batches(self) -> None:
@@ -208,3 +217,21 @@ class LossTermContainer:
     ) -> Generator[torch.Tensor, None, None]:
         for loss in self._loss_generator(model, self.val_eval_context, detach):
             yield self.loss_term_weight * loss
+
+    def compute_full_val_loss(self, model: NeuralNetwork) -> torch.Tensor:
+        """Exact unweighted loss over the full validation set, evaluated in
+        dataloader-sized chunks."""
+        total: torch.Tensor | None = None
+        n_total = 0
+        for batch_coords in self.val_eval_context.dataloader:
+            batch_loss = self.compute_loss(
+                model, self.val_eval_context, batch_coords, detach=True
+            )
+            n = batch_coords.n_points
+            total = batch_loss * n if total is None else total + batch_loss * n
+            n_total += n
+
+        if total is None:
+            raise RuntimeError(f"Validation dataloader for '{self.label}' is empty.")
+
+        return total / n_total

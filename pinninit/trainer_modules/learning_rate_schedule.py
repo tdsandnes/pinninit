@@ -61,7 +61,7 @@ class LearningRateSchedule(PlateauTrainerModule):
         for group in param_groups:
             group["lr"] = self.lr_init
 
-    def on_step_end(
+    def on_epoch_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
         # Don't do anything if already finished
@@ -100,7 +100,7 @@ class LearningRateSchedule(PlateauTrainerModule):
             return
 
         # If validation loss has plateaued, decay learning rate
-        if self._step_plateau_detectors(trainer):
+        if self._step_plateau_detectors_full(trainer):
             # Reset the best model tracker
             trainer.reset_best_model()
 

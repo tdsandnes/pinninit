@@ -60,7 +60,7 @@ class LossTermStaggering(PlateauTrainerModule):
         # Training can only stop after all loss terms have been activated
         trainer.state.init_stop_barrier(self.stop_barrier_label)
 
-    def on_step_end(
+    def on_epoch_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
         # Wait until min_iter to update plateau detectors
@@ -72,7 +72,7 @@ class LossTermStaggering(PlateauTrainerModule):
             return
 
         # If validation loss has plateaued, activate next stagger group
-        if self._step_plateau_detectors(trainer):
+        if self._step_plateau_detectors_full(trainer):
             # Update counter
             self.current_stagger_idx += 1
             current_stagger = self.current_stagger_idx

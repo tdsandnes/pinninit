@@ -38,13 +38,9 @@ class AdaptiveWeightsW21(TrainerModule):
         self.adaptive_groups: dict[str, list[LossTermContainer]] = {}
         self.reference_weight_group: list[LossTermContainer] = []
 
-        # Keep track of the previous weight update
-        self._prev_update_iter: int | None = None
-
     def on_train_start(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        self._prev_update_iter = None
         self.adaptive_groups.clear()
         self.reference_weight_group.clear()
 
@@ -57,18 +53,13 @@ class AdaptiveWeightsW21(TrainerModule):
                 "found."
             )
 
-    def on_step_start(
+    def on_epoch_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
         if trainer.iter < self.min_iter:
             return
-
-        if (
-            self._prev_update_iter is None
-            or (trainer.iter - self._prev_update_iter) >= self.update_frequency
-        ):
+        if trainer.epoch % self.update_frequency == 0:
             self._update_weights(trainer, logger)
-            self._prev_update_iter = trainer.iter
 
     def on_state_change(
         self, trainer: Trainer, logger: TrainerLogger | None = None
@@ -82,7 +73,6 @@ class AdaptiveWeightsW21(TrainerModule):
 
         # Update weights
         self._update_weights(trainer, logger)
-        self._prev_update_iter = trainer.iter
 
     def _register_container(self, container: LossTermContainer) -> None:
         # Adaptive containers
