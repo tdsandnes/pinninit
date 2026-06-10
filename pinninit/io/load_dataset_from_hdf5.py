@@ -140,9 +140,7 @@ def load_fields_from_hdf5(
         role_group = f[dataset_label][role]
 
         if "Fields" not in role_group:
-            raise KeyError(
-                f"'Fields' missing under '{dataset_label}/{role}' in '{file_path}'."
-            )
+            return {}
 
         fields_group = role_group["Fields"]
 

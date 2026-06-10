@@ -9,7 +9,6 @@ from ..geometry.domain import Domain
 
 
 def build_coords_class(
-    coords_config: CoordinatesConfig,
     coord_system_config: CoordSystemConfig,
     coord_system: CoordSystem,
     device: torch.device,
@@ -23,8 +22,6 @@ def build_coords_class(
 
     Parameters
     ----------
-    coords_config:
-        Config for this set of coordinates.
     coord_system_config:
         The matching CoordSystemConfig.
     coord_system:
@@ -107,7 +104,7 @@ def build_coords_classes(
         coord_system = coord_systems[cs_label]
         cs_config = coord_system_configs_by_label[cs_label]
         coords_class = build_coords_class(
-            coords_config, cs_config, coord_system, device
+            cs_config, coord_system, device
         )
         domain = build_domain(coords_config, coord_system, device)
         result[coords_config.label] = (coords_class, domain)

@@ -32,6 +32,7 @@ from ..nn.initialise_biases import BiasInitLabels
 from ..nn.initialise_weights import WeightInitLabels
 from ..nn.input_transformation import InputTransformationLabels
 from ..nn.layers import LayerTypeLabels
+from ..nn.neural_network import NNTypeLabels
 
 E = TypeVar("E", bound=Enum)
 
@@ -291,7 +292,7 @@ def _parse_loss(raw: list[dict[str, Any]]) -> list[LossTermConfig]:
                 label=term["label"],
                 field_label=term["field_label"],
                 coordinates_label=term["coordinates_label"],
-                dataset_label=term["dataset_label"],
+                dataset_label=term.get("dataset_label"),
                 loss_type=loss_type,
                 loss_function=loss_function,
                 weight_value=float(term.get("weight_value", 1.0)),
@@ -326,6 +327,9 @@ def _expand_nn_alias(
 
 
 def _parse_nn(raw: dict[str, Any]) -> NNConfig:
+    if "type" not in raw:
+        raise ValueError("NN section must specify 'type' (e.g. type: feedforward).")
+    nn_type = _parse_enum(raw["type"], NNTypeLabels)
     widths: list[int] = list(raw["hidden_layer_widths"])
     num_layers = len(widths) + 1
     input_transformation_str: str | None = raw.get("input_transformation")
@@ -336,6 +340,7 @@ def _parse_nn(raw: dict[str, Any]) -> NNConfig:
     )
 
     return NNConfig(
+        nn_type=nn_type,
         hidden_layer_widths=widths,
         layer_types=_expand_nn_alias(
             raw["layer_types"],

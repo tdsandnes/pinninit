@@ -34,17 +34,14 @@ _VAL_LOSS_FN = LossFunctionLabels.MSE
 
 def build_evaluation_contexts(
     loss_term_config: LossTermConfig,
-    dataset_config: DatasetConfig,
+    dataset_config: DatasetConfig | None,
     Coords: type[CoordsProtocol],
-    coord_system_config: CoordSystemConfig,
     fields_config: FieldsConfig,
     const_configs: list[ConstConfig],
     equations: list[Equation],
-    domain: Domain,
     batch_size: int | None = None,
     shuffle: bool = True,
     num_workers: int = 0,
-    device: torch.device | None = None,
 ) -> tuple[EvaluationContext, EvaluationContext]:
     """
     Build train and validation EvaluationContexts for a single LossTermConfig.
@@ -53,7 +50,7 @@ def build_evaluation_contexts(
       1. Loads train and val coordinates and input fields from HDF5
       2. Builds input and output DataContainers for each role
       3. Wires up the shared loss function
-      4. Optionally wraps the train context in a DataLoader for mini-batching
+      4. Wraps the train context in a DataLoader for mini-batching
 
     Parameters
     ----------
@@ -63,20 +60,18 @@ def build_evaluation_contexts(
         Config for the HDF5 dataset to load.
     Coords:
         The Coords class for this set of coordinates.
-    coord_system_config:
-        The CoordSystemConfig corresponding to Coords (needed for axis labels).
     fields_config:
         Fields config — determines which fields are input/output/derivable.
     const_configs:
         Constant configs — values are populated into the output DataContainer.
     equations:
         Already-built Equation objects for derived field computation.
-    domain:
-        Domain object for this coordinate set.
     batch_size:
         If provided, wraps the training context's coords in a DataLoader.
-    device:
-        PyTorch device (inferred from Coords if None).
+    shuffle:
+        Whether to shuffle the DataLoader.
+    num_workers:
+        Number of DataLoader worker processes.
 
     Returns
     -------
@@ -87,6 +82,12 @@ def build_evaluation_contexts(
 
     # Determine which fields to load from file (only input fields are in the HDF5)
     input_field_label_to_rank = fields_config.input_field_label_to_rank
+
+    if dataset_config is None:
+        raise ValueError(
+            f"LossTermConfig '{loss_term_config.label}' has no dataset_label. "
+            "Currently physics losses must still reference a dataset for coords."
+        )
 
     # Load train role
     train_coords = load_coords_from_hdf5(

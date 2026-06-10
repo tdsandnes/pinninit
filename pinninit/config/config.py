@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from ..nn.initialise_weights import WeightInitLabels
     from ..nn.input_transformation import InputTransformationLabels
     from ..nn.layers import LayerTypeLabels
+    from ..nn.neural_network import NNTypeLabels
 
 
 # Geometry Config
@@ -198,7 +199,7 @@ class LossTermConfig:
     label: str
     field_label: str
     coordinates_label: str
-    dataset_label: str
+    dataset_label: str | None
     loss_type: LossTermLabels
     loss_function: LossFunctionLabels
     weight_value: float
@@ -211,6 +212,7 @@ class LossTermConfig:
 class NNConfig:
     """Neural network architecture configuration."""
 
+    nn_type: NNTypeLabels
     hidden_layer_widths: list[int]
     layer_types: list[LayerTypeLabels]
     activation_functions: list[ActivationFuncLabels]

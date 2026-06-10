@@ -129,6 +129,7 @@ Trainer:
       update_frequency: 1000
 
 NN:
+  type: feedforward
   hidden_layer_widths: [128, 128, 128]
   layer_types: siren
   activation_functions: siren

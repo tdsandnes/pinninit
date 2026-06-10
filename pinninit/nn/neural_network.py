@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from abc import ABC, abstractmethod
 import torch
 import torch.nn as nn
+from enum import Enum
 
 from .activation_function import ACTIVATION_FUNC_REGISTRY
 from .initialise_biases import BIAS_INIT_REGISTRY
@@ -14,14 +16,23 @@ if TYPE_CHECKING:
     from ..data_structure.coords_dataclass import CoordsProtocol
     from ..io.input_parameters import LayersParams
 
-### Maybe eventually add multiple NN subclasses if we want multiple options
+
+class NNTypeLabels(str, Enum):
+    FEEDFORWARD = "feedforward"
+    ### e.g. PIRATENET = "piratenet"
 
 
-class NeuralNetwork(nn.Module):
-    """
-    Use a list of Layer instances to produce a sequential model.
-    """
+class NeuralNetwork(nn.Module, ABC):
+    """Base class for all network architectures."""
+    
+    output_field_labels: tuple[str, ...]
+    
+    @abstractmethod
+    def evaluate(self, coords: CoordsProtocol) -> torch.Tensor:
+        pass
 
+
+class FeedforwardNN(NeuralNetwork):
     lb: torch.Tensor
     ub: torch.Tensor
 
@@ -81,3 +92,8 @@ class NeuralNetwork(nn.Module):
             tensor = self.activation_funcs[i](tensor)  # Call activation function
 
         return tensor
+
+# Mapping from NN type labels to classes
+NN_TYPE_REGISTRY: dict[NNTypeLabels, type[NeuralNetwork]] = {
+    NNTypeLabels.FEEDFORWARD: FeedforwardNN,
+}
