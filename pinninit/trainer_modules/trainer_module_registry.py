@@ -17,11 +17,11 @@ class TrainerModuleLabels(str, Enum):
     LEARNING_RATE_SCHEDULE = "learning_rate_schedule"
     LOSS_TERM_STAGGERING = "loss_term_staggering"
     ADAPTIVE_WEIGHTS_W21 = "adaptive_weights_w21"
-    ADAPTIVE_WEIGHTS_W23 = "adaptive_weights_W23"
+    ADAPTIVE_WEIGHTS_W23 = "adaptive_weights_w23"
 
 
 # Mapping from trainer module labels to classes
-### UpdateOptimizer and R3D23 are not yet config-buildable since they require
+### UpdateOptimizer is not yet config-buildable since they require
 ### constructed objects (an Optimizer / a sampler) rather than plain values
 TRAINER_MODULE_REGISTRY: dict[TrainerModuleLabels, type[TrainerModule]] = {
     TrainerModuleLabels.EARLY_STOPPING: EarlyStopping,

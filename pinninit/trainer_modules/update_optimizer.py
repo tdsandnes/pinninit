@@ -51,11 +51,13 @@ class UpdateOptimizer(PlateauTrainerModule):
         if trainer.iter < self.min_iter:
             return
 
-        # Do nothing until all loss terms are active
-        ### Probably a more general way to do this
-        for module in trainer.trainer_modules:
-            if isinstance(module, LossTermStaggering) and not module.completed:
-                return
+        # Do nothing until all staggered loss terms are active (if staggering is used)
+        ### Still think there's a more general way to do this, but fine for now
+        staggering_label = LossTermStaggering.__name__
+        if trainer.state.has_stop_barrier(staggering_label) and not (
+            trainer.state.is_stop_barrier_met(staggering_label)
+        ):
+            return
 
         # If validation loss has plateaued, update optimizer
         if self._step_plateau_detectors(trainer):

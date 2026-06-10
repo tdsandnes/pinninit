@@ -82,6 +82,10 @@ class LossTermContainer:
             )
             idx += n_components
 
+        # Evaluate equations if the loss term needs a derived field
+        if self.loss_term.field_label in eval_context.output_data.derived_field_labels:
+            eval_context.output_data.evaluate_derived_fields(coords)
+
     def compute_loss(
         self,
         model: NeuralNetwork,

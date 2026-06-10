@@ -39,7 +39,7 @@ class LossTermStaggering(PlateauTrainerModule):
 
         # Get the staggering values of containers
         self.staggering_container_dict.clear()
-        for label, container in trainer._loss_containers.items():
+        for label, container in trainer.all_loss_containers.items():
             self.staggering_container_dict.setdefault(container.staggering, []).append(
                 label
             )
@@ -86,7 +86,7 @@ class LossTermStaggering(PlateauTrainerModule):
             # Activate loss containers with value of counter
             containers_to_activate = self.staggering_container_dict[current_stagger]
             for label in containers_to_activate:
-                trainer.loss_containers[label] = trainer._loss_containers[label]
+                trainer.loss_containers[label] = trainer.all_loss_containers[label]
 
                 # Log loss container activation
                 print(f"Activated loss term {label} on iteration {trainer.iter}.")

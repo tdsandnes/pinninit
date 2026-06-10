@@ -77,7 +77,8 @@ class TrainerLogger:
             }
         )
 
-    def print_losses_and_weights(self, trainer: Trainer, timing_str: str) -> None:
+    def print_losses_and_weights(self, timing_str: str) -> None:
+        trainer = self.trainer
         loss_term_weights = [
             container.loss_term_weight for container in trainer.loss_containers.values()
         ]
@@ -101,7 +102,8 @@ class TrainerLogger:
             f"Loss group weights:           {loss_term_weights} \n"
         )
 
-    def print_after_step(self, trainer: Trainer) -> None:
+    def print_after_step(self) -> None:
+        trainer = self.trainer
         if trainer.iter % self.print_freq != 0:
             return
 

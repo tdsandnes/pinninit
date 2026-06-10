@@ -48,12 +48,6 @@ class LossPlateauDetector:
         self.plateau_detected = False
 
     def step(self, current_value: float) -> None:
-        if current_value <= 0.0:
-            raise ValueError(
-                "Value must be strictly positive for relative comparison, "
-                f"got {current_value}."
-            )
-
         # If best value hasn't been set, set it as current value and return
         if self.prev_significant_best is None:
             self.prev_significant_best = current_value

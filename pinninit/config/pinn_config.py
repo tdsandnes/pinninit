@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..io.load_parameters_from_yaml import load_parameters_from_yaml
+from ..trainer_modules.trainer_module_registry import TrainerModuleLabels
 
 if TYPE_CHECKING:
     from .config import (
@@ -47,3 +48,26 @@ class PINNConfig:
             nn=raw["nn"],
             trainer=raw["trainer"],
         )
+
+    def __post_init__(self) -> None:
+        self._validate_staggering()
+
+    def _validate_staggering(self) -> None:
+        """Staggered loss terms never activate without a staggering module."""
+        staggered = [
+            loss_term.label for loss_term in self.loss if loss_term.staggering > 0
+        ]
+        if not staggered:
+            return
+
+        builtin_module_names = {
+            module.method_name.lower()
+            for module in self.trainer.trainer_modules
+            if module.method_name is not None
+        }
+        if TrainerModuleLabels.LOSS_TERM_STAGGERING.value not in builtin_module_names:
+            raise ValueError(
+                f"Loss terms {staggered} have staggering > 0 but no "
+                f"'{TrainerModuleLabels.LOSS_TERM_STAGGERING.value}' trainer module "
+                "is configured; they would never be activated."
+            )

@@ -141,7 +141,7 @@ class LearningRateSchedule(PlateauTrainerModule):
     def on_state_change(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        if self.event_count < self.n_events:
+        if self.event_count >= self.n_events:
             return
 
         # Fully re-initialise plateau detectors in case new containers were added

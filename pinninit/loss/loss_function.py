@@ -17,9 +17,7 @@ class LossFunctionLabels(str, Enum):
 
     MSE = "mse"  # Mean Square Error: sum(res^2) / n_points
     WEIGHTED_MEAN_MSE = "weighted_mean_mse"  # sum(w * res^2) / sum(weight)
-    WEIGHTED_POINT_AVERAGED_MSE = (
-        "weighted_point_avg_mse_loss"  # sum(w * res^2) / n_points
-    )
+    WEIGHTED_POINT_AVERAGED_MSE = "weighted_point_avg_mse"  # sum(w * res^2) / n_points
 
 
 def mse_loss(

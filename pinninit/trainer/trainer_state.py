@@ -40,6 +40,10 @@ class TrainerState:
         else:
             raise KeyError(f"Stop barrier '{label}' not found.")
 
+    def has_stop_barrier(self, label: str) -> bool:
+        """True if a stop barrier with the given label has been registered."""
+        return label in self._stop_barriers
+
     def on_step_start(self, trainer: Trainer, logger: TrainerLogger | None) -> None:
         self._is_coasting = trainer.iter <= self.coast_until_iter
         self._check_coast_transition(trainer, logger)
