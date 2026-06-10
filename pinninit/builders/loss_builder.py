@@ -29,31 +29,26 @@ def build_loss_term(config: LossTermConfig) -> LossTerm:
 
 
 def build_loss_term_container(
-    label: str,
     loss_term_config: LossTermConfig,
     train_eval_context: EvaluationContext,
     val_eval_context: EvaluationContext,
     domain: Domain,
-    loss_term_weight: float = 1.0,
 ) -> LossTermContainer:
     """
-    Build a LossTermContainer from a single LossTermConfigs, combining
+    Build a LossTermContainer from a single LossTermConfig, combining
     training and validation data sets
 
     Parameters
     ----------
-    label:
-        Label for this container.
     loss_term_config:
-        Configs for loss term in this container.
+        Config for the loss term in this container, including weighting and
+        staggering parameters.
     train_eval_context:
         Pre-built EvaluationContext for training.
     val_eval_context:
         Pre-built EvaluationContext for validation.
     domain:
         Domain object for this coordinate set.
-    loss_term_weight:
-        Scalar weight applied to the container's total loss.
 
     Returns
     -------
@@ -61,10 +56,13 @@ def build_loss_term_container(
     """
     loss_term = build_loss_term(loss_term_config)
     return LossTermContainer(
-        label=label,
+        label=loss_term_config.label,
         train_eval_context=train_eval_context,
         val_eval_context=val_eval_context,
         domain=domain,
         loss_term=loss_term,
-        loss_term_weight=loss_term_weight,
+        loss_term_weight=loss_term_config.weight_value,
+        weight_method_label=loss_term_config.weight_method_label,
+        weight_group_label=loss_term_config.weight_group_label,
+        staggering=loss_term_config.staggering,
     )

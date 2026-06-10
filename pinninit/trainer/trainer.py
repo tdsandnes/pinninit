@@ -8,7 +8,8 @@ from .trainer_logger import TrainerLogger
 from .trainer_state import TrainerState
 
 if TYPE_CHECKING:
-    from ..loss.loss_term_group import LossTermGroup
+    from ..data_structure.coords_dataclass import CoordsProtocol
+    from ..loss.loss_term_container import LossTermContainer
     from ..nn.neural_network import NeuralNetwork
     from ..optimizer.optimizer import Optimizer
     from ..trainer_modules.trainer_module import TrainerModule
@@ -19,7 +20,7 @@ class Trainer:
         self,
         model: NeuralNetwork,
         optimizer: Optimizer,
-        loss_groups: dict[str, LossTermGroup],
+        loss_containers: dict[str, LossTermContainer],
         trainer_modules: list[TrainerModule],
         max_iter: int | None = None,
         warmup_iters: int = 0,
@@ -30,13 +31,13 @@ class Trainer:
         self.trainer_modules = trainer_modules
         self.max_iter = max_iter
 
-        # All loss groups
-        self._loss_groups = loss_groups
-        # Active loss groups
-        self.loss_groups = {
-            label: group
-            for label, group in loss_groups.items()
-            if group.staggering == 0
+        # All loss containers
+        self._loss_containers = loss_containers
+        # Active loss containers
+        self.loss_containers = {
+            label: container
+            for label, container in loss_containers.items()
+            if container.staggering == 0
         }
 
         # Initialise iterations at 0
@@ -49,10 +50,13 @@ class Trainer:
         # Pass trainer to optimizer
         self.optimizer.attach_trainer(self)
 
+        # Batch coords used for the current step
+        self._current_train_batches: dict[str, CoordsProtocol] = {}
+
         # Best model info
         self.best_model_iter: int | None = None
         self.best_model_state: dict[str, torch.Tensor] | None = None
-        self.best_loss_group_weights: dict[str, torch.Tensor] | None = None
+        self.best_loss_term_weights: dict[str, float] | None = None
         self.best_weighted_avg_val_loss: torch.Tensor | None = None
 
         # Logger
@@ -69,6 +73,10 @@ class Trainer:
 
         # Update logger for current step
         self.logger.on_step_start()
+
+        # Draw training batches for this step. The same batches are reused for
+        # every loss evaluation within the step (e.g. L-BFGS closures).
+        self._set_current_train_batches()
 
         # Update the model parameters
         self.optimizer.prepare_for_step()
@@ -132,69 +140,91 @@ class Trainer:
         for module in self.trainer_modules:
             module.on_train_end(self, self.logger)
 
+    def _set_current_train_batches(self) -> None:
+        """Set the batch coords each active loss container uses this step."""
+        if self.optimizer.requires_full_batch:
+            self._current_train_batches = {
+                label: container.train_eval_context.coords
+                for label, container in self.loss_containers.items()
+            }
+        else:
+            self._current_train_batches = {
+                label: container.next_train_batch()
+                for label, container in self.loss_containers.items()
+            }
+
     def compute_train_loss(self) -> torch.Tensor:
-        #  Compute training loss
-        group_unweighted_train_losses = {
-            label: group.compute_unweighted_loss_train(self.model)
-            for label, group in self.loss_groups.items()
+        # New containers may have been activated since batches were drawn
+        for label, container in self.loss_containers.items():
+            if label not in self._current_train_batches:
+                self._current_train_batches[label] = container.next_train_batch()
+
+        #  Compute training loss on the current batches
+        unweighted_train_losses = {
+            label: container.compute_train_batch_loss(
+                self.model, self._current_train_batches[label], detach=False
+            )
+            for label, container in self.loss_containers.items()
         }
 
         # Get loss term weights
         loss_term_weights = {
-            label: group.weight for label, group in self.loss_groups.items()
+            label: container.loss_term_weight
+            for label, container in self.loss_containers.items()
         }
 
         # Log losses and weights
-        self.logger.record_train_losses(group_unweighted_train_losses)
+        self.logger.record_train_losses(unweighted_train_losses)
         self.logger.record_loss_term_weights(loss_term_weights)
 
         # Compute weighted training loss
-        group_weighted_train_losses = [
+        weighted_train_losses = [
             weight * loss
             for weight, loss in zip(
                 loss_term_weights.values(),
-                group_unweighted_train_losses.values(),
+                unweighted_train_losses.values(),
                 strict=True,
             )
         ]
-        train_loss = torch.stack(group_weighted_train_losses).sum()
+        train_loss = torch.stack(weighted_train_losses).sum()
 
         return train_loss
 
     def compute_val_loss(self) -> torch.Tensor:
         #  Compute validation loss
-        group_unweighted_val_losses = {
-            label: group.compute_unweighted_loss_val(self.model)
-            for label, group in self.loss_groups.items()
+        unweighted_val_losses = {
+            label: container.compute_unweighted_val_loss(self.model)
+            for label, container in self.loss_containers.items()
         }
 
         # Get loss term weights
         loss_term_weights = {
-            label: group.weight for label, group in self.loss_groups.items()
+            label: container.loss_term_weight
+            for label, container in self.loss_containers.items()
         }
 
         # Log losses and weights
-        self.logger.record_val_losses(group_unweighted_val_losses)
+        self.logger.record_val_losses(unweighted_val_losses)
         self.logger.record_loss_term_weights(loss_term_weights)
 
-        # Compute weighted training loss
-        group_weighted_val_losses = [
+        # Compute weighted validation loss
+        weighted_val_losses = [
             weight * loss
             for weight, loss in zip(
                 loss_term_weights.values(),
-                group_unweighted_val_losses.values(),
+                unweighted_val_losses.values(),
                 strict=True,
             )
         ]
-        val_loss = torch.stack(group_weighted_val_losses).sum()
+        val_loss = torch.stack(weighted_val_losses).sum()
 
         return val_loss
 
     @property
     def weighted_avg_val_loss(self) -> torch.Tensor:
-        loss_term_weight_sum = torch.stack(
-            [group.weight.detach() for group in self.loss_groups.values()]
-        ).sum()
+        loss_term_weight_sum = sum(
+            container.loss_term_weight for container in self.loss_containers.values()
+        )
 
         return self.post_step_val_loss.detach() / loss_term_weight_sum
 
@@ -213,9 +243,10 @@ class Trainer:
             self.best_model_state = {
                 k: v.detach().clone() for k, v in self.model.state_dict().items()
             }
-            # Save loss term group weights
-            self.best_loss_group_weights = {
-                label: group.weight for label, group in self.loss_groups.items()
+            # Save loss term weights
+            self.best_loss_term_weights = {
+                label: container.loss_term_weight
+                for label, container in self.loss_containers.items()
             }
 
     def load_best_model(
@@ -224,7 +255,7 @@ class Trainer:
         """Loads the best model state."""
         if (
             self.best_model_state is not None
-            and self.best_loss_group_weights is not None
+            and self.best_loss_term_weights is not None
         ):
             print(
                 f"Loading best model on iteration {self.iter}: "
@@ -238,10 +269,9 @@ class Trainer:
             # Load
             self.model.load_state_dict(self.best_model_state)
 
-            # Restore loss group weights
-            for label, weight in self.best_loss_group_weights.items():
-                group = self.loss_groups[label]
-                self.loss_groups[label].weight = weight.clone().to(group.weight.device)
+            # Restore loss term weights
+            for label, weight in self.best_loss_term_weights.items():
+                self.loss_containers[label].loss_term_weight = weight
 
             # Notify modules of updated state
             self.state.state_updated = True
@@ -251,7 +281,7 @@ class Trainer:
     def reset_best_model(self) -> None:
         self.best_model_iter = None
         self.best_model_state = None
-        self.best_loss_group_weights = None
+        self.best_loss_term_weights = None
         self.best_weighted_avg_val_loss = None
 
         # Log event

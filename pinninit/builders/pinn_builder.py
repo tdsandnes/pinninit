@@ -1,0 +1,153 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import torch
+import torch.nn as nn
+
+from ..pinn.pinn import PINN
+from .coord_system_builder import build_coord_systems
+from .coords_builder import build_coords_classes
+from .equation_builder import build_equations
+from .evaluation_context_builder import build_evaluation_contexts
+from .loss_builder import build_loss_term_container
+from .nn_builder import build_nn, collect_periodic_coords, get_internal_labels
+from .optimizer_builder import build_optimizer
+from .trainer_builder import build_trainer
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from ..config.pinn_config import PINNConfig
+    from ..loss.loss_term_container import LossTermContainer
+
+
+def build_pinn(
+    config: PINNConfig,
+    device: torch.device,
+    base_dir: Path | None = None,
+) -> PINN:
+    """
+    Build a complete PINN from a PINNConfig.
+
+    Builds, in order: coordinate systems and domains, equations, evaluation
+    contexts and loss term containers, learnable constants, the neural
+    network, the optimizer, and the trainer.
+
+    Parameters
+    ----------
+    config:
+        Full PINN configuration, e.g. loaded via PINNConfig.from_yaml().
+    device:
+        PyTorch device.
+    base_dir:
+        Optional base directory for resolving relative file paths (equations,
+        custom trainer modules).
+
+    Returns
+    -------
+    PINN
+    """
+    # Geometry
+    coord_systems = build_coord_systems(config.coord_systems, device)
+    coords_classes = build_coords_classes(
+        config.coordinates, config.coord_systems, coord_systems, device
+    )
+
+    # Equations
+    equations = build_equations(config.equations, base_dir=base_dir)
+
+    # Loss term containers
+    datasets_by_label = {dataset.label: dataset for dataset in config.datasets}
+    loss_containers: dict[str, LossTermContainer] = {}
+
+    for loss_term_config in config.loss:
+        if loss_term_config.label in loss_containers:
+            raise ValueError(f"Duplicate loss term label: '{loss_term_config.label}'.")
+
+        if loss_term_config.coordinates_label not in coords_classes:
+            raise ValueError(
+                f"LossTermConfig '{loss_term_config.label}' references unknown "
+                f"Coordinates '{loss_term_config.coordinates_label}'."
+            )
+        Coords, domain = coords_classes[loss_term_config.coordinates_label]
+
+        dataset_config = (
+            datasets_by_label.get(loss_term_config.dataset_label)
+            if loss_term_config.dataset_label is not None
+            else None
+        )
+
+        train_eval_context, val_eval_context = build_evaluation_contexts(
+            loss_term_config=loss_term_config,
+            dataset_config=dataset_config,
+            Coords=Coords,
+            fields_config=config.fields,
+            const_configs=config.constants,
+            equations=equations,
+            batch_size=config.trainer.batch_size,
+            shuffle=config.trainer.shuffle,
+            num_workers=config.trainer.num_workers,
+        )
+
+        loss_containers[loss_term_config.label] = build_loss_term_container(
+            loss_term_config=loss_term_config,
+            train_eval_context=train_eval_context,
+            val_eval_context=val_eval_context,
+            domain=domain,
+        )
+
+    # Learnable constants
+    learnt_consts: dict[str, nn.Parameter] = {
+        const_config.label: nn.Parameter(torch.zeros(1, device=device))
+        for const_config in config.constants
+        if const_config.learnable
+    }
+    for container in loss_containers.values():
+        for eval_context in (
+            container.train_eval_context,
+            container.val_eval_context,
+        ):
+            for label, param in learnt_consts.items():
+                eval_context.output_data.set_const(
+                    label, param, coords=eval_context.coords
+                )
+
+    # Neural network
+    domains = [container.domain for container in loss_containers.values()]
+    internal_labels = get_internal_labels(loss_containers)
+    periodic_coords = collect_periodic_coords(domains)
+    dim_geometric = next(iter(coord_systems.values())).dim_geometric
+
+    model = build_nn(
+        nn_config=config.nn,
+        fields_config=config.fields,
+        domains=domains,
+        internal_labels=internal_labels,
+        periodic_coords=periodic_coords,
+        dim_geometric=dim_geometric,
+        device=device,
+    )
+
+    # Optimizer over model parameters and learnable constants
+    params = list(model.parameters()) + list(learnt_consts.values())
+    optimizer = build_optimizer(config.trainer.optimizer, params)
+
+    # Trainer
+    trainer = build_trainer(
+        config=config.trainer,
+        model=model,
+        optimizer=optimizer,
+        loss_containers=loss_containers,
+        base_dir=base_dir,
+    )
+
+    return PINN(
+        config=config,
+        device=device,
+        model=model,
+        loss_containers=loss_containers,
+        learnt_consts=learnt_consts,
+        optimizer=optimizer,
+        trainer=trainer,
+    )
