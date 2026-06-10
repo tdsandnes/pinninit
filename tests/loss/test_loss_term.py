@@ -162,7 +162,7 @@ class TestPhysicsLoss:
         residual = term.compute_residual(ctx, coords)
 
         assert torch.allclose(
-            residual, torch.full((coords.n_points,), 4.0, device=device)
+            residual, torch.full((coords.n_points, 1), 4.0, device=device)
         )
 
     def test_compute_loss_uses_output_only(
@@ -194,13 +194,13 @@ class TestLossTermRegistry:
         term = term_cls(field_label="u")
         assert isinstance(term, term_cls)
 
-
-class TestLossTermShapePropagation:
     @pytest.mark.parametrize("label", list(LossTermLabels))  # type: ignore[misc]
     def test_registry_classes_are_loss_terms(self, label: LossTermLabels) -> None:
         cls = LOSS_TERM_REGISTRY[label]
         assert issubclass(cls, LossTerm)
 
+
+class TestLossTermShapePropagation:
     @pytest.mark.parametrize("label", list(LossTermLabels))  # type: ignore[misc]
     def test_compute_loss_preserves_field_component_structure_scalar(
         self,
