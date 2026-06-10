@@ -79,8 +79,7 @@ class TrainerLogger:
 
     def print_losses_and_weights(self, trainer: Trainer, timing_str: str) -> None:
         loss_term_weights = [
-            container.loss_term_weight
-            for container in trainer.loss_containers.values()
+            container.loss_term_weight for container in trainer.loss_containers.values()
         ]
         train_losses = [
             container.compute_unweighted_train_loss(trainer.model).item()
