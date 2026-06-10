@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from ..builders.pinn_builder import build_pinn
 from ..config.pinn_config import PINNConfig
 
 if TYPE_CHECKING:
@@ -59,6 +58,8 @@ class PINN:
 
         # Relative paths in the config resolve against the parameter file
         base_dir = Path(param_file_path).parent
+
+        from ..builders.pinn_builder import build_pinn
 
         return build_pinn(config, device, base_dir=base_dir)
 
