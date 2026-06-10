@@ -129,4 +129,4 @@ class AdaptiveWeightsW23(TrainerModule):
 
         # Log weight update
         if logger is not None:
-            logger.log_event("weight_update_grad_balance", trainer.iter)
+            logger.log_event("weight_update_W23", trainer.iter)
