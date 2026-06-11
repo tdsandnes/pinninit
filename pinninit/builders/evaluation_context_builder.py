@@ -12,9 +12,10 @@ from ..config.config import (
 )
 from ..data_structure.batching import make_dataloader
 from ..data_structure.equation import Equation
+from ..data_structure.field_dataclass import make_field_dataclass
 from ..io.load_dataset_from_hdf5 import load_coords_from_hdf5, load_fields_from_hdf5
 from ..loss.evaluation_context import EvaluationContext
-from ..loss.loss_function import LOSS_FUNCTION_REGISTRY
+from ..loss.loss_function import LOSS_FUNCTION_REGISTRY, LossFunctionLabels
 from .data_container_builder import (
     build_input_data_container,
     build_output_data_container,
@@ -24,10 +25,16 @@ from .data_container_builder import (
 if TYPE_CHECKING:
     from ..data_structure.coords_dataclass import CoordsProtocol
     from ..data_structure.data_container import DataContainer
-    from ..loss.loss_function import LossFunctionLabels
 
 # Loss function used for validation loss
 _VAL_LOSS_FN = LossFunctionLabels.MSE
+
+
+# Loss functions that weight individual points (weights updated by a trainer module)
+_WEIGHTED_LOSS_FNS = {
+    LossFunctionLabels.WEIGHTED_MEAN_MSE,
+    LossFunctionLabels.WEIGHTED_POINT_AVERAGED_MSE,
+}
 
 
 def build_evaluation_contexts(
@@ -193,9 +200,19 @@ def _build_one_eval_context(
         num_workers=num_workers,
     )
 
+    # Point weights for weighted loss functions (uniform until a module updates them)
+    point_weights = None
+    if loss_fn_label in _WEIGHTED_LOSS_FNS:
+        Field = make_field_dataclass(rank=0, coords=coords, device=coords.device)
+        point_weights = Field(
+            label="point_weights",
+            value=torch.ones(coords.n_points, device=coords.device),
+        )
+
     return EvaluationContext(
         output_data=output_dc,
         loss_function=loss_fn,
         dataloader=dataloader,
         input_data=input_dc,
+        point_weights=point_weights,
     )
