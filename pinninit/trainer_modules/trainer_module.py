@@ -71,30 +71,6 @@ class PlateauTrainerModule(TrainerModule):
             self.weighted_avg_label: LossPlateauDetector(self.patience, self.frac_tol)
         }
 
-    def _step_plateau_detectors(self, trainer: Trainer) -> bool:
-        """Feed latest validation losses to detectors. Returns True if all
-        detectors have detected a plateau."""
-        # Get validation losses
-        if trainer.logger.unweighted_val_losses.has_value:
-            unweighted_val_losses = trainer.logger.unweighted_val_losses.value
-        else:
-            raise RuntimeError(
-                f"Validation losses have not been recorded for iter {trainer.iter}."
-            )
-
-        # Update loss plateau detectors
-        for label, plateau_detector in self.plateau_detectors.items():
-            if label in unweighted_val_losses:
-                plateau_detector.step(unweighted_val_losses[label])
-            elif label == self.weighted_avg_label:
-                plateau_detector.step(float(trainer.weighted_avg_val_loss))
-            else:
-                raise KeyError(f"No loss value found for label {label}")
-
-        return all(
-            detector.plateau_detected for detector in self.plateau_detectors.values()
-        )
-
     def _reset_plateau_detectors(self) -> None:
         for plateau_detector in self.plateau_detectors.values():
             plateau_detector.reset()

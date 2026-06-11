@@ -54,7 +54,6 @@ class LossTermContainer:
 
         # Cycle through training and validation batches across steps
         self._train_batches = BatchCycler(train_eval_context.dataloader)
-        self._val_batches = BatchCycler(val_eval_context.dataloader)
 
         # Check that training and validation points are in the specified domain
         train_eval_context.coords.validate_in_domain(domain)
@@ -125,14 +124,6 @@ class LossTermContainer:
     def reset_train_batches(self) -> None:
         """Restart batch cycling from the beginning of the dataloader."""
         self._train_batches.reset()
-
-    def next_val_batch(self) -> CoordsProtocol:
-        """Return the next batch of validation coords, cycling the dataloader."""
-        return self._val_batches.next()
-
-    def reset_val_batches(self) -> None:
-        """Restart batch cycling from the beginning of the dataloader."""
-        self._val_batches.reset()
 
     def compute_train_batch_loss(
         self, model: NeuralNetwork, batch_coords: CoordsProtocol, detach: bool = False

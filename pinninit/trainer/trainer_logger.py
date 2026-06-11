@@ -20,13 +20,6 @@ class TrainerLogger:
 
         # Per-step recorders (unchanged)
         self.unweighted_train_losses = PointInStepRecorder(PointInStep.FIRST)
-        self.unweighted_val_losses = PointInStepRecorder(PointInStep.LAST)
-        self.loss_term_weights = PointInStepRecorder(PointInStep.FIRST)
-
-        # Per-step logs (unchanged, useful for fine-grained plotting)
-        self.pre_step_train_losses_log: list[dict[str, float]] = []
-        self.post_step_val_losses_log: list[dict[str, float]] = []
-        self.loss_term_weights_log: list[dict[str, float]] = []
 
         # Accumulator for averaging train losses across steps within an epoch
         self._epoch_train_loss_accum: list[dict[str, float]] = []
@@ -38,28 +31,15 @@ class TrainerLogger:
 
     def on_step_start(self) -> None:
         self.unweighted_train_losses.reset()
-        self.unweighted_val_losses.reset()
-        self.loss_term_weights.reset()
 
-    def log_values(self) -> None:
+    def accumulate_train_losses(self) -> None:
+        """Stash this step's train losses for the epoch mean."""
         if self.unweighted_train_losses.has_value:
-            self.pre_step_train_losses_log.append(self.unweighted_train_losses.value)
-            # Accumulate for epoch average
             self._epoch_train_loss_accum.append(self.unweighted_train_losses.value)
         else:
             raise RuntimeError(
                 "Unweighted training losses were not recorded during step."
             )
-        if self.unweighted_val_losses.has_value:
-            self.post_step_val_losses_log.append(self.unweighted_val_losses.value)
-        else:
-            raise RuntimeError(
-                "Unweighted validation losses were not recorded during step."
-            )
-        if self.loss_term_weights.has_value:
-            self.loss_term_weights_log.append(self.loss_term_weights.value)
-        else:
-            raise RuntimeError("Loss term weights were not recorded during step.")
 
     def on_epoch_end(self) -> None:
         """Called at the end of each epoch. Computes full-set val losses,
@@ -135,14 +115,6 @@ class TrainerLogger:
         self.unweighted_train_losses.record(
             {label: loss.detach().cpu().item() for label, loss in losses.items()}
         )
-
-    def record_val_losses(self, losses: dict[str, torch.Tensor]) -> None:
-        self.unweighted_val_losses.record(
-            {label: loss.detach().cpu().item() for label, loss in losses.items()}
-        )
-
-    def record_loss_term_weights(self, weights: dict[str, float]) -> None:
-        self.loss_term_weights.record(dict(weights))
 
     def log_event(self, event: str) -> None:
         self.events.append(

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from enum import Enum
 from typing import TYPE_CHECKING
 
 import torch
@@ -14,11 +13,6 @@ if TYPE_CHECKING:
     from ..nn.neural_network import NeuralNetwork
     from ..optimizer.optimizer import Optimizer
     from ..trainer_modules.trainer_module import TrainerModule
-
-
-class _Role(Enum):
-    TRAIN = "train"
-    VAL = "val"
 
 
 class Trainer:
@@ -46,9 +40,6 @@ class Trainer:
             if container.staggering == 0
         }
 
-        # Validation loss computed at the end of the most recent step
-        self.post_step_val_loss: torch.Tensor | None = None
-
         # Initialise iterations at 0
         self.iter = 0
 
@@ -66,7 +57,6 @@ class Trainer:
 
         # Batch coords used for the current step
         self._current_train_batches: dict[str, CoordsProtocol] = {}
-        self._current_val_batches: dict[str, CoordsProtocol] = {}
 
         # Best model info
         self.best_model_epoch: int | None = None
@@ -107,12 +97,8 @@ class Trainer:
         self.optimizer.prepare_for_step()
         self.optimizer.step()
 
-        # Draw validation batches and calculate validation losses at end of step
-        self._set_current_val_batches()
-        self.post_step_val_loss = self.compute_val_loss()
-
         # Log values
-        self.logger.log_values()
+        self.logger.accumulate_train_losses()
 
         # Execute all trainer modules at end of step
         for module in self.trainer_modules:
@@ -205,78 +191,30 @@ class Trainer:
                 for label, container in self.loss_containers.items()
             }
 
-    def _set_current_val_batches(self) -> None:
-        """Set the validation batch coords each active loss container uses this step."""
-        if self.optimizer.requires_full_batch:
-            self._current_val_batches = {
-                label: container.val_eval_context.coords
-                for label, container in self.loss_containers.items()
-            }
-        else:
-            self._current_val_batches = {
-                label: container.next_val_batch()
-                for label, container in self.loss_containers.items()
-            }
-
-    def _compute_weighted_loss(self, role: _Role) -> torch.Tensor:
-        if role is _Role.TRAIN:
-            batches = self._current_train_batches
-            next_batch = LossTermContainer.next_train_batch
-            record = self.logger.record_train_losses
-        else:
-            batches = self._current_val_batches
-            next_batch = LossTermContainer.next_val_batch
-            record = self.logger.record_val_losses
+    def compute_train_loss(self) -> torch.Tensor:
+        batches = self._current_train_batches
 
         # New containers may have been activated since batches were drawn
         for label, container in self.loss_containers.items():
             if label not in batches:
-                batches[label] = next_batch(container)
+                batches[label] = container.next_train_batch()
 
-        # Compute loss on the current batches (train keeps the graph, val detaches)
         unweighted_losses = {
             label: container.compute_train_batch_loss(
                 self.model, batches[label], detach=False
             )
-            if role is _Role.TRAIN
-            else container.compute_val_batch_loss(self.model, batches[label])
             for label, container in self.loss_containers.items()
         }
 
-        loss_term_weights = {
-            label: container.loss_term_weight
-            for label, container in self.loss_containers.items()
-        }
-
-        # Log losses and weights
-        record(unweighted_losses)
-        self.logger.record_loss_term_weights(loss_term_weights)
+        # Record for the epoch-mean train loss log
+        self.logger.record_train_losses(unweighted_losses)
 
         # Weighted sum
         weighted_losses = [
-            weight * loss
-            for weight, loss in zip(
-                loss_term_weights.values(), unweighted_losses.values(), strict=True
-            )
+            container.loss_term_weight * unweighted_losses[label]
+            for label, container in self.loss_containers.items()
         ]
         return torch.stack(weighted_losses).sum()
-
-    def compute_train_loss(self) -> torch.Tensor:
-        return self._compute_weighted_loss(_Role.TRAIN)
-
-    def compute_val_loss(self) -> torch.Tensor:
-        return self._compute_weighted_loss(_Role.VAL)
-
-    @property
-    def weighted_avg_val_loss(self) -> torch.Tensor:
-        if self.post_step_val_loss is None:
-            raise RuntimeError("No validation loss has been computed yet.")
-
-        loss_term_weight_sum = sum(
-            container.loss_term_weight for container in self.loss_containers.values()
-        )
-
-        return self.post_step_val_loss.detach() / loss_term_weight_sum
 
     def compute_full_unweighted_val_losses(self) -> dict[str, float]:
         """Unweighted val loss of each active container over its full val set."""

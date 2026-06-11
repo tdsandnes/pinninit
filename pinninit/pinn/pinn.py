@@ -104,11 +104,6 @@ class PINN:
                     label: param.detach().clone()
                     for label, param in self.learnt_consts.items()
                 },
-                # per-step logs
-                "pre_step_train_losses_log": logger.pre_step_train_losses_log,
-                "post_step_val_losses_log": logger.post_step_val_losses_log,
-                "loss_term_weights_log": logger.loss_term_weights_log,
-                # epoch logs
                 "epoch_train_losses_log": logger.epoch_train_losses_log,
                 "epoch_val_losses_log": logger.epoch_val_losses_log,
                 "epoch_loss_term_weights_log": logger.epoch_loss_term_weights_log,
@@ -134,9 +129,6 @@ class PINN:
 
         # Restore logs onto the trainer logger
         logger = self.trainer.logger
-        logger.pre_step_train_losses_log = checkpoint["pre_step_train_losses_log"]
-        logger.post_step_val_losses_log = checkpoint["post_step_val_losses_log"]
-        logger.loss_term_weights_log = checkpoint["loss_term_weights_log"]
         logger.epoch_train_losses_log = checkpoint.get("epoch_train_losses_log", [])
         logger.epoch_val_losses_log = checkpoint.get("epoch_val_losses_log", [])
         logger.epoch_loss_term_weights_log = checkpoint.get(
