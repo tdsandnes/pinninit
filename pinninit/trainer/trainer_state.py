@@ -81,7 +81,7 @@ class TrainerState:
             print(f"Coasting started on epoch {trainer.epoch}")
 
             if logger is not None:
-                logger.log_event("enter_coast", trainer.epoch)
+                logger.log_event("enter_coast")
 
             for module in trainer.trainer_modules:
                 module.on_state_change(trainer, logger)
@@ -91,7 +91,7 @@ class TrainerState:
             print(f"Coasting ended on epoch {trainer.epoch}")
 
             if logger is not None:
-                logger.log_event("exit_coast", trainer.epoch)
+                logger.log_event("exit_coast")
 
             for module in trainer.trainer_modules:
                 module.on_state_change(trainer, logger)

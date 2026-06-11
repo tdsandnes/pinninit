@@ -120,9 +120,9 @@ class CoordSystem(ABC):
         if axis_label in self.axes_labels_selected:
             return geometric_coords[axis_label]
         elif self.fixed_axes is not None and axis_label in self.fixed_axes:
-            return torch.tensor(self.fixed_axes[axis_label])
+            return torch.tensor(self.fixed_axes[axis_label], device=self.device)
         elif default is not None:
-            return torch.tensor(default)
+            return torch.tensor(default, device=self.device)
         else:
             raise ValueError(f"Missing required axis: {axis_label}")
 
@@ -210,20 +210,6 @@ class CartesianCoords(CoordSystem):
         },
     )
 
-    def __init__(
-        self,
-        dim_geometric: int,
-        coord_axes: set[str],
-        device: torch.device,
-        fixed_axes: dict[str, float] | None = None,
-    ):
-        super().__init__(
-            dim_geometric=dim_geometric,
-            coord_axes=coord_axes,
-            device=device,
-            fixed_axes=fixed_axes,
-        )
-
     def metric_tensor(
         self,
         n_points: int,
@@ -272,20 +258,6 @@ class CylindricalCoords(CoordSystem):
         },
     )
 
-    def __init__(
-        self,
-        dim_geometric: int,
-        coord_axes: set[str],
-        device: torch.device,
-        fixed_axes: dict[str, float] | None = None,
-    ):
-        super().__init__(
-            dim_geometric=dim_geometric,
-            coord_axes=coord_axes,
-            device=device,
-            fixed_axes=fixed_axes,
-        )
-
     def metric_tensor(
         self,
         n_points: int,
@@ -301,12 +273,7 @@ class CylindricalCoords(CoordSystem):
         diag[:, 1] = r**2  # theta-theta component
 
         # Only use rows and columns of axes included in geometric_coords
-        mask_keep = [
-            i
-            for i in range(self.metadata.max_dim_geometric)
-            if i in self.indices_selected
-        ]
-        diag = diag[:, mask_keep]
+        diag = diag[:, list(self.indices_selected)]
         return DiagonalMetricTensor(diag)
 
     @property
@@ -417,20 +384,6 @@ class SphericalCoords(CoordSystem):
         },
     )
 
-    def __init__(
-        self,
-        dim_geometric: int,
-        coord_axes: set[str],
-        device: torch.device,
-        fixed_axes: dict[str, float] | None = None,
-    ):
-        super().__init__(
-            dim_geometric=dim_geometric,
-            coord_axes=coord_axes,
-            device=device,
-            fixed_axes=fixed_axes,
-        )
-
     def metric_tensor(
         self,
         n_points: int,
@@ -448,12 +401,7 @@ class SphericalCoords(CoordSystem):
         diag[:, 2] = r**2 * torch.sin(theta) ** 2  # phi-phi component
 
         # Only use rows and columns of axes included in geometric_coords
-        mask_keep = [
-            i
-            for i in range(self.metadata.max_dim_geometric)
-            if i in self.indices_selected
-        ]
-        diag = diag[:, mask_keep]
+        diag = diag[:, list(self.indices_selected)]
         return DiagonalMetricTensor(diag)
 
     @property

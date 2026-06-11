@@ -144,22 +144,25 @@ class TrainerLogger:
     def record_loss_term_weights(self, weights: dict[str, float]) -> None:
         self.loss_term_weights.record(dict(weights))
 
-    def log_event(self, event: str, iter: int) -> None:
-        self.events.append({"event": event, "iter": iter, "epoch": self.trainer.epoch})
+    def log_event(self, event: str) -> None:
+        self.events.append(
+            {"event": event, "iter": self.trainer.iter, "epoch": self.trainer.epoch}
+        )
 
     def print_losses_and_weights(self, timing_str: str) -> None:
         trainer = self.trainer
-        loss_term_weights = [
-            container.loss_term_weight for container in trainer.loss_containers.values()
-        ]
-        train_losses = [
-            container.compute_full_train_loss(trainer.model).item()
-            for container in trainer.loss_containers.values()
-        ]
-        val_losses = [
-            container.compute_full_val_loss(trainer.model).item()
-            for container in trainer.loss_containers.values()
-        ]
+        loss_term_weights = {
+            label: container.loss_term_weight
+            for label, container in trainer.loss_containers.items()
+        }
+        train_losses = {
+            label: container.compute_full_train_loss(trainer.model).item()
+            for label, container in trainer.loss_containers.items()
+        }
+        val_losses = {
+            label: container.compute_full_val_loss(trainer.model).item()
+            for label, container in trainer.loss_containers.items()
+        }
         print(
             "-------------------------------------------------------------------\n"
             f"Epoch: {trainer.epoch}  Iter: {trainer.iter}  ({timing_str}): \n"

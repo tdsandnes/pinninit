@@ -78,7 +78,10 @@ def load_coords_from_hdf5(
                 )
             data = coords_group[label][()]
             coords_dict[label] = torch.tensor(
-                data, device=Coords.device, requires_grad=True
+                data,
+                dtype=torch.get_default_dtype(),
+                device=Coords.device,
+                requires_grad=True,
             )
 
     return Coords(**coords_dict)
@@ -163,7 +166,9 @@ def load_fields_from_hdf5(
                         f"got {type(item).__name__}."
                     )
                 fields[field_label] = {
-                    "value": torch.tensor(item[()], device=coords.device)
+                    "value": torch.tensor(
+                        item[()], dtype=torch.get_default_dtype(), device=coords.device
+                    )
                 }
 
             else:
@@ -181,7 +186,11 @@ def load_fields_from_hdf5(
                     )
 
                 fields[field_label] = {
-                    comp: torch.tensor(item[comp][()], device=coords.device)
+                    comp: torch.tensor(
+                        item[comp][()],
+                        dtype=torch.get_default_dtype(),
+                        device=coords.device,
+                    )
                     for comp in expected_components
                 }
 

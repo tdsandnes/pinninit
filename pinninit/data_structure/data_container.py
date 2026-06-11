@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import torch
 
 from .coords_dataclass import CoordsProtocol
@@ -137,13 +139,12 @@ class DataContainer:
 
         return value
 
-    def set_field_from_tensor(
+    def _set_field(
         self,
         label: str,
-        tensor: torch.Tensor,
-        coords: CoordsProtocol | None = None,
-        detach_stale_values: bool = True,
-        allow_derived: bool = False,
+        coords: CoordsProtocol | None,
+        allow_derived: bool,
+        update: Callable[[FieldProtocol, CoordsProtocol], None],
     ) -> None:
         # Guard against setting derived field outside of equation evaluator
         if label in self.derived_field_labels and not allow_derived:
@@ -154,9 +155,7 @@ class DataContainer:
         # Update field
         coords = coords or self.coords
         self._validate_eval_coords(label, self.coords, coords, enforce_ancestry=True)
-        self.get_field(label).update_from_tensor(
-            tensor, coords=coords, detach_stale_values=detach_stale_values
-        )
+        update(self.get_field(label), coords)
 
         # Update active coords for the field
         if label in self.primary_field_labels:
@@ -167,6 +166,23 @@ class DataContainer:
         # Reset field cache
         self._fields_cache = None
         self._fields_active_coords_cache = None
+
+    def set_field_from_tensor(
+        self,
+        label: str,
+        tensor: torch.Tensor,
+        coords: CoordsProtocol | None = None,
+        detach_stale_values: bool = True,
+        allow_derived: bool = False,
+    ) -> None:
+        self._set_field(
+            label,
+            coords,
+            allow_derived,
+            lambda field, c: field.update_from_tensor(
+                tensor, coords=c, detach_stale_values=detach_stale_values
+            ),
+        )
 
     def set_field_from_component_tensor(
         self,
@@ -176,28 +192,14 @@ class DataContainer:
         detach_stale_values: bool = True,
         allow_derived: bool = False,
     ) -> None:
-        # Guard against setting derived field outside of equation evaluator
-        if label in self.derived_field_labels and not allow_derived:
-            raise ValueError(
-                f"Field '{label}' is a derived field and cannot be set directly."
-            )
-
-        # Update field
-        coords = coords or self.coords
-        self._validate_eval_coords(label, self.coords, coords, enforce_ancestry=True)
-        self.get_field(label).update_from_component_tensor(
-            component_tensor, coords=coords, detach_stale_values=detach_stale_values
+        self._set_field(
+            label,
+            coords,
+            allow_derived,
+            lambda field, c: field.update_from_component_tensor(
+                component_tensor, coords=c, detach_stale_values=detach_stale_values
+            ),
         )
-
-        # Update active coords for the field
-        if label in self.primary_field_labels:
-            self.primary_fields_active_coords[label] = coords
-        elif label in self.derived_field_labels:
-            self.derived_fields_active_coords[label] = coords
-
-        # Reset field cache
-        self._fields_cache = None
-        self._fields_active_coords_cache = None
 
     def set_field_from_component_dict(
         self,
@@ -207,28 +209,14 @@ class DataContainer:
         detach_stale_values: bool = True,
         allow_derived: bool = False,
     ) -> None:
-        # Guard against setting derived field outside of equation evaluator
-        if label in self.derived_field_labels and not allow_derived:
-            raise ValueError(
-                f"Field '{label}' is a derived field and cannot be set directly."
-            )
-
-        # Update field
-        coords = coords or self.coords
-        self._validate_eval_coords(label, self.coords, coords, enforce_ancestry=True)
-        self.get_field(label).update_from_component_dict(
-            component_dict, coords=coords, detach_stale_values=detach_stale_values
+        self._set_field(
+            label,
+            coords,
+            allow_derived,
+            lambda field, c: field.update_from_component_dict(
+                component_dict, coords=c, detach_stale_values=detach_stale_values
+            ),
         )
-
-        # Update active coords for the field
-        if label in self.primary_field_labels:
-            self.primary_fields_active_coords[label] = coords
-        elif label in self.derived_field_labels:
-            self.derived_fields_active_coords[label] = coords
-
-        # Reset field cache
-        self._fields_cache = None
-        self._fields_active_coords_cache = None
 
     def set_const(
         self, label: str, value: torch.Tensor, coords: CoordsProtocol | None = None

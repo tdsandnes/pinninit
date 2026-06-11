@@ -98,7 +98,7 @@ def build_trainer(
         optimizer=optimizer,
         loss_containers=loss_containers,
         trainer_modules=trainer_modules,
-        max_iter=config.max_iter,
+        max_epoch=config.max_epoch,
         warmup_epochs=config.warmup_epochs,
         print_freq=config.print_freq,
     )

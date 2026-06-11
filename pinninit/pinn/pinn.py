@@ -100,7 +100,10 @@ class PINN:
         torch.save(
             {
                 "model_state_dict": self.model.state_dict(),
-                "learnt_consts": {...},
+                "learnt_consts": {
+                    label: param.detach().clone()
+                    for label, param in self.learnt_consts.items()
+                },
                 # per-step logs
                 "pre_step_train_losses_log": logger.pre_step_train_losses_log,
                 "post_step_val_losses_log": logger.post_step_val_losses_log,
@@ -110,7 +113,7 @@ class PINN:
                 "epoch_val_losses_log": logger.epoch_val_losses_log,
                 "epoch_loss_term_weights_log": logger.epoch_loss_term_weights_log,
                 "events": logger.events,
-                "best_model_iter": trainer.best_model_iter,
+                "best_model_epoch": trainer.best_model_epoch,
                 "best_weighted_avg_val_loss": trainer.best_weighted_avg_val_loss,
             },
             path,
@@ -140,7 +143,7 @@ class PINN:
             "epoch_loss_term_weights_log", []
         )
         logger.events = checkpoint["events"]
-        self.trainer.best_model_iter = checkpoint["best_model_iter"]
+        self.trainer.best_model_epoch = checkpoint["best_model_epoch"]
         self.trainer.best_weighted_avg_val_loss = checkpoint.get(
             "best_weighted_avg_val_loss"
         )

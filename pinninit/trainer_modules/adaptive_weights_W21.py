@@ -111,14 +111,17 @@ class AdaptiveWeightsW21(TrainerModule):
             )
 
         # Compute gradients for the reference group
+        batches = trainer.current_train_batches
         all_ref_grads_flat = compute_flat_train_grads(
-            trainer.model, self.reference_weight_group
+            trainer.model, self.reference_weight_group, batches
         )
         ref_max_abs = torch.max(all_ref_grads_flat.abs())
 
         # Compute and update adaptive groups
         for container_list in self.adaptive_groups.values():
-            all_grads_flat = compute_flat_train_grads(trainer.model, container_list)
+            all_grads_flat = compute_flat_train_grads(
+                trainer.model, container_list, batches
+            )
             group_mean_abs = torch.mean(all_grads_flat.abs())
 
             # Wang et al. (2021) Eqn. 40
@@ -132,4 +135,4 @@ class AdaptiveWeightsW21(TrainerModule):
 
         # Log weight update
         if logger is not None:
-            logger.log_event("weight_update_W21", trainer.epoch)
+            logger.log_event("weight_update_W21")

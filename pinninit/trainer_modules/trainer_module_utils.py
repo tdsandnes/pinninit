@@ -5,18 +5,31 @@ from typing import TYPE_CHECKING
 import torch
 
 if TYPE_CHECKING:
+    from ..data_structure.coords_dataclass import CoordsProtocol
     from ..loss.loss_term_container import LossTermContainer
     from ..nn.neural_network import NeuralNetwork
 
 
 def compute_flat_train_grads(
-    model: NeuralNetwork, containers: list[LossTermContainer]
+    model: NeuralNetwork,
+    containers: list[LossTermContainer],
+    batches: dict[str, CoordsProtocol] | None = None,
 ) -> torch.Tensor:
     """Concatenated flat gradient of the containers' unweighted training losses
-    with respect to the model parameters."""
+    with respect to the model parameters.
+
+    If `batches` is given, each container's loss is evaluated on its current
+    batch (falling back to drawing the next batch for containers without one);
+    otherwise on its full training set in a single graph."""
     all_grads_flat_list = []
     for container in containers:
-        loss = container.compute_unweighted_train_loss(model, detach=False)
+        if batches is not None:
+            batch = batches.get(container.label)
+            if batch is None:
+                batch = container.next_train_batch()
+            loss = container.compute_train_batch_loss(model, batch, detach=False)
+        else:
+            loss = container.compute_unweighted_train_loss(model, detach=False)
         grads = torch.autograd.grad(
             loss,
             list(model.parameters()),

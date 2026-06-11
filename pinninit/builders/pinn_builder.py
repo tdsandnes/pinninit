@@ -99,7 +99,9 @@ def build_pinn(
 
     # Learnable constants
     learnt_consts: dict[str, nn.Parameter] = {
-        const_config.label: nn.Parameter(torch.zeros(1, device=device))
+        const_config.label: nn.Parameter(
+            torch.tensor(const_config.value, device=device)
+        )
         for const_config in config.constants
         if const_config.learnable
     }

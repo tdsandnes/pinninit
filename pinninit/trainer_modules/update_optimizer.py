@@ -79,7 +79,7 @@ class UpdateOptimizer(PlateauTrainerModule):
 
             # Log optimizer update
             if logger is not None:
-                logger.log_event("optimizer_update", trainer.epoch)
+                logger.log_event("optimizer_update")
 
             # Notify trainer that its state has changed
             trainer.state.state_updated = True

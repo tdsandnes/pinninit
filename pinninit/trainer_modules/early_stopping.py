@@ -34,7 +34,7 @@ class EarlyStopping(PlateauTrainerModule):
 
             # Log early stopping request
             if logger is not None:
-                logger.log_event("early_stopping_requested", trainer.epoch)
+                logger.log_event("early_stopping_requested")
 
     def on_state_change(
         self, trainer: Trainer, logger: TrainerLogger | None = None

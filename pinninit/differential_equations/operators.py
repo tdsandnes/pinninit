@@ -44,6 +44,8 @@ class Operators:
         torch.Tensor
             Derivative of each element of f.
         """
+        if f.ndim != 1:
+            raise ValueError(f"d_dcoord expects a 1D scalar field, got shape {f.shape}")
         coord = self.coords.get_coord(coord_label)
         return torch.autograd.grad(
             outputs=f,

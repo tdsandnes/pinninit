@@ -91,7 +91,7 @@ class LearningRateSchedule(PlateauTrainerModule):
             if trainer.epoch + 1 == self.warmup_epochs:
                 print(f"Learning rate warmup completed on epoch {trainer.epoch}.")
                 if logger is not None:
-                    logger.log_event("learning_rate_warmup_complete", trainer.epoch)
+                    logger.log_event("learning_rate_warmup_complete")
 
             return
 
@@ -116,7 +116,7 @@ class LearningRateSchedule(PlateauTrainerModule):
 
             # Log learning rate decay
             if logger is not None:
-                logger.log_event("learning_rate_decay", trainer.epoch)
+                logger.log_event("learning_rate_decay")
 
             # Notify trainer that its state has changed
             trainer.state.state_updated = True

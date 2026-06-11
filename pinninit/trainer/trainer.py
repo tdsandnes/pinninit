@@ -28,14 +28,14 @@ class Trainer:
         optimizer: Optimizer,
         loss_containers: dict[str, LossTermContainer],
         trainer_modules: list[TrainerModule],
-        max_iter: int | None = None,
+        max_epoch: int | None = None,
         warmup_epochs: int = 0,
         print_freq: int = 1,
     ) -> None:
         self.model = model
         self.optimizer = optimizer
         self.trainer_modules = trainer_modules
-        self.max_iter = max_iter
+        self.max_epoch = max_epoch
 
         # All loss containers
         self._loss_containers = loss_containers
@@ -69,15 +69,21 @@ class Trainer:
         self._current_val_batches: dict[str, CoordsProtocol] = {}
 
         # Best model info
-        self.best_model_iter: int | None = None
+        self.best_model_epoch: int | None = None
         self.best_model_state: dict[str, torch.Tensor] | None = None
         self.best_loss_term_weights: dict[str, float] | None = None
-        self.best_weighted_avg_val_loss: torch.Tensor | None = None
+        self.best_weighted_avg_val_loss: float | None = None
+
+        # Cache of full-set unweighted val losses, valid until the model changes
+        self._full_val_losses_cache: dict[str, float] | None = None
 
         # Logger
         self.logger = TrainerLogger(self, print_freq=print_freq)
 
     def step(self) -> None:
+        # Model params changed last step so full-set val losses are stale
+        self._full_val_losses_cache = None
+
         # Mark whether this step completes an epoch (full pass over the training data)
         self._steps_in_epoch += 1
         self.is_epoch_end = self._steps_in_epoch >= self._steps_per_epoch()
@@ -105,10 +111,6 @@ class Trainer:
         self._set_current_val_batches()
         self.post_step_val_loss = self.compute_val_loss()
 
-        # Update best model if needed
-        if not self.state.is_coasting:
-            self.update_best_model()
-
         # Log values
         self.logger.log_values()
 
@@ -119,6 +121,9 @@ class Trainer:
 
         # Execute epoch-end hooks when a full pass over the data completes
         if self.is_epoch_end:
+            # Track the best model on the full-set validation loss
+            if not self.state.is_coasting:
+                self.update_best_model()
             for module in self.trainer_modules:
                 if not self.state.is_coasting or module.runs_during_coast:
                     module.on_epoch_end(self, self.logger)
@@ -155,21 +160,21 @@ class Trainer:
             # Step the trainer
             self.step()
 
-            # Check max iterations
-            if self.max_iter is not None and self.iter >= self.max_iter:
-                self.logger.log_event("max_iter_reached", self.iter)
+            # Check max epoch
+            if self.max_epoch is not None and self.epoch >= self.max_epoch:
+                self.logger.log_event("max_epoch_reached")
                 break
 
         else:
             # Reached only when the while condition becomes False, i.e. all stop
-            # barriers were met and stop was requested (not via the max_iter break)
-            self.logger.log_event("training_stopped_early", self.iter)
+            # barriers were met and stop was requested (not via the max_epoch break)
+            self.logger.log_event("training_stopped_early")
 
         # Restore best model
         if self.best_model_state is not None:
             self.load_best_model()
         else:
-            self.logger.log_event("no_best_model_to_load", self.iter)
+            self.logger.log_event("no_best_model_to_load")
 
         # Execute all trainer modules at end of training
         for module in self.trainer_modules:
@@ -275,20 +280,24 @@ class Trainer:
 
     def compute_full_unweighted_val_losses(self) -> dict[str, float]:
         """Unweighted val loss of each active container over its full val set."""
-        return {
-            label: container.compute_full_val_loss(self.model).item()
-            for label, container in self.loss_containers.items()
-        }
+        if self._full_val_losses_cache is None:
+            self._full_val_losses_cache = {
+                label: container.compute_full_val_loss(self.model).item()
+                for label, container in self.loss_containers.items()
+            }
+        return self._full_val_losses_cache
 
     @property
     def full_weighted_avg_val_loss(self) -> float:
         """Weighted-average val loss over the full val set."""
-        total = 0.0
-        weight_sum = 0.0
-        for _, container in self.loss_containers.items():
-            loss = container.compute_full_val_loss(self.model).item()
-            total += container.loss_term_weight * loss
-            weight_sum += container.loss_term_weight
+        losses = self.compute_full_unweighted_val_losses()
+        total = sum(
+            self.loss_containers[label].loss_term_weight * loss
+            for label, loss in losses.items()
+        )
+        weight_sum = sum(
+            container.loss_term_weight for container in self.loss_containers.values()
+        )
         return total / weight_sum
 
     @property
@@ -305,14 +314,14 @@ class Trainer:
         self,
     ) -> None:
         """Updates best model state if validation loss is lower than previous best."""
-        current_weighted_avg_val_loss = self.weighted_avg_val_loss
+        current = self.full_weighted_avg_val_loss
 
         if (
             self.best_weighted_avg_val_loss is None
-            or current_weighted_avg_val_loss < self.best_weighted_avg_val_loss
+            or current < self.best_weighted_avg_val_loss
         ):
-            self.best_weighted_avg_val_loss = current_weighted_avg_val_loss
-            self.best_model_iter = self.iter
+            self.best_weighted_avg_val_loss = current
+            self.best_model_epoch = self.epoch
             self.best_model_state = {
                 k: v.detach().clone() for k, v in self.model.state_dict().items()
             }
@@ -331,16 +340,17 @@ class Trainer:
             and self.best_loss_term_weights is not None
         ):
             print(
-                f"Loading best model on iteration {self.iter}: "
-                f"best model iter = {self.best_model_iter}, "
+                f"Loading best model on epoch {self.epoch}: "
+                f"best model epoch = {self.best_model_epoch}, "
                 f"weighted_avg_val_loss = {self.best_weighted_avg_val_loss})"
             )
 
             # Log event
-            self.logger.log_event("load_best_model", self.iter)
+            self.logger.log_event("load_best_model")
 
             # Load
             self.model.load_state_dict(self.best_model_state)
+            self._full_val_losses_cache = None
 
             # Restore loss term weights
             for label, weight in self.best_loss_term_weights.items():
@@ -352,10 +362,10 @@ class Trainer:
             raise ValueError("No best model state to load.")
 
     def reset_best_model(self) -> None:
-        self.best_model_iter = None
+        self.best_model_epoch = None
         self.best_model_state = None
         self.best_loss_term_weights = None
         self.best_weighted_avg_val_loss = None
 
         # Log event
-        self.logger.log_event("reset_best_model", self.iter)
+        self.logger.log_event("reset_best_model")

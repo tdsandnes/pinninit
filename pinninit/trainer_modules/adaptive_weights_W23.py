@@ -96,9 +96,12 @@ class AdaptiveWeightsW23(TrainerModule):
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
         # Compute grad norm of each adaptive group
+        batches = trainer.current_train_batches
         group_grad_norms: dict[str, torch.Tensor] = {}
         for label, container_list in self.adaptive_groups.items():
-            all_grads_flat = compute_flat_train_grads(trainer.model, container_list)
+            all_grads_flat = compute_flat_train_grads(
+                trainer.model, container_list, batches
+            )
             group_grad_norms[label] = torch.norm(all_grads_flat, p=2)
 
         # Set loss term weights
@@ -119,4 +122,4 @@ class AdaptiveWeightsW23(TrainerModule):
 
         # Log weight update
         if logger is not None:
-            logger.log_event("weight_update_W23", trainer.epoch)
+            logger.log_event("weight_update_W23")

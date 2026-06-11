@@ -91,7 +91,7 @@ class LossTermStaggering(PlateauTrainerModule):
                 # Log loss container activation
                 print(f"Activated loss term {label} on epoch {trainer.epoch}.")
                 if logger is not None:
-                    logger.log_event("activated_loss_term_" + label, trainer.epoch)
+                    logger.log_event("activated_loss_term_" + label)
 
             # Init new plateau detectors, including the newly activated containers
             self._init_plateau_detectors(trainer)
