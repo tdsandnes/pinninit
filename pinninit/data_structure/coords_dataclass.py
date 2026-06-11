@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import MISSING, field, make_dataclass
-from typing import Any, Protocol, cast
+from dataclasses import MISSING, Field, field, make_dataclass
+from typing import Any, ClassVar, Protocol, cast
 
 import torch
 
@@ -10,6 +10,7 @@ from ..geometry.domain import Domain
 
 
 class CoordsProtocol(Protocol):
+    __dataclass_fields__: ClassVar[dict[str, Field[Any]]]
     # Attributes
     # Input fields at class creation time
     coord_labels: tuple[str, ...]
@@ -42,6 +43,16 @@ class CoordsProtocol(Protocol):
     def _validate_inputs(self) -> None: ...
     @property
     def is_batch(self) -> bool: ...
+
+
+def get_coords_class_default(Coords: type[CoordsProtocol], field_name: str) -> Any:
+    """Class-level default of a Coords dataclass field (e.g. coord_labels,
+    device). Needed because slots=True shadows class attributes with member
+    descriptors."""
+    default = Coords.__dataclass_fields__[field_name].default
+    if default is MISSING:
+        raise ValueError(f"Coords field '{field_name}' has no class-level default.")
+    return default
 
 
 def _coords_post_init(self: CoordsProtocol) -> None:
@@ -261,6 +272,9 @@ def make_coords_dataclass(
 ) -> type[CoordsProtocol]:
     # Validate
     _validate_factory_inputs(coord_labels, coord_system)
+
+    # Normalise device so it matches realised tensor devices ("cuda" -> "cuda:0")
+    device = torch.empty(0, device=device).device
 
     # Sort coordinate labels
     coord_labels_sorted = tuple(sorted(coord_labels))

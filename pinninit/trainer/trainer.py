@@ -105,8 +105,15 @@ class Trainer:
             if not self.state.is_coasting or module.runs_during_coast:
                 module.on_step_end(self, self.logger)
 
-        # Execute epoch-end hooks when a full pass over the data completes
+            # Execute epoch-end hooks when a full pass over the data completes
         if self.is_epoch_end:
+            # Roll the counter first, so hooks see the number of completed
+            # epochs and iter == epoch * steps_per_epoch at epoch boundaries
+            self.epoch += 1
+            self._steps_in_epoch = 0
+            for container in self.loss_containers.values():
+                container.reset_train_batches()
+
             # Track the best model on the full-set validation loss
             if not self.state.is_coasting:
                 self.update_best_model()
@@ -123,13 +130,6 @@ class Trainer:
                 container.reset_train_batches()
             for module in self.trainer_modules:
                 module.on_state_change(self, self.logger)
-
-        # Roll over the epoch counter
-        if self.is_epoch_end:
-            self.epoch += 1
-            self._steps_in_epoch = 0
-            for container in self.loss_containers.values():
-                container.reset_train_batches()
 
         # Update trainer state for next step
         self.state.on_step_end(self, self.logger)

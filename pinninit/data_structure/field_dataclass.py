@@ -385,6 +385,9 @@ def _build_dataclass_fields(
 def make_field_dataclass(
     rank: int, coords: CoordsProtocol, device: torch.device
 ) -> type[FieldProtocol]:
+    # Normalise device so it matches realised tensor devices ("cuda" -> "cuda:0")
+    device = torch.empty(0, device=device).device
+
     # Get field components
     component_labels = generate_tensor_component_labels(coords.geometric_labels, rank)
 

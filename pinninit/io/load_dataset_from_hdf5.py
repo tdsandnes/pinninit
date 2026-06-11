@@ -6,6 +6,7 @@ import h5py
 import torch
 
 from ..config.config import DatasetConfig
+from ..data_structure.coords_dataclass import get_coords_class_default
 from ..data_structure.field_dataclass import (
     generate_tensor_component_labels,
 )
@@ -77,10 +78,11 @@ def load_coords_from_hdf5(
                     f"in '{file_path}'."
                 )
             data = coords_group[label][()]
+            device = get_coords_class_default(Coords, "device")
             coords_dict[label] = torch.tensor(
                 data,
                 dtype=torch.get_default_dtype(),
-                device=Coords.device,
+                device=device,
                 requires_grad=True,
             )
 

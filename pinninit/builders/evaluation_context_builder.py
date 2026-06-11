@@ -11,11 +11,13 @@ from ..config.config import (
     LossTermConfig,
 )
 from ..data_structure.batching import make_dataloader
+from ..data_structure.coords_dataclass import get_coords_class_default
 from ..data_structure.equation import Equation
 from ..data_structure.field_dataclass import make_field_dataclass
 from ..io.load_dataset_from_hdf5 import load_coords_from_hdf5, load_fields_from_hdf5
 from ..loss.evaluation_context import EvaluationContext
 from ..loss.loss_function import LOSS_FUNCTION_REGISTRY, LossFunctionLabels
+from ..loss.loss_term import LossTermLabels
 from .data_container_builder import (
     build_input_data_container,
     build_output_data_container,
@@ -83,7 +85,7 @@ def build_evaluation_contexts(
     tuple[EvaluationContext, EvaluationContext]
         (train_eval_context, val_eval_context)
     """
-    coord_labels = Coords.coord_labels
+    coord_labels = get_coords_class_default(Coords, "coord_labels")
 
     # Determine which fields to load from file (only input fields are in the HDF5)
     input_field_label_to_rank = fields_config.input_field_label_to_rank
@@ -101,11 +103,17 @@ def build_evaluation_contexts(
         coord_labels=coord_labels,
         Coords=Coords,
     )
-    train_input_fields = load_fields_from_hdf5(
-        dataset_config=dataset_config,
-        role=dataset_config.train_label,
-        coords=train_coords,
-        field_label_to_rank=input_field_label_to_rank,
+    # Physics losses use collocation points only; no input fields to load
+    is_physics = loss_term_config.loss_type == LossTermLabels.PHYSICS
+    train_input_fields = (
+        {}
+        if is_physics
+        else load_fields_from_hdf5(
+            dataset_config=dataset_config,
+            role=dataset_config.train_label,
+            coords=train_coords,
+            field_label_to_rank=input_field_label_to_rank,
+        )
     )
 
     # Load val role
@@ -115,11 +123,15 @@ def build_evaluation_contexts(
         coord_labels=coord_labels,
         Coords=Coords,
     )
-    val_input_fields = load_fields_from_hdf5(
-        dataset_config=dataset_config,
-        role=dataset_config.val_label,
-        coords=val_coords,
-        field_label_to_rank=input_field_label_to_rank,
+    val_input_fields = (
+        {}
+        if is_physics
+        else load_fields_from_hdf5(
+            dataset_config=dataset_config,
+            role=dataset_config.val_label,
+            coords=val_coords,
+            field_label_to_rank=input_field_label_to_rank,
+        )
     )
 
     # Build train contexts
@@ -169,7 +181,7 @@ def _build_one_eval_context(
     # Input DataContainer holds the ground-truth / boundary data loaded from file
     # Only built when there are input fields to compare against
     input_dc: DataContainer | None = None
-    if fields_config.input_field_label_to_rank:
+    if loaded_input_fields:
         input_dc = build_input_data_container(
             coords=coords,
             fields_config=fields_config,

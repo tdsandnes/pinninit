@@ -77,19 +77,17 @@ class LearningRateSchedule(PlateauTrainerModule):
             self.warmup_epochs > 0
             and self.lr_init is not None
             and self.lr_after_warmup is not None
-            and trainer.epoch < self.warmup_epochs
+            and trainer.epoch <= self.warmup_epochs
         ):
-            current_epoch_in_warmup = trainer.epoch + 1
-            total_warmup_epochs = self.warmup_epochs
             lr = self.lr_init + (self.lr_after_warmup - self.lr_init) * (
-                current_epoch_in_warmup / total_warmup_epochs
+                trainer.epoch / self.warmup_epochs
             )
             for group in trainer.optimizer.optimizer.param_groups:
                 group["lr"] = lr
 
             # Print message when warmup finishes
-            if trainer.epoch + 1 == self.warmup_epochs:
-                print(f"Learning rate warmup completed on epoch {trainer.epoch}.")
+            if trainer.epoch == self.warmup_epochs:
+                print(f"Learning rate warmup completed after epoch {trainer.epoch}.")
                 if logger is not None:
                     logger.log_event("learning_rate_warmup_complete")
 
@@ -125,7 +123,7 @@ class LearningRateSchedule(PlateauTrainerModule):
             if self.coast_epochs_after_update > 0:
                 trainer.state.coast_until_epoch = max(
                     trainer.state.coast_until_epoch,
-                    trainer.epoch + 1 + self.coast_epochs_after_update,
+                    trainer.epoch + self.coast_epochs_after_update,
                 )
 
             # Re-initialise plateau detectors

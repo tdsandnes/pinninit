@@ -84,7 +84,7 @@ class UpdateOptimizer(PlateauTrainerModule):
             if self.coast_epochs_after_update > 0:
                 trainer.state.coast_until_epoch = max(
                     trainer.state.coast_until_epoch,
-                    trainer.epoch + 1 + self.coast_epochs_after_update,
+                    trainer.epoch + self.coast_epochs_after_update,
                 )
 
             # Remove stop barrier

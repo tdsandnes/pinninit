@@ -20,6 +20,7 @@ class Domain:
         self.device = device
 
         self._set_geometric_bounds(geometric_bounds)
+        self._set_non_geometric_bounds(geometric_bounds)
         self._set_internal_bounds()
         self._set_periodic_coords(periodic_coords)
 
@@ -63,6 +64,32 @@ class Domain:
             self.geometric_lb[axis] = torch.tensor(lb, device=self.device)
             self.geometric_ub[axis] = torch.tensor(ub, device=self.device)
 
+    def _set_non_geometric_bounds(
+        self,
+        bounds: dict[str, tuple[float | None, float | None]] | None,
+    ) -> None:
+        """Bounds of non-geometric axes (e.g. time), used for input scaling."""
+        self.non_geometric_lb: dict[str, torch.Tensor] = {}
+        self.non_geometric_ub: dict[str, torch.Tensor] = {}
+
+        if bounds is None:
+            return
+
+        for axis, (lb, ub) in bounds.items():
+            if axis in self.geometric_labels:
+                continue
+            if lb is None or ub is None:
+                raise ValueError(
+                    f"Non-geometric axis '{axis}' requires explicit min and max."
+                )
+            if lb > ub:
+                raise ValueError(
+                    f"Lower bound must be <= upper bound for axis '{axis}', "
+                    f"got [{lb}, {ub}]"
+                )
+            self.non_geometric_lb[axis] = torch.tensor(lb, device=self.device)
+            self.non_geometric_ub[axis] = torch.tensor(ub, device=self.device)
+
     def _set_internal_bounds(self) -> None:
         # Derive internal bounds from coord system
         self.internal_lb, self.internal_ub = (
@@ -70,6 +97,10 @@ class Domain:
                 self.geometric_lb, self.geometric_ub
             )
         )
+
+        # Non-geometric axes pass straight through to the internal bounds
+        self.internal_lb.update(self.non_geometric_lb)
+        self.internal_ub.update(self.non_geometric_ub)
 
     def contains_geometric(self, geometric: torch.Tensor) -> torch.Tensor:
         lb = torch.stack([self.geometric_lb[label] for label in self.geometric_labels])
