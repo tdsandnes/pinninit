@@ -2,7 +2,7 @@ from collections.abc import Iterator
 from typing import cast
 
 import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, Sampler
 
 from .coords_dataclass import CoordsProtocol
 
@@ -20,17 +20,47 @@ class BatchDataset(Dataset[int]):
         return idx
 
 
+class EqualSplitBatchSampler(Sampler[list[int]]):
+    """Yields exactly n_batches index batches per pass, with sizes differing
+    by at most one point, reshuffled on each new pass."""
+
+    def __init__(self, n_points: int, n_batches: int, shuffle: bool = True) -> None:
+        if n_batches <= 0:
+            raise ValueError(f"n_batches must be positive, got {n_batches}")
+        if n_batches > n_points:
+            raise ValueError(
+                f"n_batches ({n_batches}) cannot exceed n_points ({n_points})"
+            )
+        self.n_points = n_points
+        self.n_batches = n_batches
+        self.shuffle = shuffle
+
+    def __len__(self) -> int:
+        return self.n_batches
+
+    def __iter__(self) -> Iterator[list[int]]:
+        if self.shuffle:
+            idx = torch.randperm(self.n_points)
+        else:
+            idx = torch.arange(self.n_points)
+        for chunk in torch.tensor_split(idx, self.n_batches):
+            yield chunk.tolist()
+
+
 def make_dataloader(
     coords: CoordsProtocol,
-    batch_size: int,
+    n_batches: int,
     shuffle: bool = True,
     num_workers: int = 0,
 ) -> DataLoader[CoordsProtocol]:
-    """Utility to create a DataLoader."""
-    if batch_size <= 0:
-        raise ValueError("batch_size must be positive")
+    """Create a DataLoader that yields exactly n_batches batches per pass,
+    together covering every point exactly once."""
     if num_workers < 0:
         raise ValueError("num_workers cannot be negative")
+
+    # A loss term with fewer points than n_batches cannot fill that many
+    # non-empty batches; it cycles more than once per epoch instead
+    n_batches = min(n_batches, coords.n_points)
 
     dataset = BatchDataset(coords.n_points)
 
@@ -41,8 +71,7 @@ def make_dataloader(
 
     loader = DataLoader(
         dataset=dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
+        batch_sampler=EqualSplitBatchSampler(coords.n_points, n_batches, shuffle),
         num_workers=num_workers,
         collate_fn=collate_fn,
     )

@@ -73,10 +73,6 @@ class UpdateOptimizer(PlateauTrainerModule):
             self.updated = True
             print(f"Optimizer updated on epoch {trainer.epoch}.")
 
-            # Restart batch cycling so full-batch optimizers see fresh state
-            for container in trainer.loss_containers.values():
-                container.reset_train_batches()
-
             # Log optimizer update
             if logger is not None:
                 logger.log_event("optimizer_update")

@@ -37,7 +37,7 @@ def build_evaluation_contexts(
     fields_config: FieldsConfig,
     const_configs: list[ConstConfig],
     equations: list[Equation],
-    batch_size: int | None = None,
+    n_batches: int = 1,
     shuffle: bool = True,
     num_workers: int = 0,
 ) -> tuple[EvaluationContext, EvaluationContext]:
@@ -64,8 +64,8 @@ def build_evaluation_contexts(
         Constant configs — values are populated into the output DataContainer.
     equations:
         Already-built Equation objects for derived field computation.
-    batch_size:
-        If provided, wraps the training context's coords in a DataLoader.
+    n_batches:
+        Number of batches, used to sync all loss terms.
     shuffle:
         Whether to shuffle the DataLoader.
     num_workers:
@@ -123,7 +123,7 @@ def build_evaluation_contexts(
         const_configs=const_configs,
         equations=equations,
         loss_fn_label=loss_term_config.loss_function,
-        batch_size=batch_size,
+        n_batches=n_batches,
         shuffle=shuffle,
         num_workers=num_workers,
     )
@@ -136,7 +136,7 @@ def build_evaluation_contexts(
         const_configs=const_configs,
         equations=equations,
         loss_fn_label=_VAL_LOSS_FN,  # Validation loss fn is always MSE
-        batch_size=batch_size,
+        n_batches=n_batches,
         shuffle=shuffle,
         num_workers=num_workers,
     )
@@ -151,7 +151,7 @@ def _build_one_eval_context(
     const_configs: list[ConstConfig],
     equations: list[Equation],
     loss_fn_label: LossFunctionLabels,
-    batch_size: int | None,
+    n_batches: int = 1,
     shuffle: bool = True,
     num_workers: int = 0,
 ) -> EvaluationContext:
@@ -185,13 +185,10 @@ def _build_one_eval_context(
     )
     populate_consts(output_dc, const_configs, coords)
 
-    # If batch_size = None, use full batch
-    batch_size = batch_size or coords.n_points
-
     # Make dataloader
     dataloader = make_dataloader(
         coords=coords,
-        batch_size=batch_size,
+        n_batches=n_batches,
         shuffle=shuffle,
         num_workers=num_workers,
     )

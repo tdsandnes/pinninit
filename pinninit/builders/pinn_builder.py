@@ -85,7 +85,7 @@ def build_pinn(
             fields_config=config.fields,
             const_configs=config.constants,
             equations=equations,
-            batch_size=config.trainer.batch_size,
+            n_batches=config.trainer.n_batches,
             shuffle=config.trainer.shuffle,
             num_workers=config.trainer.num_workers,
         )

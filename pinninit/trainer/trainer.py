@@ -119,6 +119,8 @@ class Trainer:
         if self.state.state_updated:
             # A structural change restarts the epoch count
             self._steps_in_epoch = 0
+            for container in self.loss_containers.values():
+                container.reset_train_batches()
             for module in self.trainer_modules:
                 module.on_state_change(self, self.logger)
 

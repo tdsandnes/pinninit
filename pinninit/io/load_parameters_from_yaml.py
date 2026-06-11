@@ -387,7 +387,6 @@ def _parse_trainer(raw: dict[str, Any]) -> TrainerConfig:
     ]
 
     max_epoch = raw.get("max_epoch")
-    batch_size = raw.get("batch_size")
 
     return TrainerConfig(
         optimizer=optimizer,
@@ -395,7 +394,7 @@ def _parse_trainer(raw: dict[str, Any]) -> TrainerConfig:
         max_epoch=int(max_epoch) if max_epoch is not None else None,
         warmup_epochs=int(raw.get("warmup_epochs", 0)),
         print_freq=int(raw.get("print_freq", 1)),
-        batch_size=int(batch_size) if batch_size is not None else None,
+        n_batches=int(raw.get("n_batches", 1)),
         shuffle=bool(raw.get("shuffle", True)),
         num_workers=int(raw.get("num_workers", 0)),
     )

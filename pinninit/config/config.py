@@ -319,7 +319,7 @@ class TrainerConfig:
     max_epoch: int | None = None
     warmup_epochs: int = 0
     print_freq: int = 1
-    batch_size: int | None = None
+    n_batches: int = 1
     shuffle: bool = True
     num_workers: int = 0
 
@@ -331,8 +331,8 @@ class TrainerConfig:
             raise ValueError(f"max_epoch must be > 0, got {self.max_epoch}.")
         if self.warmup_epochs < 0:
             raise ValueError(f"warmup_epochs must be >= 0, got {self.warmup_epochs}.")
-        if self.batch_size is not None and self.batch_size <= 0:
-            raise ValueError(f"batch_size must be > 0, got {self.batch_size}.")
+        if self.n_batches <= 0:
+            raise ValueError(f"n_batches must be > 0, got {self.n_batches}.")
 
     @property
     def by_label(self) -> dict[str, TrainerModuleConfig]:
