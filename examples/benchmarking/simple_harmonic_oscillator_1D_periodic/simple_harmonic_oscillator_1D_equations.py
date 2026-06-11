@@ -14,9 +14,9 @@ if TYPE_CHECKING:
 
 
 def simple_harmonic_oscillator_1D_pde_residual(
-    y: torch.Tensor, operators: Operators
+    f: torch.Tensor, operators: Operators
 ) -> torch.Tensor:
-    dy_dx = operators.d_dcoord(y, "x")
-    d2y_dx2 = operators.d_dcoord(dy_dx, "x")
+    df_dx = operators.d_dcoord(f, "x")
+    d2f_dx2 = operators.d_dcoord(df_dx, "x")
 
-    return d2y_dx2 + y
+    return d2f_dx2 + f

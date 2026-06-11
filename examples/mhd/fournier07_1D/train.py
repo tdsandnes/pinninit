@@ -25,7 +25,7 @@ def train() -> None:
     print(f"Using device: {device}")
 
     # Init PINN
-    pinn = pinninit.PINN(param_path, device)
+    pinn = pinninit.PINN.from_yaml(param_path, device)
 
     # Train
     pinn.train()

@@ -13,9 +13,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from typing import TYPE_CHECKING
 
 import pinninit
+from pinninit.data_structure.coords_dataclass import make_coords_dataclass
+from pinninit.geometry.coordinate_system import CartesianCoords
 
 if TYPE_CHECKING:
-    TensorDict = dict[str, torch.Tensor]
+    from pinninit.data_structure.coords_dataclass import CoordsProtocol
 
 
 def read_snapshot(path: Path) -> tuple[float, np.ndarray, np.ndarray, np.ndarray]:
@@ -29,18 +31,25 @@ def read_snapshot(path: Path) -> tuple[float, np.ndarray, np.ndarray, np.ndarray
 
 
 def evaluate_pinn_at_test_points(
-    pinn: pinninit.PINN, x_test: np.ndarray, t_test: np.ndarray, device: torch.device
+    pinn: pinninit.PINN,
+    Coords: type[CoordsProtocol],
+    x_test: np.ndarray,
+    t_test: np.ndarray,
+    device: torch.device,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Evaluate PINN at test coordinates for u and b."""
-    coords = {
-        "x": torch.tensor(x_test, device=device),
-        "t": torch.tensor(t_test, device=device),
-    }
+    coords = Coords(
+        x=torch.tensor(x_test, device=device),
+        t=torch.tensor(t_test, device=device),
+    )
     with torch.no_grad():
         output = pinn.evaluate_model(coords)
-    # Assuming output order [b, u]
-    b_pred = output[:, 0].cpu().numpy()
-    u_pred = output[:, 1].cpu().numpy()
+
+    # Select output columns by field label
+    b_idx = pinn.model.output_field_labels.index("b")
+    u_idx = pinn.model.output_field_labels.index("u")
+    b_pred = output[:, b_idx].cpu().numpy()
+    u_pred = output[:, u_idx].cpu().numpy()
     return u_pred, b_pred
 
 
@@ -63,8 +72,12 @@ if __name__ == "__main__":
     device = torch.device("cpu")
     print(f"Using device: {device}")
 
+    # Coords class matching the training configuration
+    coord_system = CartesianCoords(dim_geometric=1, coord_axes={"x"}, device=device)
+    Coords = make_coords_dataclass({"x", "t"}, coord_system, device)
+
     # Load PINN
-    pinn = pinninit.PINN(PARAM_FILE, device)
+    pinn = pinninit.PINN.from_yaml(PARAM_FILE, device)
     pinn.load(MODEL_PATH)
 
     # Desired snapshot times
@@ -104,7 +117,7 @@ if __name__ == "__main__":
 
         # Evaluate PINN at test points
         u_pred_test, b_pred_test = evaluate_pinn_at_test_points(
-            pinn, x_test, t_test, device
+            pinn, Coords, x_test, t_test, device
         )
 
         # Plot true solution from snapshot

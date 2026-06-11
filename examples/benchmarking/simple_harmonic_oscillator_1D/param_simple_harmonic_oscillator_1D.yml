@@ -1,32 +1,34 @@
 model_name: simple_harmonic_oscillator_1D
 
-DataSets:
-  data_sets:
-    - data_set_label: data_loss
-      from_file:      1
-      file_path:      ./data/simple_harmonic_oscillator_1D_train_val.hdf5
-      sampling:       none
-    - data_set_label: phys_loss
-      from_file:      1
-      file_path:      ./data/simple_harmonic_oscillator_1D_train_val.hdf5
-      sampling:       none
+CoordSystems:
+  - label: cartesian_x
+    coord_system: cartesian
+    geometric_axis_labels:
+      - x
 
 Coordinates:
-  coordinate_system:  cartesian
-  coordinates:
-    - label: x
-      is_geometric: 1
-  domains:
-    - domain_label: data_domain
-      coordinates:
-        - label: x
+  - label: data_coords
+    coord_system_label: cartesian_x
+    domain:
+      bounds:
+        x:
           min: 0.0
           max: 12.57
-    - domain_label: phys_domain
-      coordinates:
-        - label: x
+  - label: full_coords
+    coord_system_label: cartesian_x
+    domain:
+      bounds:
+        x:
           min: 0.0
-          max: 25.14
+          max: 37.70
+
+DataSets:
+  - label: data_loss
+    source: file
+    file_path: ./data/simple_harmonic_oscillator_1D_train_val.hdf5
+  - label: phys_loss
+    source: file
+    file_path: ./data/simple_harmonic_oscillator_1D_train_val.hdf5
 
 Fields:
   input_fields:
@@ -40,48 +42,67 @@ Fields:
       rank: 0
 
 Equations:
-  equations:
-    - label: pde_residual
-      function_name: simple_harmonic_oscillator_1D_pde_residual
-      file_path: ./simple_harmonic_oscillator_1D_equations.py
-      input_args:
-        - f
-      output_args:
-        - pde_residual
+  - label: pde_residual
+    function_name: simple_harmonic_oscillator_1D_pde_residual
+    file_path: ./simple_harmonic_oscillator_1D_equations.py
+    input_labels: [f]
+    output_labels: [pde_residual]
+    output_ranks: [0]
 
 LossTerms:
-  terms:
-    - loss_term_label:  f
-      field_label:      f
-      data_set_label:   data_loss
-      domain_label:     data_domain
-      loss_type:        data
-      loss_function:    mse
-      weight_method:    adaptive_grad_balance
-      weight_value:     1.0
-      weight_group:     f_data
-    - loss_term_label:  pde_residual
-      field_label:      pde_residual
-      data_set_label:   phys_loss
-      domain_label:     phys_domain
-      loss_type:        physics
-      loss_function:    mse
-      weight_method:    adaptive_grad_balance
-      weight_value:     1.0
-      weight_group:     pde_residual_phys
-  weight_methods:
-    - label:                  adaptive_grad_balance
-      alpha:                  0.1 # NOTE: outdated arxiv version of W+21 paper has incorrect value (0.9)
-      update_frequency:       1000
+  - label: f
+    field_label: f
+    coordinates_label: data_coords
+    dataset_label: data_loss
+    loss_type: data
+    loss_function: weighted_mean_mse
+    weight_value: 1.0
+    weight_method_label: adaptive_w23
+    weight_group_label: data
+  - label: pde_residual
+    field_label: pde_residual
+    coordinates_label: full_coords
+    dataset_label: phys_loss
+    loss_type: physics
+    loss_function: weighted_mean_mse
+    weight_value: 1.0
+    weight_method_label: adaptive_w23
+    weight_group_label: physics
 
-Optimizer:
-  optimizer:      soap
-  learning_rate:  0.001
-
-Layers:
-  hidden_layer_widths:  [60, 60, 60, 60, 60, 60]
-  layer_types:          all_linear
+NN:
+  type: feedforward
+  hidden_layer_widths: [60, 60, 60, 60, 60, 60]
+  layer_types: all_linear
   activation_functions: all_tanh
-  init_weights:         all_xavier
-  init_biases:          all_zeros
-  input_scaling:        scale_linear
+  init_weights: all_xavier
+  init_biases: all_zeros
+  input_transformation: scale_linear
+
+Trainer:
+  Optimizer:
+    optimizer: soap
+    learning_rate: 0.001
+  max_epoch: 20000
+  warmup_epochs: 20
+  print_freq: 100
+  n_batches: 2
+  TrainerModules:
+    - label: rba
+      method_name: residual_based_attention_a24
+      gamma: 0.999
+      eta: 0.01
+    - label: w23
+      method_name: adaptive_weights_w23
+      alpha: 0.1
+      update_iter_frequency: 100
+    - label: lr_schedule
+      method_name: learning_rate_schedule
+      decay_factor: 0.5
+      n_events: 4
+      patience: 300
+      frac_tol: 0.001
+      warmup_epochs: 20
+      coast_epochs_after_update: 20
+    - label: early_stopping
+      method_name: early_stopping
+      patience: 500

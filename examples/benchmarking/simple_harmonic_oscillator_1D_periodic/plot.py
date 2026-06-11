@@ -13,9 +13,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from typing import TYPE_CHECKING
 
 import pinninit
+from pinninit.data_structure.coords_dataclass import make_coords_dataclass
+from pinninit.geometry.coordinate_system import CartesianCoords
 
 if TYPE_CHECKING:
     from matplotlib.typing import MarkerType
+
+    from pinninit.data_structure.coords_dataclass import CoordsProtocol
 
     TensorDict = dict[str, torch.Tensor]
 
@@ -24,8 +28,9 @@ def load_data(
     filename: str,
     dataset_label: str,
     role_label: str,
+    Coords: type[CoordsProtocol],
     device: torch.device,
-) -> tuple[TensorDict, TensorDict]:
+) -> tuple[CoordsProtocol, TensorDict]:
     with h5py.File(filename, "r") as f:
         ds_grp: h5py.Group = f[dataset_label][role_label]
 
@@ -41,15 +46,16 @@ def load_data(
             device=device,
         )
 
-    coords_dict: TensorDict = {"x": x}
+    coords = Coords(x=x)
     fields_dict: TensorDict = {"f": f_true}
 
-    return coords_dict, fields_dict
+    return coords, fields_dict
 
 
 # Scatter plotting
 def plot_training_scatter(
-    coords: TensorDict | None,
+    pinn: pinninit.PINN,
+    coords: CoordsProtocol | None,
     label: str,
     marker: MarkerType,
     color: str,
@@ -60,7 +66,7 @@ def plot_training_scatter(
     with torch.no_grad():
         model_out = pinn.evaluate_model(coords)
 
-    x_train = coords["x"].detach().cpu().numpy()
+    x_train = coords.get_coord("x").detach().cpu().numpy()
     f_train = model_out[:, 0].cpu().numpy()
 
     idx = np.argsort(x_train)
@@ -82,14 +88,15 @@ def plot_training_scatter(
 
 def plot_model_output(
     output_filepath: str | Path,
-    test_coords: TensorDict,
+    pinn: pinninit.PINN,
+    test_coords: CoordsProtocol,
     test_fields: TensorDict,
     test_model_output: torch.Tensor,
-    data_loss_coords: TensorDict | None = None,
-    phys_loss_coords: TensorDict | None = None,
+    data_loss_coords: CoordsProtocol | None = None,
+    phys_loss_coords: CoordsProtocol | None = None,
 ) -> None:
     # Test data
-    x = test_coords["x"].detach().cpu().numpy().squeeze()
+    x = test_coords.get_coord("x").detach().cpu().numpy().squeeze()
     f_true = test_fields["f"].detach().cpu().numpy().squeeze()
     f_pred = test_model_output[:, 0].cpu().numpy()
 
@@ -104,12 +111,14 @@ def plot_model_output(
 
     # Scatter points for training sets
     plot_training_scatter(
+        pinn,
         phys_loss_coords,
         "Training collocation points",
         "^",
         "green",
     )
     plot_training_scatter(
+        pinn,
         data_loss_coords,
         "Training data points",
         "o",
@@ -139,14 +148,16 @@ if __name__ == "__main__":
     device = torch.device("cpu")
     print(f"Using device: {device}")
 
-    # Load test data
-    dataset_label = "test"
-    role_label = "test"
+    # Coords class matching the training configuration
+    coord_system = CartesianCoords(dim_geometric=1, coord_axes={"x"}, device=device)
+    Coords = make_coords_dataclass({"x"}, coord_system, device)
 
+    # Load test data
     test_coords, test_fields = load_data(
         TEST_DATA_FILE,
-        dataset_label,
-        role_label,
+        "test",
+        "test",
+        Coords,
         device,
     )
 
@@ -154,19 +165,21 @@ if __name__ == "__main__":
     data_loss_coords, _ = load_data(
         TRAIN_DATA_FILE,
         "data_loss",
-        "training",
+        "train",
+        Coords,
         device,
     )
 
     phys_loss_coords, _ = load_data(
         TRAIN_DATA_FILE,
         "phys_loss",
-        "training",
+        "train",
+        Coords,
         device,
     )
 
     # Load PINN
-    pinn = pinninit.PINN(PARAM_FILE, device)
+    pinn = pinninit.PINN.from_yaml(PARAM_FILE, device)
     pinn.load(MODEL_PATH)
 
     # Evaluate model
@@ -178,6 +191,7 @@ if __name__ == "__main__":
     # Plot
     plot_model_output(
         output_filepath,
+        pinn,
         test_coords,
         test_fields,
         test_model_output,

@@ -4,13 +4,14 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import torch
 
-sys.path.append(str(Path(__file__).resolve().parents[2]))
-from datasets import DataSets
+# Import pinninit
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+import pinninit
+from pinninit.geometry.coordinate_system import CartesianCoords
 
 ### Generates and saves datasets for the simple harmonic oscillator example.
-### Should use internal data structures and classes for this. But for now this is fine
-### to get the example working while internal and external API is still changing.
 
 
 def compute_f(x: float | np.ndarray) -> float | np.ndarray:
@@ -19,7 +20,7 @@ def compute_f(x: float | np.ndarray) -> float | np.ndarray:
 
 def generate_datasets(
     label: str,
-    datasets: DataSets,
+    datasets: pinninit.DataSetWriter,
     x_bounds: tuple[float, float],
     alpha: float,
     roles: list[str],
@@ -56,12 +57,13 @@ def generate_datasets(
 
         fields = {"f": compute_f(x)} if with_fields else None
 
-        datasets.add_dataset(
-            label=label, dataset_type=role, coords=coords, fields=fields
-        )
+        datasets.add(label=label, role=role, coords=coords, fields=fields)
 
 
 if __name__ == "__main__":
+    # Match the precision used in training
+    torch.set_default_dtype(torch.float64)
+
     # Params
     n_wavelengths_data = 2
     n_wavelengths_col = 4
@@ -70,11 +72,14 @@ if __name__ == "__main__":
     alpha_data = 2
     alpha_col = 10
 
-    # Init datasets
-    datasets = DataSets()
+    # Init dataset writer
+    coord_system = CartesianCoords(
+        dim_geometric=1, coord_axes={"x"}, device=torch.device("cpu")
+    )
+    datasets = pinninit.DataSetWriter(coord_system, {"x"})
 
     # Define roles and rng for seeds
-    roles = ["training", "validation"]
+    roles = ["train", "val"]
     seed = 12345
     rng = np.random.default_rng(seed)
 
@@ -89,7 +94,7 @@ if __name__ == "__main__":
         alpha=alpha_data,
         roles=roles,
         seeds={role: int(rng.integers(0, 1000000)) for role in roles},
-        with_shift={"training": False, "validation": True},
+        with_shift={"train": False, "val": True},
         with_fields=True,
         with_delta=True,
         delta=delta,
@@ -103,22 +108,21 @@ if __name__ == "__main__":
         alpha=alpha_col,
         roles=roles,
         seeds={role: int(rng.integers(0, 1000000)) for role in roles},
-        with_shift={"training": True, "validation": True},
+        with_shift={"train": True, "val": True},
         with_fields=True,
         with_delta=False,
     )
 
     # Save HDF5
-    output_filepath = "data/simple_harmonic_oscillator_1D_train_val.hdf5"
-    datasets.save(output_filepath)
+    datasets.save("data/simple_harmonic_oscillator_1D_train_val.hdf5")
 
     # Now generate test data
     alpha_test = 100
 
-    # Data manager
-    datasets_test = DataSets()
+    # Data writer for test set
+    datasets_test = pinninit.DataSetWriter(coord_system, {"x"})
 
-    # Define roles and rng for seeds
+    # Define roles
     roles_test = ["test"]
 
     n_wavelengths_test = 6
@@ -138,5 +142,4 @@ if __name__ == "__main__":
     )
 
     # Save HDF5
-    output_filepath = "data/simple_harmonic_oscillator_1D_test.hdf5"
-    datasets_test.save(output_filepath)
+    datasets_test.save("data/simple_harmonic_oscillator_1D_test.hdf5")

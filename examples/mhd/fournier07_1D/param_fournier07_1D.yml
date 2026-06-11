@@ -16,11 +16,9 @@ Coordinates:
         t:
           min: 0.0
           max: 0.2
-          periodic: false
         x:
           min: -1.0
           max: 1.0
-          periodic: false
   - label: full_coords
     coord_system_label: cartesian_xt
     domain:
@@ -28,17 +26,23 @@ Coordinates:
         t:
           min: 0.0
           max: 0.2
-          periodic: false
         x:
           min: -1.0
           max: 1.0
-          periodic: false
 
 DataSets:
-  - label: dataset
+  - label: data_loss
     source: file
     file_path: ./data/fournier07_1D_train_val.hdf5
-    sampling: none
+  - label: data_bc_loss
+    source: file
+    file_path: ./data/fournier07_1D_train_val.hdf5
+  - label: phys_momentum_loss
+    source: file
+    file_path: ./data/fournier07_1D_train_val.hdf5
+  - label: phys_induction_loss
+    source: file
+    file_path: ./data/fournier07_1D_train_val.hdf5
 
 Fields:
   input_fields:
@@ -75,58 +79,48 @@ LossTerms:
   - label: data_b
     field_label: b
     coordinates_label: data_coords
-    dataset_label: dataset
+    dataset_label: data_loss
     loss_type: data
-    loss_function: mse
-    weight_method_label: adaptive_grad_balance
+    loss_function: weighted_mean_mse
     weight_value: 1.0
+    weight_method_label: adaptive_w23
     weight_group_label: data
   - label: bc_b
     field_label: b
     coordinates_label: full_coords
-    dataset_label: dataset
+    dataset_label: data_bc_loss
     loss_type: data
-    loss_function: mse
-    weight_method_label: adaptive_grad_balance
+    loss_function: weighted_mean_mse
     weight_value: 1.0
+    weight_method_label: adaptive_w23
     weight_group_label: bc_b
   - label: bc_u
     field_label: u
     coordinates_label: full_coords
-    dataset_label: dataset
+    dataset_label: data_bc_loss
     loss_type: data
-    loss_function: mse
-    weight_method_label: adaptive_grad_balance
+    loss_function: weighted_mean_mse
     weight_value: 1.0
+    weight_method_label: adaptive_w23
     weight_group_label: bc_u
   - label: momentum_eqn
     field_label: momentum_residual
     coordinates_label: full_coords
-    dataset_label: dataset
+    dataset_label: phys_momentum_loss
     loss_type: physics
-    loss_function: mse
-    weight_method_label: adaptive_grad_balance
+    loss_function: weighted_mean_mse
     weight_value: 1.0
+    weight_method_label: adaptive_w23
     weight_group_label: momentum_eqn
   - label: induction_eqn
     field_label: induction_residual
     coordinates_label: full_coords
-    dataset_label: dataset
+    dataset_label: phys_induction_loss
     loss_type: physics
-    loss_function: mse
-    weight_method_label: adaptive_grad_balance
+    loss_function: weighted_mean_mse
     weight_value: 1.0
+    weight_method_label: adaptive_w23
     weight_group_label: induction_eqn
-
-Trainer:
-  Optimizer:
-    optimizer: soap
-    learning_rate: 0.001
-  TrainerModules:
-    - label: adaptive_grad_balance
-      method_name: adaptive_grad_balance
-      alpha: 0.1
-      update_frequency: 1000
 
 NN:
   type: feedforward
@@ -136,3 +130,32 @@ NN:
   init_weights: siren
   init_biases: all_zeros
   input_transformation: scale_linear
+
+Trainer:
+  Optimizer:
+    optimizer: soap
+    learning_rate: 0.001
+  max_epoch: 50000
+  warmup_epochs: 20
+  print_freq: 100
+  n_batches: 10
+  TrainerModules:
+    - label: rba
+      method_name: residual_based_attention_a24
+      gamma: 0.999
+      eta: 0.01
+    - label: w23
+      method_name: adaptive_weights_w23
+      alpha: 0.1
+      update_iter_frequency: 100
+    - label: lr_schedule
+      method_name: learning_rate_schedule
+      decay_factor: 0.5
+      n_events: 4
+      patience: 300
+      frac_tol: 0.001
+      warmup_epochs: 20
+      coast_epochs_after_update: 20
+    - label: early_stopping
+      method_name: early_stopping
+      patience: 500

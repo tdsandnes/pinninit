@@ -5,12 +5,13 @@ from pathlib import Path
 
 import h5py
 import numpy as np
+import torch
 from sim_config import Config
 
-sys.path.append(str(Path(__file__).resolve().parents[2]))
-from datasets import DataSets
-
-### Super WIP
+# Import pinninit
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+import pinninit
+from pinninit.geometry.coordinate_system import CartesianCoords
 
 
 class SnapshotLoader:
@@ -65,7 +66,7 @@ def sample_snapshot(
 
 def generate_mhd_dataset(
     loader: SnapshotLoader,
-    datasets: DataSets,
+    datasets: pinninit.DataSetWriter,
     label: str,
     role: str,
     x_bounds: tuple[float, float],
@@ -129,11 +130,11 @@ def generate_mhd_dataset(
         if include_u:
             fields["u"] = U.ravel()
 
-    datasets.add_dataset(label=label, dataset_type=role, coords=coords, fields=fields)
+    datasets.add(label=label, role=role, coords=coords, fields=fields)
 
 
 def generate_BC_dataset(
-    datasets: DataSets,
+    datasets: pinninit.DataSetWriter,
     label: str,
     role: str,
     x_bounds: tuple[float, float],
@@ -178,17 +179,23 @@ def generate_BC_dataset(
 
     fields = {"u": U.ravel(), "b": B.ravel()}
 
-    datasets.add_dataset(label=label, dataset_type=role, coords=coords, fields=fields)
+    datasets.add(label=label, role=role, coords=coords, fields=fields)
 
 
 if __name__ == "__main__":
+    # Match the precision used in training
+    torch.set_default_dtype(torch.float64)
+
     cfg = Config()
     loader = SnapshotLoader(cfg.snapshot_dir)
 
     full_t_values = np.array(cfg.snapshot_times)
     x_bounds = (cfg.x_min, cfg.x_max)
 
-    datasets_train_val = DataSets()
+    coord_system = CartesianCoords(
+        dim_geometric=1, coord_axes={"x"}, device=torch.device("cpu")
+    )
+    datasets_train_val = pinninit.DataSetWriter(coord_system, {"x", "t"})
 
     Nx_data_train, Nt_data_train = 20, 20
     Nx_data_val, Nt_data_val = 20, 20
@@ -197,7 +204,7 @@ if __name__ == "__main__":
         loader,
         datasets_train_val,
         label="data_loss",
-        role="training",
+        role="train",
         x_bounds=x_bounds,
         full_t_values=full_t_values,
         Nt=Nt_data_train,
@@ -212,7 +219,7 @@ if __name__ == "__main__":
         loader,
         datasets_train_val,
         label="data_loss",
-        role="validation",
+        role="val",
         x_bounds=x_bounds,
         full_t_values=full_t_values,
         Nt=Nt_data_val,
@@ -223,9 +230,9 @@ if __name__ == "__main__":
         include_u=True,
     )
 
-    t_bounds = (0.0, 0.2)  # (-0.05, 0.25)
+    t_bounds = (0.0, 0.2)
 
-    Nt_BC_train = 100  # 50
+    Nt_BC_train = 100
     Nt_BC_val = 100
     u_left = 0.0
     u_right = 0.0
@@ -235,7 +242,7 @@ if __name__ == "__main__":
     generate_BC_dataset(
         datasets_train_val,
         label="data_bc_loss",
-        role="training",
+        role="train",
         x_bounds=x_bounds,
         full_t_values=full_t_values,
         Nt=Nt_BC_train,
@@ -251,7 +258,7 @@ if __name__ == "__main__":
     generate_BC_dataset(
         datasets_train_val,
         label="data_bc_loss",
-        role="validation",
+        role="val",
         x_bounds=x_bounds,
         full_t_values=full_t_values,
         Nt=Nt_BC_val,
@@ -271,7 +278,7 @@ if __name__ == "__main__":
         loader,
         datasets_train_val,
         label="phys_momentum_loss",
-        role="training",
+        role="train",
         x_bounds=x_bounds,
         full_t_values=full_t_values,
         Nt=Nt_phys_momentum_train,
@@ -287,7 +294,7 @@ if __name__ == "__main__":
         loader,
         datasets_train_val,
         label="phys_momentum_loss",
-        role="validation",
+        role="val",
         x_bounds=x_bounds,
         full_t_values=full_t_values,
         Nt=Nt_phys_momentum_val,
@@ -306,7 +313,7 @@ if __name__ == "__main__":
         loader,
         datasets_train_val,
         label="phys_induction_loss",
-        role="training",
+        role="train",
         x_bounds=x_bounds,
         full_t_values=full_t_values,
         Nt=Nt_phys_induction_train,
@@ -322,7 +329,7 @@ if __name__ == "__main__":
         loader,
         datasets_train_val,
         label="phys_induction_loss",
-        role="validation",
+        role="val",
         x_bounds=x_bounds,
         full_t_values=full_t_values,
         Nt=Nt_phys_induction_val,
@@ -334,10 +341,10 @@ if __name__ == "__main__":
         t_bounds=t_bounds,
     )
 
-    output_path_train_val = "data/fournier07_1D_train_val.hdf5"
-    datasets_train_val.save(output_path_train_val)
+    datasets_train_val.save("data/fournier07_1D_train_val.hdf5")
 
-    datasets_test = DataSets()
+    # Test data
+    datasets_test = pinninit.DataSetWriter(coord_system, {"x", "t"})
     Nx_test, Nt_test = 300, len(full_t_values)
     generate_mhd_dataset(
         loader,
@@ -354,5 +361,4 @@ if __name__ == "__main__":
         include_u=True,
     )
 
-    output_path_test = "data/fournier07_1D_test.hdf5"
-    datasets_test.save(output_path_test)
+    datasets_test.save("data/fournier07_1D_test.hdf5")
