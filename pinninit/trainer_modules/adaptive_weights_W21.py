@@ -26,13 +26,13 @@ class AdaptiveWeightsW21(TrainerModule):
         self,
         reference_weight_group_label: str,
         alpha: float = 0.1,  # NOTE: outdated arxiv version of W+21 has incorrect value
-        update_frequency: int = 1,
-        min_epoch: int = 0,
+        update_iter_frequency: int = 1,
+        min_iter: int = 0,
     ):
         self.reference_weight_group_label = reference_weight_group_label
         self.alpha = alpha
-        self.update_frequency = update_frequency
-        self.min_epoch = min_epoch
+        self.update_iter_frequency = update_iter_frequency
+        self.min_iter = min_iter
 
         # Maps weight_group_label to LossTermContainers
         self.adaptive_groups: dict[str, list[LossTermContainer]] = {}
@@ -53,18 +53,18 @@ class AdaptiveWeightsW21(TrainerModule):
                 "found."
             )
 
-    def on_epoch_end(
+    def on_step_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        if trainer.epoch < self.min_epoch:
+        if trainer.iter < self.min_iter:
             return
-        if trainer.epoch % self.update_frequency == 0:
+        if trainer.iter % self.update_iter_frequency == 0:
             self._update_weights(trainer, logger)
 
     def on_state_change(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        if trainer.epoch < self.min_epoch:
+        if trainer.iter < self.min_iter:
             return
 
         # Register any newly activated containers
@@ -132,7 +132,3 @@ class AdaptiveWeightsW21(TrainerModule):
                 container.loss_term_weight = (
                     1 - self.alpha
                 ) * container.loss_term_weight + self.alpha * lambda_hat
-
-        # Log weight update
-        if logger is not None:
-            logger.log_event("weight_update_W21")

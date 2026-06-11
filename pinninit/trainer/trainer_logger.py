@@ -87,15 +87,14 @@ class TrainerLogger:
         weights: dict[str, float],
     ) -> None:
         trainer = self.trainer
-        weight_sum = sum(weights.values())
         weighted_sum_train = sum(
-            w * loss
-            for w, loss in zip(weights.values(), train_losses.values(), strict=True)
+            weights[label] * loss for label, loss in train_losses.items()
         )
+        train_weight_sum = sum(weights[label] for label in train_losses)
         weighted_sum_val = sum(
-            w * loss
-            for w, loss in zip(weights.values(), val_losses.values(), strict=True)
+            weights[label] * loss for label, loss in val_losses.items()
         )
+        val_weight_sum = sum(weights[label] for label in val_losses)
         print(
             "-------------------------------------------------------------------\n"
             f"Epoch: {trainer.epoch}  (iter {trainer.iter}): \n"
@@ -103,11 +102,11 @@ class TrainerLogger:
             f"Training Loss (epoch mean of minibatch estimates): \n"
             f"- unweighted contributions:   {train_losses} \n"
             f"- weighted sum:               {weighted_sum_train} \n"
-            f"- weighted average:           {weighted_sum_train / weight_sum} \n"
+            f"- weighted average:           {weighted_sum_train / train_weight_sum} \n"
             f"Validation Loss (full set): \n"
             f"- unweighted contributions:   {val_losses} \n"
             f"- weighted sum:               {weighted_sum_val} \n"
-            f"- weighted average:           {weighted_sum_val / weight_sum} \n"
+            f"- weighted average:           {weighted_sum_val / val_weight_sum} \n"
             f"Loss term weights:            {weights} \n"
         )
 
