@@ -45,7 +45,7 @@ class TrainerState:
         return label in self._stop_barriers
 
     def on_step_start(self, trainer: Trainer, logger: TrainerLogger | None) -> None:
-        self._is_coasting = trainer.epoch <= self.coast_until_epoch
+        self._is_coasting = trainer.epoch < self.coast_until_epoch
         self._check_coast_transition(trainer, logger)
 
     def on_step_end(self, trainer: Trainer, logger: TrainerLogger | None) -> None:

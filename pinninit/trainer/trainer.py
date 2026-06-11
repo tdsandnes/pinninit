@@ -30,7 +30,7 @@ class Trainer:
         trainer_modules: list[TrainerModule],
         max_iter: int | None = None,
         warmup_epochs: int = 0,
-        print_freq: int = 500,
+        print_freq: int = 1,
     ) -> None:
         self.model = model
         self.optimizer = optimizer

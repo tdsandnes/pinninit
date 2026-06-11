@@ -318,7 +318,7 @@ class TrainerConfig:
     trainer_modules: list[TrainerModuleConfig] = field(default_factory=list)
     max_iter: int | None = None
     warmup_epochs: int = 0
-    print_freq: int = 500
+    print_freq: int = 1
     batch_size: int | None = None
     shuffle: bool = True
     num_workers: int = 0
