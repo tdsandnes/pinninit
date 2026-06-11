@@ -105,7 +105,7 @@ class Trainer:
             if not self.state.is_coasting or module.runs_during_coast:
                 module.on_step_end(self, self.logger)
 
-            # Execute epoch-end hooks when a full pass over the data completes
+        # Execute epoch-end hooks when a full pass over the data completes
         if self.is_epoch_end:
             # Roll the counter first, so hooks see the number of completed
             # epochs and iter == epoch * steps_per_epoch at epoch boundaries

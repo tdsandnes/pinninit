@@ -41,11 +41,15 @@ Fields:
     - label: pde_residual
       rank: 0
 
+Constants:
+  - label: omega
+    value: 1.0
+
 Equations:
   - label: pde_residual
     function_name: simple_harmonic_oscillator_1D_pde_residual
     file_path: ./simple_harmonic_oscillator_1D_equations.py
-    input_labels: [f]
+    input_labels: [f, omega]
     output_labels: [pde_residual]
     output_ranks: [0]
 

@@ -131,9 +131,13 @@ def build_pinn(
         device=device,
     )
 
-    # Optimizer over model parameters and learnable constants
-    params = list(model.parameters()) + list(learnt_consts.values())
-    optimizer = build_optimizer(config.trainer.optimizer, params)
+    # Register learnable constants on the model so they live in its
+    # state_dict: best-model tracking and checkpoints then include them
+    for label, param in learnt_consts.items():
+        model.register_parameter(f"learnt_const_{label}", param)
+
+    # Optimizer over model parameters (now includes learnable constants)
+    optimizer = build_optimizer(config.trainer.optimizer, list(model.parameters()))
 
     # Trainer
     trainer = build_trainer(

@@ -100,10 +100,6 @@ class PINN:
         torch.save(
             {
                 "model_state_dict": self.model.state_dict(),
-                "learnt_consts": {
-                    label: param.detach().clone()
-                    for label, param in self.learnt_consts.items()
-                },
                 "epoch_train_losses_log": logger.epoch_train_losses_log,
                 "epoch_val_losses_log": logger.epoch_val_losses_log,
                 "epoch_loss_term_weights_log": logger.epoch_loss_term_weights_log,
@@ -120,12 +116,6 @@ class PINN:
 
         checkpoint = torch.load(path, map_location=self.device)
         self.model.load_state_dict(checkpoint["model_state_dict"])
-
-        # Restore learnable constants
-        for label, value in checkpoint.get("learnt_consts", {}).items():
-            if label in self.learnt_consts:
-                with torch.no_grad():
-                    self.learnt_consts[label].copy_(value)
 
         # Restore logs onto the trainer logger
         logger = self.trainer.logger

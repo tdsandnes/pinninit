@@ -61,17 +61,23 @@ Fields:
     - label: induction_residual
       rank: 0
 
+Constants:
+  - label: S
+    value: 1.0
+  - label: Pm
+    value: 0.001
+
 Equations:
   - label: momentum_eqn
     function_name: momentum_eqn
     file_path: ./fournier07_1D_equations.py
-    input_labels: [b, u]
+    input_labels: [b, u, S, Pm]
     output_labels: [momentum_residual]
     output_ranks: [0]
   - label: induction_eqn
     function_name: induction_eqn
     file_path: ./fournier07_1D_equations.py
-    input_labels: [b, u]
+    input_labels: [b, u, S]
     output_labels: [induction_residual]
     output_ranks: [0]
 

@@ -12,13 +12,13 @@ if TYPE_CHECKING:
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
     from pinninit.differential_equations.operators import Operators
 
-### Hardcode constants until param file const functionality gets added
-S = 1.0
-Pm = 1e-3
-
 
 def momentum_eqn(
-    b: torch.Tensor, u: torch.Tensor, operators: Operators
+    b: torch.Tensor,
+    u: torch.Tensor,
+    S: torch.Tensor,
+    Pm: torch.Tensor,
+    operators: Operators,
 ) -> torch.Tensor:
     du_dt = operators.d_dcoord(u, "t")
     du_dx = operators.d_dcoord(u, "x")
@@ -29,7 +29,7 @@ def momentum_eqn(
 
 
 def induction_eqn(
-    b: torch.Tensor, u: torch.Tensor, operators: Operators
+    b: torch.Tensor, u: torch.Tensor, S: torch.Tensor, operators: Operators
 ) -> torch.Tensor:
     db_dt = operators.d_dcoord(b, "t")
     db_dx = operators.d_dcoord(b, "x")

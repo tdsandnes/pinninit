@@ -80,6 +80,17 @@ class TrainerLogger:
         if trainer.epoch % self.print_freq == 0:
             self._print_epoch(epoch_train_losses, full_val_losses, epoch_weights)
 
+    def _learnt_consts_str(self) -> str:
+        """Formatted line of learnt constants, empty if there are none."""
+        consts = {
+            name.removeprefix("learnt_const_"): float(param.detach())
+            for name, param in self.trainer.model.named_parameters()
+            if name.startswith("learnt_const_")
+        }
+        if not consts:
+            return ""
+        return f"Learnt constants:             {consts} \n"
+
     def _print_epoch(
         self,
         train_losses: dict[str, float],
@@ -108,6 +119,7 @@ class TrainerLogger:
             f"- weighted sum:               {weighted_sum_val} \n"
             f"- weighted average:           {weighted_sum_val / val_weight_sum} \n"
             f"Loss term weights:            {weights} \n"
+            f"{self._learnt_consts_str()}"
         )
 
     def record_train_losses(self, losses: dict[str, torch.Tensor]) -> None:
@@ -143,4 +155,5 @@ class TrainerLogger:
             f"Validation Loss (full set): \n"
             f"- unweighted contributions:   {val_losses} \n"
             f"Loss term weights:            {loss_term_weights} \n"
+            f"{self._learnt_consts_str()}"
         )
