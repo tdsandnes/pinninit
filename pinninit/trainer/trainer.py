@@ -128,6 +128,8 @@ class Trainer:
         if self.is_epoch_end:
             self.epoch += 1
             self._steps_in_epoch = 0
+            for container in self.loss_containers.values():
+                container.reset_train_batches()
 
         # Update trainer state for next step
         self.state.on_step_end(self, self.logger)

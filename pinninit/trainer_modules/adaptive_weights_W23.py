@@ -26,11 +26,11 @@ class AdaptiveWeightsW23(TrainerModule):
     def __init__(
         self,
         alpha: float = 0.1,  # NOTE: Wang et al. 2021 alpha definition
-        update_frequency: int = 1,
+        update_iter_frequency: int = 1,
         min_iter: int = 0,
     ):
         self.alpha = alpha
-        self.update_frequency = update_frequency
+        self.update_iter_frequency = update_iter_frequency
         self.min_iter = min_iter
 
         # Maps weight_group_label to LossTermContainers
@@ -51,7 +51,7 @@ class AdaptiveWeightsW23(TrainerModule):
     ) -> None:
         if trainer.iter < self.min_iter:
             return
-        if trainer.iter % self.update_frequency == 0:
+        if trainer.iter % self.update_iter_frequency == 0:
             self._update_weights(trainer, logger)
 
     def on_state_change(
