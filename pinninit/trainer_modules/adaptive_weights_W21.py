@@ -53,7 +53,7 @@ class AdaptiveWeightsW21(TrainerModule):
                 "found."
             )
 
-    def on_step_end(
+    def on_pre_optimizer_step(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
         if trainer.iter < self.min_iter:

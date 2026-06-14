@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 import torch
@@ -80,7 +81,7 @@ class ResidualBasedAttentionA24(TrainerModule):
                 "'weighted_point_avg_mse') on at least one loss term."
             )
 
-    def on_step_end(
+    def on_pre_optimizer_step(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
         if trainer.iter < self.min_iter:
@@ -109,8 +110,14 @@ class ResidualBasedAttentionA24(TrainerModule):
         # Per-point residual magnitudes on the current batch
         residuals = trainer.cached_train_residuals(container.label)
         if residuals is None:
-            residuals = container.compute_train_residuals(
-                trainer.model, coords=batch_coords, detach=True
+            warnings.warn(
+                "RBA is recomputing residuals because no cached train residuals are "
+                "available.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            _, residuals = container.compute_train_batch_loss_and_residuals(
+                trainer.model, batch_coords=batch_coords, detach=True
             )
         magnitudes = residuals.abs() if residuals.ndim == 1 else residuals.norm(dim=1)
 

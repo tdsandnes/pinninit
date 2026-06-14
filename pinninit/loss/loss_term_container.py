@@ -142,10 +142,10 @@ class LossTermContainer:
             model, self.val_eval_context, batch_coords, detach=detach
         )
 
-    def compute_full_train_loss(self, model: NeuralNetwork) -> tuple[torch.Tensor]:
+    def compute_full_train_loss(self, model: NeuralNetwork) -> torch.Tensor:
         """Full unweighted training loss over the full set, chunked and detached."""
         return self._compute_full_loss(model, self.train_eval_context)
 
-    def compute_full_val_loss(self, model: NeuralNetwork) -> tuple[torch.Tensor]:
+    def compute_full_val_loss(self, model: NeuralNetwork) -> torch.Tensor:
         """Full unweighted validation loss over the full set, chunked and detached."""
         return self._compute_full_loss(model, self.val_eval_context)

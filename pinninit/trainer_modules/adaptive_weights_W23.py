@@ -46,7 +46,7 @@ class AdaptiveWeightsW23(TrainerModule):
             if container.weight_method_label == WeightMethodLabels.ADAPTIVE_W23:
                 self._add_container(container)
 
-    def on_step_end(
+    def on_pre_optimizer_step(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
         if trainer.iter < self.min_iter:

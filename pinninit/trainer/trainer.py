@@ -218,8 +218,8 @@ class Trainer:
         unweighted_losses = {}
         self._train_residuals_cache = {}
         for label, container in self.loss_containers.items():
-            loss, residuals = container.compute_train_batch_loss(
-                self.model, batches[label], detach=False, return_residuals=True
+            loss, residuals = container.compute_train_batch_loss_and_residuals(
+                self.model, batches[label], detach=False
             )
             unweighted_losses[label] = loss
             self._train_residuals_cache[label] = residuals
