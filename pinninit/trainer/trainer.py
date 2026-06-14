@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import torch
@@ -61,18 +62,21 @@ class Trainer:
         # Best model info
         self.best_model_epoch: int | None = None
         self.best_model_state: dict[str, torch.Tensor] | None = None
+        self.best_geometric_mean_val_loss: float | None = None
         self.best_loss_term_weights: dict[str, float] | None = None
-        self.best_weighted_avg_val_loss: float | None = None
+        self.best_point_weights: dict[str, torch.Tensor] | None = None
 
-        # Cache of full-set unweighted val losses, valid until the model changes
+        # Cached quantities
         self._full_val_losses_cache: dict[str, float] | None = None
+        self._train_residuals_cache: dict[str, torch.Tensor] | None = None
 
         # Logger
         self.logger = TrainerLogger(self, print_freq=print_freq)
 
     def step(self) -> None:
-        # Model params changed last step so full-set val losses are stale
+        # Model params changed last step so cahced quantities are stale
         self._full_val_losses_cache = None
+        self._train_residuals_cache = None
 
         # Mark whether this step completes an epoch (full pass over the training data)
         self._steps_in_epoch += 1
@@ -93,8 +97,15 @@ class Trainer:
         # every loss evaluation within the step (e.g. L-BFGS closures).
         self._set_current_train_batches()
 
-        # Update the model parameters
+        # Prepare optimizer for step
         self.optimizer.prepare_for_step()
+
+        # Trainer module operations that require self.optimizer.prepare_for_step()
+        for module in self.trainer_modules:
+            if not self.state.is_coasting or module.runs_during_coast:
+                module.on_pre_optimizer_step(self, self.logger)
+
+        # Update the model parameters
         self.optimizer.step()
 
         # Log values
@@ -203,12 +214,15 @@ class Trainer:
             if label not in batches:
                 batches[label] = container.next_train_batch()
 
-        unweighted_losses = {
-            label: container.compute_train_batch_loss(
-                self.model, batches[label], detach=False
+        # Compute per-term losses and cache this step's residuals
+        unweighted_losses = {}
+        self._train_residuals_cache = {}
+        for label, container in self.loss_containers.items():
+            loss, residuals = container.compute_train_batch_loss(
+                self.model, batches[label], detach=False, return_residuals=True
             )
-            for label, container in self.loss_containers.items()
-        }
+            unweighted_losses[label] = loss
+            self._train_residuals_cache[label] = residuals
 
         # Record for the epoch-mean train loss log
         self.logger.record_train_losses(unweighted_losses)
@@ -220,6 +234,12 @@ class Trainer:
         ]
         return torch.stack(weighted_losses).sum()
 
+    def cached_train_residuals(self, label: str) -> torch.Tensor | None:
+        """Residuals cached during this step's training-loss computation."""
+        if self._train_residuals_cache is None:
+            return None
+        return self._train_residuals_cache.get(label)
+
     def compute_full_unweighted_val_losses(self) -> dict[str, float]:
         """Unweighted val loss of each active container over its full val set."""
         if self._full_val_losses_cache is None:
@@ -230,17 +250,10 @@ class Trainer:
         return self._full_val_losses_cache
 
     @property
-    def full_weighted_avg_val_loss(self) -> float:
-        """Weighted-average val loss over the full val set."""
+    def full_geometric_mean_val_loss(self) -> float:
+        """Geometric mean of val loss over the full val set."""
         losses = self.compute_full_unweighted_val_losses()
-        total = sum(
-            self.loss_containers[label].loss_term_weight * loss
-            for label, loss in losses.items()
-        )
-        weight_sum = sum(
-            container.loss_term_weight for container in self.loss_containers.values()
-        )
-        return total / weight_sum
+        return math.exp(sum(math.log(loss) for loss in losses.values()) / len(losses))
 
     @property
     def all_loss_containers(self) -> dict[str, LossTermContainer]:
@@ -256,13 +269,13 @@ class Trainer:
         self,
     ) -> None:
         """Updates best model state if validation loss is lower than previous best."""
-        current = self.full_weighted_avg_val_loss
+        current = self.full_geometric_mean_val_loss
 
         if (
-            self.best_weighted_avg_val_loss is None
-            or current < self.best_weighted_avg_val_loss
+            self.best_geometric_mean_val_loss is None
+            or current < self.best_geometric_mean_val_loss
         ):
-            self.best_weighted_avg_val_loss = current
+            self.best_geometric_mean_val_loss = current
             self.best_model_epoch = self.epoch
             self.best_model_state = {
                 k: v.detach().clone() for k, v in self.model.state_dict().items()
@@ -271,6 +284,15 @@ class Trainer:
             self.best_loss_term_weights = {
                 label: container.loss_term_weight
                 for label, container in self.loss_containers.items()
+            }
+
+            # Save point weights for containers that use them
+            self.best_point_weights = {
+                label: container.train_eval_context.point_weights.get_component("value")
+                .detach()
+                .clone()
+                for label, container in self.loss_containers.items()
+                if container.train_eval_context.point_weights is not None
             }
 
     def load_best_model(
@@ -284,7 +306,7 @@ class Trainer:
             print(
                 f"Loading best model on epoch {self.epoch}: "
                 f"best model epoch = {self.best_model_epoch}, "
-                f"weighted_avg_val_loss = {self.best_weighted_avg_val_loss})"
+                f"geometric_mean_val_loss = {self.best_geometric_mean_val_loss})"
             )
 
             # Log event
@@ -298,6 +320,14 @@ class Trainer:
             for label, weight in self.best_loss_term_weights.items():
                 self.loss_containers[label].loss_term_weight = weight
 
+            # Restore point weights
+            if self.best_point_weights is not None:
+                for label, weights in self.best_point_weights.items():
+                    if label in self.loss_containers:
+                        self.loss_containers[
+                            label
+                        ].train_eval_context.update_point_weights(weights)
+
             # Notify modules of updated state
             self.state.state_updated = True
         else:
@@ -306,8 +336,9 @@ class Trainer:
     def reset_best_model(self) -> None:
         self.best_model_epoch = None
         self.best_model_state = None
+        self.best_geometric_mean_val_loss = None
         self.best_loss_term_weights = None
-        self.best_weighted_avg_val_loss = None
+        self.best_point_weights = None
 
         # Log event
         self.logger.log_event("reset_best_model")

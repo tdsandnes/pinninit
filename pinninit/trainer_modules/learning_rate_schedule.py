@@ -99,8 +99,8 @@ class LearningRateSchedule(PlateauTrainerModule):
 
         # If validation loss has plateaued, decay learning rate
         if self._step_plateau_detectors_full(trainer):
-            # Reset the best model tracker
-            trainer.reset_best_model()
+            # Load the best model
+            trainer.load_best_model()
 
             # Decay lr
             for group in trainer.optimizer.optimizer.param_groups:

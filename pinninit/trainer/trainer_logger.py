@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING
 
 import torch
@@ -28,6 +29,7 @@ class TrainerLogger:
         self.epoch_train_losses_log: list[dict[str, float]] = []
         self.epoch_val_losses_log: list[dict[str, float]] = []
         self.epoch_loss_term_weights_log: list[dict[str, float]] = []
+        self.epoch_learnt_consts_log: list[dict[str, float]] = []
 
     def on_step_start(self) -> None:
         self.unweighted_train_losses.reset()
@@ -72,6 +74,7 @@ class TrainerLogger:
         self.epoch_train_losses_log.append(epoch_train_losses)
         self.epoch_val_losses_log.append(full_val_losses)
         self.epoch_loss_term_weights_log.append(epoch_weights)
+        self.epoch_learnt_consts_log.append(self._learnt_consts())
 
         # Reset accumulator for next epoch
         self._epoch_train_loss_accum = []
@@ -80,16 +83,38 @@ class TrainerLogger:
         if trainer.epoch % self.print_freq == 0:
             self._print_epoch(epoch_train_losses, full_val_losses, epoch_weights)
 
-    def _learnt_consts_str(self) -> str:
-        """Formatted line of learnt constants, empty if there are none."""
-        consts = {
+    def _learnt_consts(self) -> dict[str, float]:
+        return {
             name.removeprefix("learnt_const_"): float(param.detach())
             for name, param in self.trainer.model.named_parameters()
             if name.startswith("learnt_const_")
         }
+
+    def _learnt_consts_str(self) -> str:
+        """Formatted line of learnt constants, empty if there are none."""
+        consts = self._learnt_consts()
         if not consts:
             return ""
         return f"Learnt constants:             {consts} \n"
+
+    def _point_weights_str(self) -> str:
+        """Formatted summary of per-point weights, one line per container
+        that uses them, empty if none do."""
+        lines = []
+        for label, container in self.trainer.loss_containers.items():
+            point_weights = container.train_eval_context.point_weights
+            if point_weights is None:
+                continue
+            w = point_weights.get_component("value").detach()
+            lines.append(
+                f"Point weights ({label}): "
+                f"mean {w.mean().item():.4g}, "
+                f"median {w.median().item():.4g}, "
+                f"std {w.std().item():.4g}, "
+                f"min {w.min().item():.4g}, "
+                f"max {w.max().item():.4g} \n"
+            )
+        return "".join(lines)
 
     def _print_epoch(
         self,
@@ -106,6 +131,9 @@ class TrainerLogger:
             weights[label] * loss for label, loss in val_losses.items()
         )
         val_weight_sum = sum(weights[label] for label in val_losses)
+        val_geometric_mean = math.exp(
+            sum(math.log(loss) for loss in val_losses.values()) / len(val_losses)
+        )
         print(
             "-------------------------------------------------------------------\n"
             f"Epoch: {trainer.epoch}  (iter {trainer.iter}): \n"
@@ -118,8 +146,10 @@ class TrainerLogger:
             f"- unweighted contributions:   {val_losses} \n"
             f"- weighted sum:               {weighted_sum_val} \n"
             f"- weighted average:           {weighted_sum_val / val_weight_sum} \n"
+            f"- geometric mean:             {val_geometric_mean} \n"
             f"Loss term weights:            {weights} \n"
             f"{self._learnt_consts_str()}"
+            f"{self._point_weights_str()}"
         )
 
     def record_train_losses(self, losses: dict[str, torch.Tensor]) -> None:
@@ -156,4 +186,5 @@ class TrainerLogger:
             f"- unweighted contributions:   {val_losses} \n"
             f"Loss term weights:            {loss_term_weights} \n"
             f"{self._learnt_consts_str()}"
+            f"{self._point_weights_str()}"
         )

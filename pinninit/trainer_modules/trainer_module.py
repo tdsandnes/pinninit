@@ -32,6 +32,13 @@ class TrainerModule:
     ) -> None:
         pass
 
+    def on_pre_optimizer_step(
+        self, trainer: Trainer, logger: TrainerLogger | None = None
+    ) -> None:
+        """Called after the training loss and gradients are computed (residuals
+        cached) but before the optimizer applies the parameter update."""
+        pass
+
     def on_step_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
@@ -61,14 +68,14 @@ class PlateauTrainerModule(TrainerModule):
         self.frac_tol = frac_tol
         self.min_epoch = min_epoch
 
-        self.weighted_avg_label = "weighted_avg"
+        self.geometric_mean_label = "geometric_mean"
         self.plateau_detectors: dict[str, LossPlateauDetector] = {}
 
     def _init_plateau_detectors(self, trainer: Trainer) -> None:
-        # Plateau detector for weighted average val loss
+        # Plateau detector for geometric mean val loss
         ### Could also add a detector per loss term container here
         self.plateau_detectors = {
-            self.weighted_avg_label: LossPlateauDetector(self.patience, self.frac_tol)
+            self.geometric_mean_label: LossPlateauDetector(self.patience, self.frac_tol)
         }
 
     def _reset_plateau_detectors(self) -> None:
@@ -82,8 +89,8 @@ class PlateauTrainerModule(TrainerModule):
         for label, detector in self.plateau_detectors.items():
             if label in full_losses:
                 detector.step(full_losses[label])
-            elif label == self.weighted_avg_label:
-                detector.step(trainer.full_weighted_avg_val_loss)
+            elif label == self.geometric_mean_label:
+                detector.step(trainer.full_geometric_mean_val_loss)
             else:
                 raise KeyError(f"No loss value found for label {label}")
         return all(d.plateau_detected for d in self.plateau_detectors.values())

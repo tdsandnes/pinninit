@@ -107,9 +107,11 @@ class ResidualBasedAttentionA24(TrainerModule):
         assert eval_context.point_weights is not None
 
         # Per-point residual magnitudes on the current batch
-        residuals = container.compute_train_residuals(
-            trainer.model, coords=batch_coords, detach=True
-        )
+        residuals = trainer.cached_train_residuals(container.label)
+        if residuals is None:
+            residuals = container.compute_train_residuals(
+                trainer.model, coords=batch_coords, detach=True
+            )
         magnitudes = residuals.abs() if residuals.ndim == 1 else residuals.norm(dim=1)
 
         max_magnitude = magnitudes.max()
