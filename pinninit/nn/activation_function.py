@@ -16,6 +16,7 @@ class ActivationFuncLabels(str, Enum):
     NONE = "none"
     TANH = "tanh"
     SILU = "silu"
+    SIGMOID = "sigmoid"
     SIN = "sin"
 
 
@@ -32,5 +33,6 @@ ACTIVATION_FUNC_REGISTRY: dict[ActivationFuncLabels, type[nn.Module]] = {
     ActivationFuncLabels.NONE: nn.Identity,
     ActivationFuncLabels.TANH: nn.Tanh,
     ActivationFuncLabels.SILU: nn.SiLU,
+    ActivationFuncLabels.SIGMOID: nn.Sigmoid,
     ActivationFuncLabels.SIN: Sin,
 }
