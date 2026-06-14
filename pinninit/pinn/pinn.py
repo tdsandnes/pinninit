@@ -88,7 +88,9 @@ class PINN:
         """Evaluate per-point residuals of each loss term on its training set."""
         self.model.eval()
         residuals = {
-            label: container.compute_train_residuals(self.model)
+            label: container.compute_train_batch_loss_and_residuals(
+                self.model, container.train_eval_context.coords, detach=True
+            )[1]
             for label, container in self.loss_containers.items()
         }
         self.model.train()

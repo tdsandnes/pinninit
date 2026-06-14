@@ -1,45 +1,46 @@
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 import torch
 
 if TYPE_CHECKING:
-    from ..data_structure.coords_dataclass import CoordsProtocol
     from ..loss.loss_term_container import LossTermContainer
     from ..nn.neural_network import NeuralNetwork
+    from ..trainer.trainer import Trainer
 
 
 def compute_flat_train_grads(
     model: NeuralNetwork,
     containers: list[LossTermContainer],
-    batches: dict[str, CoordsProtocol] | None = None,
+    trainer: Trainer,
 ) -> torch.Tensor:
     """Concatenated flat gradient of the containers' unweighted training losses
-    with respect to the model parameters.
-
-    If `batches` is given, each container's loss is evaluated on its current
-    batch (falling back to drawing the next batch for containers without one);
-    otherwise on its full training set in a single graph."""
-    all_grads_flat_list = []
+    with respect to the model parameters."""
+    params = list(model.parameters())
+    all_grads = []
     for container in containers:
-        if batches is not None:
-            batch = batches.get(container.label)
-            if batch is None:
-                batch = container.next_train_batch()
-            loss = container.compute_train_batch_loss(model, batch, detach=False)
-        else:
-            loss = container.compute_unweighted_train_loss(model, detach=False)
-        grads = torch.autograd.grad(
-            loss,
-            list(model.parameters()),
-            retain_graph=True,
-            allow_unused=True,
+        loss = trainer.cached_train_loss(container.label)
+        if loss is None:
+            warnings.warn(
+                "Recomputing loss: the train-loss cache was empty "
+                "(expected populated).",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            batch = (
+                trainer.current_train_batches.get(container.label)
+                or container.next_train_batch()
+            )
+            loss, _ = container.compute_train_batch_loss_and_residuals(
+                model, batch, detach=False
+            )
+        grads = torch.autograd.grad(loss, params, retain_graph=True, allow_unused=True)
+        all_grads.append(
+            torch.cat([g.detach().reshape(-1) for g in grads if g is not None])
         )
-        grads_flat = torch.cat([g.detach().reshape(-1) for g in grads if g is not None])
-        all_grads_flat_list.append(grads_flat)
-
-    return torch.cat(all_grads_flat_list)
+    return torch.cat(all_grads)
 
 
 class LossPlateauDetector:

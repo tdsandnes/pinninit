@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 def build_optimizer(
     config: OptimizerConfig,
-    params: list[nn.Parameter],
+    params: list[nn.Parameter] | list[dict[str, object]],
 ) -> Optimizer:
     """
     Build an Optimizer from an OptimizerConfig.

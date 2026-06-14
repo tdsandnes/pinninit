@@ -110,12 +110,13 @@ class ResidualBasedAttentionA24(TrainerModule):
         # Per-point residual magnitudes on the current batch
         residuals = trainer.cached_train_residuals(container.label)
         if residuals is None:
-            warnings.warn(
-                "RBA is recomputing residuals because no cached train residuals are "
-                "available.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
+            if not trainer.optimizer.requires_closure:
+                warnings.warn(
+                    "RBA is recomputing residuals: the train-residual cache was "
+                    "empty for a non-closure optimizer (expected populated).",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
             _, residuals = container.compute_train_batch_loss_and_residuals(
                 trainer.model, batch_coords=batch_coords, detach=True
             )

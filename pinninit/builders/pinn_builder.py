@@ -138,6 +138,7 @@ def build_pinn(
         model.register_parameter(f"learnt_const_{label}", param)
 
     # Optimizer over model parameters
+    params: list[nn.Parameter] | list[dict[str, object]]
     wd_groups = config.trainer.optimizer.weight_decay_groups
     if wd_groups:
         params = _build_param_groups(model, wd_groups)

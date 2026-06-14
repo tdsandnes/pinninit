@@ -71,9 +71,6 @@ class AdaptiveWeightsW21(TrainerModule):
         for container in trainer.loss_containers.values():
             self._register_container(container)
 
-        # Update weights
-        self._update_weights(trainer, logger)
-
     def _register_container(self, container: LossTermContainer) -> None:
         # Adaptive containers
         if container.weight_method_label == WeightMethodLabels.ADAPTIVE_W21:
@@ -111,16 +108,15 @@ class AdaptiveWeightsW21(TrainerModule):
             )
 
         # Compute gradients for the reference group
-        batches = trainer.current_train_batches
         all_ref_grads_flat = compute_flat_train_grads(
-            trainer.model, self.reference_weight_group, batches
+            trainer.model, self.reference_weight_group, trainer
         )
         ref_max_abs = torch.max(all_ref_grads_flat.abs())
 
         # Compute and update adaptive groups
         for container_list in self.adaptive_groups.values():
             all_grads_flat = compute_flat_train_grads(
-                trainer.model, container_list, batches
+                trainer.model, container_list, trainer
             )
             group_mean_abs = torch.mean(all_grads_flat.abs())
 

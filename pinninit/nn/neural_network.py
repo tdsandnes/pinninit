@@ -179,7 +179,8 @@ class ModifiedMLP(NeuralNetwork):
             alpha = (1.0 - alpha) * u + alpha * v
 
         # Output layer (activation is 'none' under the usual aliases)
-        return self.activation_funcs[-1](self.layers[-1](alpha))
+        alpha = self.activation_funcs[-1](self.layers[-1](alpha))
+        return alpha
 
 
 # Mapping from NN type labels to classes

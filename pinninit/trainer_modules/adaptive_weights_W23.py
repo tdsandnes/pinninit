@@ -78,9 +78,6 @@ class AdaptiveWeightsW23(TrainerModule):
             else:
                 self._add_container(container)
 
-        # Update weights
-        self._update_weights(trainer, logger)
-
     def _add_container(self, container: LossTermContainer) -> None:
         if container.weight_group_label is None:
             raise ValueError("Parameter 'weight_group_label' not given.")
@@ -96,11 +93,10 @@ class AdaptiveWeightsW23(TrainerModule):
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
         # Compute grad norm of each adaptive group
-        batches = trainer.current_train_batches
         group_grad_norms: dict[str, torch.Tensor] = {}
         for label, container_list in self.adaptive_groups.items():
             all_grads_flat = compute_flat_train_grads(
-                trainer.model, container_list, batches
+                trainer.model, container_list, trainer
             )
             group_grad_norms[label] = torch.norm(all_grads_flat, p=2)
 

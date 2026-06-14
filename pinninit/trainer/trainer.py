@@ -68,14 +68,16 @@ class Trainer:
 
         # Cached quantities
         self._full_val_losses_cache: dict[str, float] | None = None
+        self._train_losses_cache: dict[str, torch.Tensor] | None = None
         self._train_residuals_cache: dict[str, torch.Tensor] | None = None
 
         # Logger
         self.logger = TrainerLogger(self, print_freq=print_freq)
 
     def step(self) -> None:
-        # Model params changed last step so cahced quantities are stale
+        # Model params changed last step so cached quantities are stale
         self._full_val_losses_cache = None
+        self._train_losses_cache = None
         self._train_residuals_cache = None
 
         # Mark whether this step completes an epoch (full pass over the training data)
@@ -216,12 +218,14 @@ class Trainer:
 
         # Compute per-term losses and cache this step's residuals
         unweighted_losses = {}
+        self._train_losses_cache = {}
         self._train_residuals_cache = {}
         for label, container in self.loss_containers.items():
             loss, residuals = container.compute_train_batch_loss_and_residuals(
                 self.model, batches[label], detach=False
             )
             unweighted_losses[label] = loss
+            self._train_losses_cache[label] = loss
             self._train_residuals_cache[label] = residuals
 
         # Record for the epoch-mean train loss log
@@ -233,6 +237,11 @@ class Trainer:
             for label, container in self.loss_containers.items()
         ]
         return torch.stack(weighted_losses).sum()
+
+    def cached_train_loss(self, label: str) -> torch.Tensor | None:
+        if self._train_losses_cache is None:
+            return None
+        return self._train_losses_cache.get(label)
 
     def cached_train_residuals(self, label: str) -> torch.Tensor | None:
         """Residuals cached during this step's training-loss computation."""
@@ -315,6 +324,8 @@ class Trainer:
             # Load
             self.model.load_state_dict(self.best_model_state)
             self._full_val_losses_cache = None
+            self._train_losses_cache = None
+            self._train_residuals_cache = None
 
             # Restore loss term weights
             for label, weight in self.best_loss_term_weights.items():
