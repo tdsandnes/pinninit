@@ -58,6 +58,7 @@ _ACTIVATION_ALIASES: dict[str, Callable[[int], list[str]]] = {
     "siren": lambda n: ["sin"] * (n - 1) + ["none"],
     "all_tanh": lambda n: ["tanh"] * (n - 1) + ["none"],
     "all_silu": lambda n: ["silu"] * (n - 1) + ["none"],
+    "all_sigmoid": lambda n: ["sigmoid"] * (n - 1) + ["none"],
 }
 
 _INIT_WEIGHTS_ALIASES: dict[str, Callable[[int], list[str]]] = {
@@ -134,6 +135,15 @@ def _parse_enum(
         )
 
     return enum_type(value)
+
+
+def _parse_optional_enum(
+    raw: dict[str, Any],
+    key: str,
+    enum_type: type[E],
+) -> E | None:
+    value = raw.get(key)
+    return _parse_enum(value, enum_type) if value else None
 
 
 # Section parsers
@@ -377,6 +387,19 @@ def _parse_nn(raw: dict[str, Any]) -> NNConfig:
             num_layers,
         ),
         input_transformation=input_transformation,
+        weight_norm=bool(raw.get("weight_norm", False)),
+        encoder_layer_type=_parse_optional_enum(
+            raw, "encoder_layer_type", LayerTypeLabels
+        ),
+        encoder_activation_function=_parse_optional_enum(
+            raw, "encoder_activation_function", ActivationFuncLabels
+        ),
+        encoder_init_weights=_parse_optional_enum(
+            raw, "encoder_init_weights", WeightInitLabels
+        ),
+        encoder_init_biases=_parse_optional_enum(
+            raw, "encoder_init_biases", BiasInitLabels
+        ),
     )
 
 
@@ -401,13 +424,15 @@ def _parse_trainer(raw: dict[str, Any]) -> TrainerConfig:
 
 
 def _parse_optimizer(raw: dict[str, Any]) -> OptimizerConfig:
-    known_keys = {"optimizer", "learning_rate"}
-    hyperparameters = {
-        key: value for key, value in raw.items() if key not in known_keys
+    known_keys = {"optimizer", "learning_rate", "weight_decay_groups"}
+    hyperparameters = {k: v for k, v in raw.items() if k not in known_keys}
+    weight_decay_groups = {
+        name: float(wd) for name, wd in raw.get("weight_decay_groups", {}).items()
     }
     return OptimizerConfig(
         optimizer=_parse_enum(raw["optimizer"], OptimizerLabels),
         learning_rate=float(raw["learning_rate"]),
+        weight_decay_groups=weight_decay_groups,
         hyperparameters=hyperparameters,
     )
 

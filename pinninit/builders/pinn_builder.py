@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
     from ..config.pinn_config import PINNConfig
     from ..loss.loss_term_container import LossTermContainer
+    from ..nn.neural_network import NeuralNetwork
 
 
 def build_pinn(
@@ -136,8 +137,13 @@ def build_pinn(
     for label, param in learnt_consts.items():
         model.register_parameter(f"learnt_const_{label}", param)
 
-    # Optimizer over model parameters (now includes learnable constants)
-    optimizer = build_optimizer(config.trainer.optimizer, list(model.parameters()))
+    # Optimizer over model parameters
+    wd_groups = config.trainer.optimizer.weight_decay_groups
+    if wd_groups:
+        params = _build_param_groups(model, wd_groups)
+    else:
+        params = list(model.parameters())
+    optimizer = build_optimizer(config.trainer.optimizer, params)
 
     # Trainer
     trainer = build_trainer(
@@ -157,3 +163,26 @@ def build_pinn(
         optimizer=optimizer,
         trainer=trainer,
     )
+
+
+def _build_param_groups(
+    model: NeuralNetwork, weight_decay_groups: dict[str, float]
+) -> list[dict[str, object]]:
+    """Map a {group_name: weight_decay} onto the model's named parameter groups."""
+    named = model.named_parameter_groups()
+    unknown = set(weight_decay_groups) - set(named)
+    if unknown:
+        raise ValueError(
+            f"weight_decay_groups references {sorted(unknown)}, but the model "
+            f"only declares {sorted(named)}."
+        )
+
+    decayed_groups: list[dict[str, object]] = []
+    claimed: set[int] = set()
+    for name, decay in weight_decay_groups.items():
+        params = named[name]
+        decayed_groups.append({"params": params, "weight_decay": decay})
+        claimed.update(id(p) for p in params)
+
+    default = [p for p in model.parameters() if id(p) not in claimed]
+    return [{"params": default}, *decayed_groups]

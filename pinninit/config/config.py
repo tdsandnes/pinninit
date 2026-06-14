@@ -230,6 +230,11 @@ class NNConfig:
     init_weights: list[WeightInitLabels]
     init_biases: list[BiasInitLabels]
     input_transformation: InputTransformationLabels | None
+    weight_norm: bool = False
+    encoder_layer_type: LayerTypeLabels | None = None
+    encoder_activation_function: ActivationFuncLabels | None = None
+    encoder_init_weights: WeightInitLabels | None = None
+    encoder_init_biases: BiasInitLabels | None = None
 
     def __post_init__(self) -> None:
         n = len(self.hidden_layer_widths) + 1
@@ -262,6 +267,25 @@ class NNConfig:
                 f"init_biases must have length {n}, got {len(self.init_biases)}."
             )
 
+        if self.nn_type == "modified_mlp":
+            if len(set(self.hidden_layer_widths)) != 1:
+                raise ValueError(
+                    "modified_mlp requires all hidden layers to share one width, "
+                    f"got {self.hidden_layer_widths}."
+                )
+            missing = [
+                name
+                for name, value in (
+                    ("encoder_layer_type", self.encoder_layer_type),
+                    ("encoder_activation_function", self.encoder_activation_function),
+                    ("encoder_init_weights", self.encoder_init_weights),
+                    ("encoder_init_biases", self.encoder_init_biases),
+                )
+                if value is None
+            ]
+            if missing:
+                raise ValueError(f"modified_mlp requires {missing} to be set.")
+
 
 # Trainer Config
 @dataclass(frozen=True, slots=True)
@@ -270,6 +294,7 @@ class OptimizerConfig:
 
     optimizer: OptimizerLabels
     learning_rate: float
+    weight_decay_groups: dict[str, float] = field(default_factory=dict)
     hyperparameters: dict[str, float | int | str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
