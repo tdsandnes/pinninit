@@ -84,16 +84,19 @@ class LossTermContainer:
         if self.loss_term.field_label in eval_context.output_data.derived_field_labels:
             eval_context.output_data.evaluate_derived_fields(coords)
 
-    def compute_loss(
+    def compute_loss_and_residuals(
         self,
         model: NeuralNetwork,
         eval_context: EvaluationContext,
         eval_coords: CoordsProtocol,
         detach: bool,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         self._apply_model(model, eval_coords, eval_context)
-        loss = self.loss_term.compute_loss(eval_context, eval_coords).sum()
-        return loss.detach() if detach else loss
+        loss, residuals = self.loss_term.compute_loss_and_residuals(
+            eval_context, eval_coords
+        )
+        loss = loss.sum().detach() if detach else loss.sum()
+        return loss, residuals.detach()
 
     def _compute_full_loss(
         self, model: NeuralNetwork, eval_context: EvaluationContext
@@ -105,7 +108,7 @@ class LossTermContainer:
         total: torch.Tensor | None = None
         n_total = 0
         for batch_coords in iter_batches(eval_context.dataloader):
-            batch_loss = self.compute_loss(
+            batch_loss, _ = self.compute_loss_and_residuals(
                 model, eval_context, batch_coords, detach=True
             )
             n = batch_coords.n_points
@@ -125,48 +128,24 @@ class LossTermContainer:
         """Restart batch cycling from the beginning of the dataloader."""
         self._train_batches.reset()
 
-    def compute_train_batch_loss(
+    def compute_train_batch_loss_and_residuals(
         self, model: NeuralNetwork, batch_coords: CoordsProtocol, detach: bool = False
-    ) -> torch.Tensor:
-        return self.compute_loss(
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.compute_loss_and_residuals(
             model, self.train_eval_context, batch_coords, detach=detach
         )
 
-    def compute_val_batch_loss(
+    def compute_val_batch_loss_and_residuals(
         self, model: NeuralNetwork, batch_coords: CoordsProtocol, detach: bool = True
-    ) -> torch.Tensor:
-        return self.compute_loss(
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.compute_loss_and_residuals(
             model, self.val_eval_context, batch_coords, detach=detach
         )
 
-    def compute_unweighted_train_loss(
-        self, model: NeuralNetwork, detach: bool = True
-    ) -> torch.Tensor:
-        """Training loss over the full set in a single graph. Use when the
-        graph is needed."""
-        return self.compute_loss(
-            model,
-            self.train_eval_context,
-            self.train_eval_context.coords,
-            detach=detach,
-        )
-
-    def compute_full_train_loss(self, model: NeuralNetwork) -> torch.Tensor:
+    def compute_full_train_loss(self, model: NeuralNetwork) -> tuple[torch.Tensor]:
         """Full unweighted training loss over the full set, chunked and detached."""
         return self._compute_full_loss(model, self.train_eval_context)
 
-    def compute_full_val_loss(self, model: NeuralNetwork) -> torch.Tensor:
+    def compute_full_val_loss(self, model: NeuralNetwork) -> tuple[torch.Tensor]:
         """Full unweighted validation loss over the full set, chunked and detached."""
         return self._compute_full_loss(model, self.val_eval_context)
-
-    def compute_train_residuals(
-        self,
-        model: NeuralNetwork,
-        coords: CoordsProtocol | None = None,
-        detach: bool = True,
-    ) -> torch.Tensor:
-        """Compute per-point residuals on the training set (or a batch of it)."""
-        coords = coords or self.train_eval_context.coords
-        self._apply_model(model, coords, self.train_eval_context)
-        residuals = self.loss_term.compute_residual(self.train_eval_context, coords)
-        return residuals.detach() if detach else residuals

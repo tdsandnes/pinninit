@@ -36,17 +36,20 @@ class LossTerm(ABC):
         """Subclasses must implement this method to compute residual."""
         pass
 
-    def compute_loss(
+    def compute_loss_and_residuals(
         self,
         eval_context: EvaluationContext,
         eval_coords: CoordsProtocol,
-    ) -> torch.Tensor:
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         residuals = self.compute_residual(eval_context, eval_coords)
 
         # Pass to loss function
-        return eval_context.loss_function(
+        loss = eval_context.loss_function(
             residuals=residuals, eval_context=eval_context, eval_coords=eval_coords
         )
+
+        # Return both loss and residuals
+        return loss, residuals
 
 
 class DataLoss(LossTerm):
