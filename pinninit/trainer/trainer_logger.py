@@ -4,6 +4,7 @@ import math
 from typing import TYPE_CHECKING
 
 import torch
+import torch.nn as nn
 
 from .point_in_step import PointInStep, PointInStepRecorder
 
@@ -116,6 +117,16 @@ class TrainerLogger:
             )
         return "".join(lines)
 
+    def _skip_alphas_str(self) -> str:
+        """Formatted line of skip-connection scalars in block order,
+        empty if the model has none."""
+        model = self.trainer.model
+        if not getattr(model, "skip_connection", False):
+            return ""
+        assert isinstance(model.skip_alphas, nn.ParameterList)
+        alphas = [round(float(a.detach()), 4) for a in model.skip_alphas]
+        return f"Skip connection alphas:       {alphas} \n"
+
     def _print_epoch(
         self,
         train_losses: dict[str, float],
@@ -150,6 +161,7 @@ class TrainerLogger:
             f"Loss term weights:            {weights} \n"
             f"{self._learnt_consts_str()}"
             f"{self._point_weights_str()}"
+            f"{self._skip_alphas_str()}"
         )
 
     def record_train_losses(self, losses: dict[str, torch.Tensor]) -> None:
@@ -187,4 +199,5 @@ class TrainerLogger:
             f"Loss term weights:            {loss_term_weights} \n"
             f"{self._learnt_consts_str()}"
             f"{self._point_weights_str()}"
+            f"{self._skip_alphas_str()}"
         )

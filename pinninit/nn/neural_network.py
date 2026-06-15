@@ -148,6 +148,14 @@ class ModifiedMLP(NeuralNetwork):
             nn_config.encoder_activation_function
         ]()
 
+        # Skip connections
+        self.skip_connection = nn_config.skip_connection
+        self.skip_alphas = nn.ParameterList(
+            [nn.Parameter(torch.zeros(1)) for _ in range(len(self.layers) - 2)]
+            if self.skip_connection
+            else []
+        )
+
         # Weight normalisation
         if nn_config.weight_norm:
             self.layers = nn.ModuleList([weight_norm(layer) for layer in self.layers])
@@ -172,15 +180,23 @@ class ModifiedMLP(NeuralNetwork):
         u = self.encoder_activation(self.encoder_u(tensor))
         v = self.encoder_activation(self.encoder_v(tensor))
 
-        # Hidden layers with encoder mixing
-        alpha = tensor
-        for i, layer in enumerate(self.layers[:-1]):
-            alpha = self.activation_funcs[i](layer(alpha))
-            alpha = (1.0 - alpha) * u + alpha * v
+        # Apply encoders and then skip back to the block's input if skip_connection
+        state = tensor
+        for i in range(0, len(self.layers) - 1):
+            layer_input = state
+            after_act_func = self.activation_funcs[i](self.layers[i](layer_input))
+            after_encoders = (1.0 - after_act_func) * u + after_act_func * v
+            if i == 0 or not self.skip_connection:
+                # No skip connection to first layer since this is needed to map to the
+                # correct matrix shape
+                state = after_encoders
+            else:
+                skip_alpha = self.skip_alphas[i - 1]
+                state = skip_alpha * after_encoders + (1.0 - skip_alpha) * layer_input
 
-        # Output layer (activation is 'none' under the usual aliases)
-        alpha = self.activation_funcs[-1](self.layers[-1](alpha))
-        return alpha
+        # Output layer: no encoders and no skip
+        state = self.activation_funcs[-1](self.layers[-1](state))
+        return state
 
 
 # Mapping from NN type labels to classes

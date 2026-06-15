@@ -400,6 +400,7 @@ def _parse_nn(raw: dict[str, Any]) -> NNConfig:
         encoder_init_biases=_parse_optional_enum(
             raw, "encoder_init_biases", BiasInitLabels
         ),
+        skip_connection=bool(raw.get("skip_connection", False)),
     )
 
 

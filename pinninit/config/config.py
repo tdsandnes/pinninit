@@ -235,6 +235,7 @@ class NNConfig:
     encoder_activation_function: ActivationFuncLabels | None = None
     encoder_init_weights: WeightInitLabels | None = None
     encoder_init_biases: BiasInitLabels | None = None
+    skip_connection: bool = False
 
     def __post_init__(self) -> None:
         n = len(self.hidden_layer_widths) + 1
@@ -285,6 +286,15 @@ class NNConfig:
             ]
             if missing:
                 raise ValueError(f"modified_mlp requires {missing} to be set.")
+
+        if self.skip_connection:
+            if self.nn_type != "modified_mlp":
+                raise ValueError("skip_connection is only supported for modified_mlp.")
+            if len(self.hidden_layer_widths) < 2:
+                raise ValueError(
+                    "skip_connection requires at least 2 hidden layers "
+                    "(an embedding layer plus at least one residual block)."
+                )
 
 
 # Trainer Config
