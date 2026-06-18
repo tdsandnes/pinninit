@@ -31,7 +31,7 @@ class Operators:
         coord_label: str,
     ) -> torch.Tensor:
         """
-        Compute the derivative of all elemets of f wrt a given coordinate
+        Compute the derivative of all elements of f wrt a given coordinate
 
         Parameters
         ----------
@@ -44,20 +44,31 @@ class Operators:
         torch.Tensor
             Derivative of each element of f.
         """
-        if f.ndim != 1:
-            raise ValueError(f"d_dcoord expects a 1D scalar field, got shape {f.shape}")
         coord = self.coords.get_coord(coord_label)
-        return torch.autograd.grad(
-            outputs=f,
-            inputs=coord,
-            grad_outputs=torch.ones_like(f),
-            create_graph=True,
-            retain_graph=True,
-        )[0]
+
+        flat = f.reshape(f.shape[0], -1)
+
+        derivatives = [
+            torch.autograd.grad(
+                flat[:, i],
+                coord,
+                grad_outputs=torch.ones_like(flat[:, i]),
+                create_graph=True,
+                allow_unused=True,
+            )[0]
+            for i in range(flat.shape[1])
+        ]
+
+        # Deal with case where f is indep of coord
+        derivatives = [
+            d if d is not None else torch.zeros_like(coord) for d in derivatives
+        ]
+
+        return torch.stack(derivatives, dim=1).reshape_as(f)
 
     def contravariant_grad(self, f: torch.Tensor) -> torch.Tensor:
         """
-        Compute the contravarient gradient of a function in a given coordinate system.
+        Compute the contravariant gradient of a function in a given coordinate system.
 
         contravariant_grad(f) = g^{ij} * partial_j f
 
@@ -69,22 +80,30 @@ class Operators:
         Returns
         -------
         torch.Tensor
-            Contravarient gradient of the function: (n_points, dim_geometric)
+            Contravariant gradient of the function: (n_points, dim_geometric)
         """
-        # List of derivatives wrt geometric coordinates individually for graph
-        derivatives = []
-        for coord_label in self.geometric_labels:
-            coord = self.coords.get_coord(coord_label)
-            derivative = torch.autograd.grad(
-                outputs=f,
-                inputs=coord,
-                grad_outputs=torch.ones_like(f),
-                create_graph=True,
-                retain_graph=True,
-            )[0]
-            derivatives.append(derivative)
+        if f.ndim != 1:
+            raise ValueError(
+                f"contravariant_grad expects a scalar field, got shape {f.shape}"
+            )
 
-        derivative_f = torch.stack(derivatives, dim=1)
+        coords = [self.coords.get_coord(label) for label in self.geometric_labels]
+
+        derivatives = torch.autograd.grad(
+            outputs=f,
+            inputs=coords,
+            grad_outputs=torch.ones_like(f),
+            create_graph=True,
+            allow_unused=True,
+        )
+
+        # Deal with case where f is indep of coord
+        derivatives_list = [
+            d if d is not None else torch.zeros_like(coord)
+            for d, coord in zip(derivatives, coords, strict=True)
+        ]
+
+        derivative_f = torch.stack(derivatives_list, dim=1)
 
         return self.G.inv_metric_times_vec(derivative_f)
 
@@ -115,6 +134,14 @@ class Operators:
         """
         Compute the operation (v1 dot grad)(v2) in physical basis.
 
+        Since v2 is given to the function in the physical bases, this operation
+        can be viewed as:
+
+        (v1 dot grad)(v2_i * e_i) = (v1 dot grad)(v2_i)*e_i + v2_i*(v1 dot grad)(e_i)
+
+        To make this easier, we first transform v2 to Cartesian (so that the
+        (v1 dot grad)(e_i) terms are 0) and then transform back.
+
         Parameters
         ----------
         v1 : torch.Tensor
@@ -130,14 +157,25 @@ class Operators:
             The vector computed from (v1 dot grad)(v2).
             Shape (n_points, dim_geometric)
         """
-        # Loop through each component of the target vector field v2
-        # v2[:, i] is a scalar field corresponding to component i
-        components = [
-            (v1 * self.grad(v2[:, i])).sum(dim=1) for i in range(self.dim_geometric)
-        ]
+        # Transform v2 to Cartesian
+        geometric_coords = {
+            label: self.coords.get_coord(label) for label in self.geometric_labels
+        }
+        v2_cartesian = self.coord_system.transform_geometric_to_cartesian(
+            v2, geometric_coords
+        )
 
-        # Stack them back into a vector field of shape (n_points, dim_geometric)
-        return torch.stack(components, dim=1)
+        # Apply operation
+        out = torch.stack(
+            [
+                (v1 * self.grad(v2_cartesian[:, i])).sum(dim=1)
+                for i in range(v2_cartesian.shape[1])
+            ],
+            dim=1,
+        )
+
+        # Transform back
+        return self.coord_system.transform_cartesian_to_geometric(out, geometric_coords)
 
     def contravariant_div(
         self,
@@ -215,7 +253,15 @@ class Operators:
         v: torch.Tensor,
     ) -> torch.Tensor:
         """
-        Compute the laplacian operator of a function in a given coordinate system.
+        Compute the laplacian of a vector field in a given coordinate system.
+
+        Since v is given to the function in the physical bases, this operation
+        can be viewed as:
+
+        lap(v2_i * e_i) = lap(v2_i) * e_i + v2_i * lap(e_i)
+
+        To make this easier, we first transform v to Cartesian (so that the
+        lap(e_i) terms are 0) and then transform back.
 
         Parameters
         ----------
@@ -226,10 +272,22 @@ class Operators:
         Returns
         -------
         torch.Tensor
-            Vector laplacian of the function and same basis as input vector
+            Laplacian of the vector field and same basis as input vector
             field (n_points, dim_geometric)
         """
-        return torch.stack(
-            [self.laplacian(v[:, i]) for i in range(self.dim_geometric)],
+        # Transform v to Cartesian
+        geometric_coords = {
+            label: self.coords.get_coord(label) for label in self.geometric_labels
+        }
+        v_cartesian = self.coord_system.transform_geometric_to_cartesian(
+            v, geometric_coords
+        )
+
+        # Apply operation
+        lap = torch.stack(
+            [self.laplacian(v_cartesian[:, i]) for i in range(v_cartesian.shape[1])],
             dim=1,
         )
+
+        # Transform back
+        return self.coord_system.transform_cartesian_to_geometric(lap, geometric_coords)

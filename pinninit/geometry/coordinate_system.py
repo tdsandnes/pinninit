@@ -111,6 +111,30 @@ class CoordSystem(ABC):
     ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor]]:
         pass
 
+    @abstractmethod
+    def geometric_to_cartesian_rotation(
+        self, n_points: int, geometric_coords: dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        pass
+
+    def transform_geometric_to_cartesian(
+        self, vector: torch.Tensor, geometric_coords: dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        """Geometric vector components to Cartesian components."""
+        rotation = self.geometric_to_cartesian_rotation(
+            vector.shape[0], geometric_coords
+        )
+        return torch.einsum("nij,nj->ni", rotation, vector)
+
+    def transform_cartesian_to_geometric(
+        self, vector: torch.Tensor, geometric_coords: dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        """Cartesian vector components to geometric components."""
+        rotation = self.geometric_to_cartesian_rotation(
+            vector.shape[0], geometric_coords
+        )
+        return torch.einsum("nij,ni->nj", rotation, vector)
+
     def _get_coord(
         self,
         axis_label: str,
@@ -238,6 +262,16 @@ class CartesianCoords(CoordSystem):
         # For Cartesian, internal geometric coords are the same as geometric coords
         return geometric_lb, geometric_ub
 
+    def geometric_to_cartesian_rotation(
+        self, n_points: int, geometric_coords: dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        # In Cartesian the basis vectors are already the Cartesian axes
+        rotation = torch.eye(self.metadata.max_dim_geometric, device=self.device)
+        rotation = rotation.expand(n_points, -1, -1)
+
+        # Only use the columns of the axes included in geometric_coords
+        return rotation[:, :, list(self.indices_selected)]
+
 
 class CylindricalCoords(CoordSystem):
     """Cylindrical polar coordinate system: r, theta, z."""
@@ -363,6 +397,31 @@ class CylindricalCoords(CoordSystem):
             internal_ub["z"] = z_ub
 
         return internal_lb, internal_ub
+
+    def geometric_to_cartesian_rotation(
+        self, n_points: int, geometric_coords: dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        # Get coordinates needed for the basis vectors
+        theta = self._get_coord("theta", geometric_coords)
+        cos_theta = torch.cos(theta)
+        sin_theta = torch.sin(theta)
+
+        # Each column is a unit basis vector, written in Cartesian (x, y, z)
+        rotation = torch.zeros((n_points, 3, 3), device=self.device)
+
+        # e_r = (cos(theta), sin(theta), 0)
+        rotation[:, 0, 0] = cos_theta
+        rotation[:, 1, 0] = sin_theta
+
+        # e_theta = (-sin(theta), cos(theta), 0)
+        rotation[:, 0, 1] = -sin_theta
+        rotation[:, 1, 1] = cos_theta
+
+        # e_z = (0, 0, 1)
+        rotation[:, 2, 2] = 1.0
+
+        # Only use the columns of the axes included in geometric_coords
+        return rotation[:, :, list(self.indices_selected)]
 
 
 class SphericalCoords(CoordSystem):
@@ -529,6 +588,35 @@ class SphericalCoords(CoordSystem):
             }
 
         return internal_lb, internal_ub
+
+    def geometric_to_cartesian_rotation(
+        self, n_points: int, geometric_coords: dict[str, torch.Tensor]
+    ) -> torch.Tensor:
+        # Get coordinates needed for the basis vectors
+        theta = self._get_coord("theta", geometric_coords)
+        phi = self._get_coord("phi", geometric_coords, default=0.0)
+        sin_theta, cos_theta = torch.sin(theta), torch.cos(theta)
+        sin_phi, cos_phi = torch.sin(phi), torch.cos(phi)
+
+        # Each column is a unit basis vector, written in Cartesian (x, y, z)
+        rotation = torch.zeros((n_points, 3, 3), device=self.device)
+
+        # e_r = (sin(theta)cos(phi), sin(theta)sin(phi), cos(theta))
+        rotation[:, 0, 0] = sin_theta * cos_phi
+        rotation[:, 1, 0] = sin_theta * sin_phi
+        rotation[:, 2, 0] = cos_theta
+
+        # e_theta = (cos(theta)cos(phi), cos(theta)sin(phi), -sin(theta))
+        rotation[:, 0, 1] = cos_theta * cos_phi
+        rotation[:, 1, 1] = cos_theta * sin_phi
+        rotation[:, 2, 1] = -sin_theta
+
+        # e_phi = (-sin(phi), cos(phi), 0)
+        rotation[:, 0, 2] = -sin_phi
+        rotation[:, 1, 2] = cos_phi
+
+        # Only use the columns of the axes included in geometric_coords
+        return rotation[:, :, list(self.indices_selected)]
 
 
 # Mapping from coordinate system labels to classes

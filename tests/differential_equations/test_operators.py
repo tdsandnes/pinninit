@@ -136,6 +136,72 @@ class TestCartesianDerivatives:
         assert torch.allclose(dfdx, 2.0 * x + y)
         assert torch.allclose(dfdy, x)
 
+    def test_d_dcoord_vector_field(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        x, y = xy_2d
+        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        operators = Operators(coords)
+
+        x = coords.get_coord("x")
+        y = coords.get_coord("y")
+
+        vector = torch.stack(
+            [
+                x**2,
+                x * y,
+            ],
+            dim=1,
+        )
+
+        expected = torch.stack(
+            [
+                2.0 * x,
+                y,
+            ],
+            dim=1,
+        )
+
+        assert torch.allclose(
+            operators.d_dcoord(vector, "x"),
+            expected,
+        )
+
+    def test_d_dcoord_rank_two_tensor(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        x, y = xy_2d
+        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        operators = Operators(coords)
+
+        x = coords.get_coord("x")
+        y = coords.get_coord("y")
+
+        tensor = torch.stack(
+            [
+                torch.stack([x**2, x * y], dim=1),
+                torch.stack([y**2, x + y], dim=1),
+            ],
+            dim=1,
+        )
+
+        expected = torch.stack(
+            [
+                torch.stack([2.0 * x, y], dim=1),
+                torch.stack([torch.zeros_like(x), torch.ones_like(x)], dim=1),
+            ],
+            dim=1,
+        )
+
+        assert torch.allclose(
+            operators.d_dcoord(tensor, "x"),
+            expected,
+        )
+
     def test_contravariant_grad_and_grad_match_cartesian_gradient(
         self,
         cartesian_2d: CoordSystem,
@@ -191,6 +257,25 @@ class TestCartesianDerivatives:
         expected = torch.full((coords.n_points,), 4.0, device=device)
 
         assert torch.allclose(operators.laplacian(f), expected)
+
+    def test_laplacian_matches_div_grad(
+        self,
+        cartesian_2d: CoordSystem,
+        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        x, y = xy_2d
+        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        operators = Operators(coords)
+
+        x = coords.get_coord("x")
+        y = coords.get_coord("y")
+
+        f = x**3 + x * y + y**2
+
+        actual = operators.laplacian(f)
+        expected = operators.div(operators.grad(f))
+
+        assert torch.allclose(actual, expected)
 
     def test_vector_laplacian_applies_componentwise(
         self,
@@ -269,6 +354,114 @@ class TestCylindricalDerivatives:
 
         assert torch.allclose(operators.contravariant_grad(f), expected_contravariant)
         assert torch.allclose(operators.grad(f), expected_physical)
+
+    def test_cylindrical_laplacian_matches_div_grad(
+        self,
+        cylindrical_2d: CoordSystem,
+        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        r, theta = r_theta_2d
+        coords = make_coords_cylindrical_2d(cylindrical_2d, r, theta)
+        operators = Operators(coords)
+
+        r = coords.get_coord("r")
+        theta = coords.get_coord("theta")
+
+        f = r**2 * torch.sin(theta)
+
+        actual = operators.laplacian(f)
+        expected = operators.div(operators.grad(f))
+
+        assert torch.allclose(actual, expected)
+
+    def test_laplacian_log_r_is_zero(
+        self,
+        cylindrical_2d: CoordSystem,
+        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        r, theta = r_theta_2d
+        coords = make_coords_cylindrical_2d(cylindrical_2d, r, theta)
+        operators = Operators(coords)
+
+        r = coords.get_coord("r")
+
+        f = torch.log(r)
+
+        expected = torch.zeros_like(r)
+
+        assert torch.allclose(operators.laplacian(f), expected)
+
+    def test_v_dot_grad_recovers_centripetal_acceleration(
+        self,
+        cylindrical_2d: CoordSystem,
+        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        r, theta = r_theta_2d
+        coords = make_coords_cylindrical_2d(cylindrical_2d, r, theta)
+        operators = Operators(coords)
+
+        r = coords.get_coord("r")
+
+        v = torch.stack(
+            [
+                torch.zeros_like(r),  # v_r
+                torch.ones_like(r),  # v_theta
+            ],
+            dim=1,
+        )
+
+        expected = torch.stack(
+            [
+                -1.0 / r,
+                torch.zeros_like(r),
+            ],
+            dim=1,
+        )
+
+        actual = operators.v_dot_grad(v, v)
+
+        assert torch.allclose(
+            actual,
+            expected,
+            atol=1e-6,
+            rtol=1e-6,
+        )
+
+    def test_vector_laplacian_recovers_basis_vector_curvature(
+        self,
+        cylindrical_2d: CoordSystem,
+        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+    ) -> None:
+        r, theta = r_theta_2d
+        coords = make_coords_cylindrical_2d(cylindrical_2d, r, theta)
+        operators = Operators(coords)
+
+        r = coords.get_coord("r")
+
+        v = torch.stack(
+            [
+                torch.ones_like(r),  # e_r
+                torch.zeros_like(r),
+            ],
+            dim=1,
+        )
+
+        expected = torch.stack(
+            [
+                -1.0 / r**2,
+                torch.zeros_like(r),
+            ],
+            dim=1,
+        )
+
+        actual = operators.vector_laplacian(v)
+
+        assert torch.allclose(
+            actual,
+            expected,
+            atol=1e-6,
+            rtol=1e-6,
+        )
 
 
 class TestBatchedCoordinates:
