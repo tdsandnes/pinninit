@@ -103,18 +103,16 @@ class TrainerLogger:
         that uses them, empty if none do."""
         lines = []
         for label, container in self.trainer.loss_containers.items():
-            point_weights = container.train_eval_context.point_weights
-            if point_weights is None:
-                continue
-            w = point_weights.get_component("value").detach()
-            lines.append(
-                f"Point weights ({label}): "
-                f"mean {w.mean().item():.4g}, "
-                f"median {w.median().item():.4g}, "
-                f"std {w.std().item():.4g}, "
-                f"min {w.min().item():.4g}, "
-                f"max {w.max().item():.4g} \n"
-            )
+            if container.train_eval_context.has_point_weights:
+                point_weights = container.train_eval_context.get_point_weights()
+                lines.append(
+                    f"Point weights ({label}): "
+                    f"mean {point_weights.mean().item():.4g}, "
+                    f"median {point_weights.median().item():.4g}, "
+                    f"std {point_weights.std().item():.4g}, "
+                    f"min {point_weights.min().item():.4g}, "
+                    f"max {point_weights.max().item():.4g} \n"
+                )
         return "".join(lines)
 
     def _skip_alphas_str(self) -> str:

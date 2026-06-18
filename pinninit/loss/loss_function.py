@@ -39,12 +39,8 @@ def weighted_mean_mse_loss(
     """
     Weight mean square loss between predicted and exact function values.
     """
-
-    if eval_context.point_weights is None:
-        raise ValueError("point_weights must be provided for weighted MSE loss")
-
     # Get weights of individual points
-    point_weights = eval_context.point_weights.component_tensor(eval_coords)
+    point_weights = eval_context.get_point_weights(eval_coords).unsqueeze(-1)
 
     if point_weights.shape[0] != residuals.shape[0]:
         raise ValueError(
@@ -62,11 +58,8 @@ def weighted_point_avg_mse_loss(
     """
     Weight mean square loss, but not divided by total weight.
     """
-    if eval_context.point_weights is None:
-        raise ValueError("point_weights must be provided for weighted MSE loss")
-
     # Get weights of individual points
-    point_weights = eval_context.point_weights.component_tensor(eval_coords)
+    point_weights = eval_context.get_point_weights(eval_coords).unsqueeze(-1)
 
     if point_weights.shape[0] != residuals.shape[0]:
         raise ValueError(

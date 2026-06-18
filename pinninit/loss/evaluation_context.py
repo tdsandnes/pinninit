@@ -25,7 +25,8 @@ class EvaluationContext:
     loss_function: Callable[..., torch.Tensor]
     dataloader: DataLoader[CoordsProtocol]
     input_data: DataContainer | None = None
-    point_weights: FieldProtocol | None = None
+    raw_point_weights: FieldProtocol | None = None
+    has_point_weights: bool = False
 
     coords: CoordsProtocol = field(init=False)
 
@@ -42,8 +43,9 @@ class EvaluationContext:
                 "input_data and output_data must share identical coordinates."
             )
 
-        if self.point_weights is not None:
-            self._validate_point_weights(self.point_weights)
+        if self.raw_point_weights is not None:
+            self._validate_point_weights(self.raw_point_weights)
+            self.has_point_weights = True
 
     def _validate_point_weights(self, field: FieldProtocol) -> None:
         # Must use same coords as data containers
@@ -60,7 +62,7 @@ class EvaluationContext:
         """
         Update point weights in-place using FieldProtocol.
         """
-        if self.point_weights is None:
+        if self.raw_point_weights is None:
             raise ValueError("point_weights field is not initialised")
 
         coords = coords or self.coords
@@ -72,9 +74,22 @@ class EvaluationContext:
             )
 
         # Update Field
-        self.point_weights.update_from_tensor(
+        self.raw_point_weights.update_from_tensor(
             new_tensor=new_weights,
             coords=coords,
             detach_stale_values=True,
             detach_new_values=True,
         )
+
+    def get_point_weights(self, coords: CoordsProtocol | None = None) -> torch.Tensor:
+        """
+        Get point weights.
+        """
+        if self.raw_point_weights is None:
+            raise ValueError("point_weights field is not initialised")
+
+        coords = coords or self.coords
+
+        point_weights = self.raw_point_weights.tensor(coords).detach()
+
+        return point_weights

@@ -297,11 +297,9 @@ class Trainer:
 
             # Save point weights for containers that use them
             self.best_point_weights = {
-                label: container.train_eval_context.point_weights.get_component("value")
-                .detach()
-                .clone()
+                label: container.train_eval_context.get_point_weights().clone()
                 for label, container in self.loss_containers.items()
-                if container.train_eval_context.point_weights is not None
+                if container.train_eval_context.has_point_weights
             }
 
     def load_best_model(

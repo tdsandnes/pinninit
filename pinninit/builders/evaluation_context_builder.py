@@ -226,5 +226,5 @@ def _build_one_eval_context(
         loss_function=loss_fn,
         dataloader=dataloader,
         input_data=input_dc,
-        point_weights=point_weights,
+        raw_point_weights=point_weights,
     )

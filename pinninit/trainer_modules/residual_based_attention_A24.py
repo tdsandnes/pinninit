@@ -61,7 +61,7 @@ class ResidualBasedAttentionA24(TrainerModule):
         # Register all containers (including staggered ones) with point weights
         for label, container in trainer.all_loss_containers.items():
             eval_context = container.train_eval_context
-            if eval_context.point_weights is None:
+            if not eval_context.has_point_weights:
                 continue
 
             self.rba_containers[label] = container
@@ -105,8 +105,6 @@ class ResidualBasedAttentionA24(TrainerModule):
         batch_coords: CoordsProtocol,
     ) -> None:
         eval_context = container.train_eval_context
-        assert eval_context.point_weights is not None
-
         # Per-point residual magnitudes on the current batch
         residuals = trainer.cached_train_residuals(container.label)
         if residuals is None:
@@ -127,7 +125,7 @@ class ResidualBasedAttentionA24(TrainerModule):
             return
 
         # Recover lambda from the stored weights w = lambda^2
-        weights = eval_context.point_weights.get_component("value", batch_coords)
+        weights = eval_context.get_point_weights(batch_coords)
         lambdas = weights.clamp_min(0.0).sqrt()
 
         # Anagnostopoulos et al. (2024) Eqn. 3 (max over the current batch)
