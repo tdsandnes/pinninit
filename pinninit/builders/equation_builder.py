@@ -6,8 +6,10 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from ..config.config import EquationConfig
+from ..config.config import EquationConfig, PointWeightModifierConfig
 from ..data_structure.equation import Equation
+
+POINT_WEIGHT_MODIFIER_LABEL = "point_weight_modifier"
 
 
 def build_equation(config: EquationConfig, base_dir: Path | None = None) -> Equation:
@@ -71,6 +73,28 @@ def build_equations(
         labels_seen.add(config.label)
         equations.append(build_equation(config, base_dir=base_dir))
     return equations
+
+
+def build_point_weight_modifier_equation(
+    loss_term_label: str,
+    config: PointWeightModifierConfig,
+    base_dir: Path | None = None,
+) -> Equation:
+    """Build an Equation for a loss term's inline point-weight modifier.
+
+    The modifier reuses the Equation machinery but is defined inline on the loss
+    term rather than in the Equations section, so its (single, rank-0) output
+    label is supplied internally and never needs to be declared by the user.
+    """
+    equation_config = EquationConfig(
+        label=f"{loss_term_label}_{POINT_WEIGHT_MODIFIER_LABEL}",
+        function_name=config.function_name,
+        file_path=config.file_path,
+        input_labels=config.input_labels,
+        output_labels=[POINT_WEIGHT_MODIFIER_LABEL],
+        output_ranks=[0],
+    )
+    return build_equation(equation_config, base_dir=base_dir)
 
 
 def _load_function(

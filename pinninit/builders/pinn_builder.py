@@ -8,7 +8,7 @@ import torch.nn as nn
 from ..pinn.pinn import PINN
 from .coord_system_builder import build_coord_systems
 from .coords_builder import build_coords_classes
-from .equation_builder import build_equations
+from .equation_builder import build_equations, build_point_weight_modifier_equation
 from .evaluation_context_builder import build_evaluation_contexts
 from .loss_builder import build_loss_term_container
 from .nn_builder import build_nn, collect_periodic_coords, get_internal_labels
@@ -57,20 +57,6 @@ def build_pinn(
 
     # Equations
     equations = build_equations(config.equations, base_dir=base_dir)
-    equations_by_label = {equation.label: equation for equation in equations}
-
-    # Equations referenced as point-weight modifiers are evaluated directly to
-    # reshape point weights; they must not also be treated as derived fields.
-    point_weight_eq_labels = {
-        loss_term.point_weight_equation
-        for loss_term in config.loss
-        if loss_term.point_weight_equation is not None
-    }
-    field_equations = [
-        equation
-        for equation in equations
-        if equation.label not in point_weight_eq_labels
-    ]
 
     # Loss term containers
     datasets_by_label = {dataset.label: dataset for dataset in config.datasets}
@@ -94,8 +80,12 @@ def build_pinn(
         )
 
         point_weight_equation = (
-            equations_by_label[loss_term_config.point_weight_equation]
-            if loss_term_config.point_weight_equation is not None
+            build_point_weight_modifier_equation(
+                loss_term_config.label,
+                loss_term_config.point_weight_modifier,
+                base_dir=base_dir,
+            )
+            if loss_term_config.point_weight_modifier is not None
             else None
         )
 
@@ -105,7 +95,7 @@ def build_pinn(
             Coords=Coords,
             fields_config=config.fields,
             const_configs=config.constants,
-            equations=field_equations,
+            equations=equations,
             point_weight_equation=point_weight_equation,
             n_batches=config.trainer.n_batches,
             shuffle=config.trainer.shuffle,

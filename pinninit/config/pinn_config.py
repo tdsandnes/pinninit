@@ -51,7 +51,7 @@ class PINNConfig:
 
     def __post_init__(self) -> None:
         self._validate_staggering()
-        self._validate_point_weights()
+        self._validate_adaptive_point_weights()
 
     def _validate_staggering(self) -> None:
         """Staggered loss terms never activate without a staggering module."""
@@ -73,16 +73,12 @@ class PINNConfig:
                 "is configured; they would never be activated."
             )
 
-    def _validate_point_weights(self) -> None:
-        """Adaptive point weights need a module that updates them, and point-weight
-        equations must reference an existing Equation."""
-        self._validate_adaptive_weights()
-        self._validate_point_weight_equations()
-
-    def _validate_adaptive_weights(self) -> None:
-        """Loss terms with adaptive weights need a module that updates them."""
+    def _validate_adaptive_point_weights(self) -> None:
+        """Loss terms with adaptive point weights need a module that updates them."""
         adaptive = [
-            loss_term.label for loss_term in self.loss if loss_term.adaptive_weights
+            loss_term.label
+            for loss_term in self.loss
+            if loss_term.adaptive_point_weights
         ]
         if not adaptive:
             return
@@ -97,18 +93,7 @@ class PINNConfig:
             not in builtin_module_names
         ):
             raise ValueError(
-                f"Loss terms {adaptive} set adaptive_weights but no "
+                f"Loss terms {adaptive} set adaptive_point_weights but no "
                 f"'{TrainerModuleLabels.RESIDUAL_BASED_ATTENTION_A24.value}' trainer "
                 "module is configured. Their point weights would never update."
             )
-
-    def _validate_point_weight_equations(self) -> None:
-        """Point-weight equations must reference an Equation that exists."""
-        equation_labels = {equation.label for equation in self.equations}
-        for loss_term in self.loss:
-            label = loss_term.point_weight_equation
-            if label is not None and label not in equation_labels:
-                raise ValueError(
-                    f"Loss term '{loss_term.label}' references point_weight_equation "
-                    f"'{label}' which is not defined in the Equations section."
-                )

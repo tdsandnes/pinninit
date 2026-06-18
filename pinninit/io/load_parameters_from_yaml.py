@@ -19,6 +19,7 @@ from ..config.config import (
     LossTermConfig,
     NNConfig,
     OptimizerConfig,
+    PointWeightModifierConfig,
     TrainerConfig,
     TrainerModuleConfig,
 )
@@ -318,12 +319,26 @@ def _parse_loss(raw: list[dict[str, Any]]) -> list[LossTermConfig]:
                 weight_method_label=weight_method_label,
                 weight_group_label=term.get("weight_group_label"),
                 staggering=int(term.get("staggering", 0)),
-                adaptive_weights=bool(term.get("adaptive_weights", False)),
-                point_weight_equation=term.get("point_weight_equation"),
+                adaptive_point_weights=bool(term.get("adaptive_point_weights", False)),
+                point_weight_modifier=_parse_point_weight_modifier(
+                    term.get("point_weight_modifier")
+                ),
             )
         )
 
     return terms
+
+
+def _parse_point_weight_modifier(
+    raw: dict[str, Any] | None,
+) -> PointWeightModifierConfig | None:
+    if raw is None:
+        return None
+    return PointWeightModifierConfig(
+        file_path=raw["file_path"],
+        function_name=raw["function_name"],
+        input_labels=list(raw.get("input_labels", [])),
+    )
 
 
 def _expand_nn_alias(

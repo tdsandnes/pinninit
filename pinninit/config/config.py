@@ -194,6 +194,14 @@ class EquationConfig:
         return dict(zip(self.output_labels, self.output_ranks, strict=True))
 
 
+# Point-weight modifier config
+@dataclass(frozen=True, slots=True)
+class PointWeightModifierConfig:
+    file_path: str
+    function_name: str
+    input_labels: list[str]
+
+
 # Loss Config
 @dataclass(frozen=True, slots=True)
 class LossTermConfig:
@@ -209,8 +217,8 @@ class LossTermConfig:
     weight_method_label: WeightMethodLabels
     weight_group_label: str | None
     staggering: int = 0
-    adaptive_weights: bool = False
-    point_weight_equation: str | None = None
+    adaptive_point_weights: bool = False
+    point_weight_modifier: PointWeightModifierConfig | None = None
 
     def __post_init__(self) -> None:
         if self.staggering < 0:
