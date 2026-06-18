@@ -23,12 +23,15 @@ def compute_flat_train_grads(
     for container in containers:
         loss = trainer.cached_train_loss(container.label)
         if loss is None:
-            warnings.warn(
-                "Recomputing loss: the train-loss cache was empty "
-                "(expected populated).",
-                RuntimeWarning,
-                stacklevel=2,
-            )
+            # Closure optimizers (e.g. LBFGS) populate the cache only inside the
+            # closure, which runs after this hook, so an empty cache is expected.
+            if not trainer.optimizer.requires_closure:
+                warnings.warn(
+                    "Recomputing loss: the train-loss cache was empty "
+                    "(expected populated).",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
             batch = (
                 trainer.current_train_batches.get(container.label)
                 or container.next_train_batch()
