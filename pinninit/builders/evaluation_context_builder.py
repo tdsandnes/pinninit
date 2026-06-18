@@ -14,6 +14,7 @@ from ..data_structure.batching import make_dataloader
 from ..data_structure.coords_dataclass import get_coords_class_default
 from ..data_structure.equation import Equation
 from ..data_structure.field_dataclass import make_field_dataclass
+from ..differential_equations.operators import Operators
 from ..io.load_dataset_from_hdf5 import load_coords_from_hdf5, load_fields_from_hdf5
 from ..loss.evaluation_context import EvaluationContext
 from ..loss.loss_function import LOSS_FUNCTION_REGISTRY, LossFunctionLabels
@@ -27,16 +28,10 @@ from .data_container_builder import (
 if TYPE_CHECKING:
     from ..data_structure.coords_dataclass import CoordsProtocol
     from ..data_structure.data_container import DataContainer
+    from ..data_structure.field_dataclass import FieldProtocol
 
 # Loss function used for validation loss
 _VAL_LOSS_FN = LossFunctionLabels.MSE
-
-
-# Loss functions that weight individual points (weights updated by a trainer module)
-_WEIGHTED_LOSS_FNS = {
-    LossFunctionLabels.WEIGHTED_MEAN_MSE,
-    LossFunctionLabels.WEIGHTED_POINT_AVERAGED_MSE,
-}
 
 
 def build_evaluation_contexts(
@@ -46,6 +41,7 @@ def build_evaluation_contexts(
     fields_config: FieldsConfig,
     const_configs: list[ConstConfig],
     equations: list[Equation],
+    point_weight_equation: Equation | None = None,
     n_batches: int = 1,
     shuffle: bool = True,
     num_workers: int = 0,
@@ -73,6 +69,10 @@ def build_evaluation_contexts(
         Constant configs — values are populated into the output DataContainer.
     equations:
         Already-built Equation objects for derived field computation.
+    point_weight_equation:
+        Optional Equation evaluated on the training coords to produce a
+        per-point multiplier on the point weights. Applied to the training
+        context only.
     n_batches:
         Number of batches, used to sync all loss terms.
     shuffle:
@@ -142,6 +142,7 @@ def build_evaluation_contexts(
         const_configs=const_configs,
         equations=equations,
         loss_fn_label=loss_term_config.loss_function,
+        point_weight_equation=point_weight_equation,
         n_batches=n_batches,
         shuffle=shuffle,
         num_workers=num_workers,
@@ -155,6 +156,7 @@ def build_evaluation_contexts(
         const_configs=const_configs,
         equations=equations,
         loss_fn_label=_VAL_LOSS_FN,  # Validation loss fn is always MSE
+        point_weight_equation=None,  # Validation loss fn is not weighted
         n_batches=n_batches,
         shuffle=shuffle,
         num_workers=num_workers,
@@ -170,6 +172,7 @@ def _build_one_eval_context(
     const_configs: list[ConstConfig],
     equations: list[Equation],
     loss_fn_label: LossFunctionLabels,
+    point_weight_equation: Equation | None = None,
     n_batches: int = 1,
     shuffle: bool = True,
     num_workers: int = 0,
@@ -212,13 +215,18 @@ def _build_one_eval_context(
         num_workers=num_workers,
     )
 
-    # Point weights for weighted loss functions (uniform until a module updates them)
-    point_weights = None
-    if loss_fn_label in _WEIGHTED_LOSS_FNS:
-        Field = make_field_dataclass(rank=0, coords=coords, device=coords.device)
-        point_weights = Field(
-            label="point_weights",
-            value=torch.ones(coords.n_points, device=coords.device),
+    # Every loss term carries a per-point weight field
+    Field = make_field_dataclass(rank=0, coords=coords, device=coords.device)
+    point_weights = Field(
+        label="point_weights",
+        value=torch.ones(coords.n_points, device=coords.device),
+    )
+
+    # Optional coord-based multiplier on the point weights
+    point_weight_modifier = None
+    if point_weight_equation is not None:
+        point_weight_modifier = _build_point_weight_modifier(
+            point_weight_equation, output_dc, coords
         )
 
     return EvaluationContext(
@@ -227,4 +235,24 @@ def _build_one_eval_context(
         dataloader=dataloader,
         input_data=input_dc,
         raw_point_weights=point_weights,
+        point_weight_modifier=point_weight_modifier,
     )
+
+
+def _build_point_weight_modifier(
+    equation: Equation,
+    output_dc: DataContainer,
+    coords: CoordsProtocol,
+) -> FieldProtocol:
+    if len(equation.output_labels) != 1:
+        raise ValueError(
+            f"Point-weight equation '{equation.label}' must have exactly one "
+            f"output, got {equation.output_labels}."
+        )
+
+    operators = Operators(coords)
+    result = equation.evaluate(output_dc, coords, operators)
+    modifier_tensor = result[equation.output_labels[0]].detach()
+
+    Field = make_field_dataclass(rank=0, coords=coords, device=coords.device)
+    return Field(label="point_weight_modifier", value=modifier_tensor)

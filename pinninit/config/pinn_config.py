@@ -5,7 +5,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ..io.load_parameters_from_yaml import load_parameters_from_yaml
-from ..loss.loss_function import LossFunctionLabels
 from ..trainer_modules.trainer_module_registry import TrainerModuleLabels
 
 if TYPE_CHECKING:
@@ -75,17 +74,17 @@ class PINNConfig:
             )
 
     def _validate_point_weights(self) -> None:
-        """Weighted loss functions need a module that updates point weights."""
-        weighted = [
-            loss_term.label
-            for loss_term in self.loss
-            if loss_term.loss_function
-            in (
-                LossFunctionLabels.WEIGHTED_MEAN_MSE,
-                LossFunctionLabels.WEIGHTED_POINT_AVERAGED_MSE,
-            )
+        """Adaptive point weights need a module that updates them, and point-weight
+        equations must reference an existing Equation."""
+        self._validate_adaptive_weights()
+        self._validate_point_weight_equations()
+
+    def _validate_adaptive_weights(self) -> None:
+        """Loss terms with adaptive weights need a module that updates them."""
+        adaptive = [
+            loss_term.label for loss_term in self.loss if loss_term.adaptive_weights
         ]
-        if not weighted:
+        if not adaptive:
             return
 
         builtin_module_names = {
@@ -98,7 +97,18 @@ class PINNConfig:
             not in builtin_module_names
         ):
             raise ValueError(
-                f"Loss terms {weighted} use weighted loss functions but no "
+                f"Loss terms {adaptive} set adaptive_weights but no "
                 f"'{TrainerModuleLabels.RESIDUAL_BASED_ATTENTION_A24.value}' trainer "
                 "module is configured. Their point weights would never update."
             )
+
+    def _validate_point_weight_equations(self) -> None:
+        """Point-weight equations must reference an Equation that exists."""
+        equation_labels = {equation.label for equation in self.equations}
+        for loss_term in self.loss:
+            label = loss_term.point_weight_equation
+            if label is not None and label not in equation_labels:
+                raise ValueError(
+                    f"Loss term '{loss_term.label}' references point_weight_equation "
+                    f"'{label}' which is not defined in the Equations section."
+                )

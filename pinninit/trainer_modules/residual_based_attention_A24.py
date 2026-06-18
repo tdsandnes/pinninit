@@ -60,10 +60,10 @@ class ResidualBasedAttentionA24(TrainerModule):
 
         # Register all containers (including staggered ones) with point weights
         for label, container in trainer.all_loss_containers.items():
-            eval_context = container.train_eval_context
-            if not eval_context.has_point_weights:
+            if not container.adaptive_point_weights:
                 continue
 
+            eval_context = container.train_eval_context
             self.rba_containers[label] = container
 
             # Initialise lambda (stored as w = lambda^2)
@@ -77,8 +77,8 @@ class ResidualBasedAttentionA24(TrainerModule):
         if not self.rba_containers:
             raise ValueError(
                 "ResidualBasedAttention found no loss term containers with "
-                "point weights. Use a weighted loss function (e.g. "
-                "'weighted_point_avg_mse') on at least one loss term."
+                "adaptive point weights. Set 'adaptive_weights: true' on at "
+                "least one loss term."
             )
 
     def on_pre_optimizer_step(
@@ -124,8 +124,8 @@ class ResidualBasedAttentionA24(TrainerModule):
         if max_magnitude == 0:
             return
 
-        # Recover lambda from the stored weights w = lambda^2
-        weights = eval_context.get_point_weights(batch_coords)
+        # Recover lambda from the stored raw weights w = lambda^2
+        weights = weights = eval_context.get_raw_point_weights(batch_coords)
         lambdas = weights.clamp_min(0.0).sqrt()
 
         # Anagnostopoulos et al. (2024) Eqn. 3 (max over the current batch)

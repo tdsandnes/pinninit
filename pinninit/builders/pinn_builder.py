@@ -57,6 +57,20 @@ def build_pinn(
 
     # Equations
     equations = build_equations(config.equations, base_dir=base_dir)
+    equations_by_label = {equation.label: equation for equation in equations}
+
+    # Equations referenced as point-weight modifiers are evaluated directly to
+    # reshape point weights; they must not also be treated as derived fields.
+    point_weight_eq_labels = {
+        loss_term.point_weight_equation
+        for loss_term in config.loss
+        if loss_term.point_weight_equation is not None
+    }
+    field_equations = [
+        equation
+        for equation in equations
+        if equation.label not in point_weight_eq_labels
+    ]
 
     # Loss term containers
     datasets_by_label = {dataset.label: dataset for dataset in config.datasets}
@@ -79,13 +93,20 @@ def build_pinn(
             else None
         )
 
+        point_weight_equation = (
+            equations_by_label[loss_term_config.point_weight_equation]
+            if loss_term_config.point_weight_equation is not None
+            else None
+        )
+
         train_eval_context, val_eval_context = build_evaluation_contexts(
             loss_term_config=loss_term_config,
             dataset_config=dataset_config,
             Coords=Coords,
             fields_config=config.fields,
             const_configs=config.constants,
-            equations=equations,
+            equations=field_equations,
+            point_weight_equation=point_weight_equation,
             n_batches=config.trainer.n_batches,
             shuffle=config.trainer.shuffle,
             num_workers=config.trainer.num_workers,

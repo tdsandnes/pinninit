@@ -294,7 +294,7 @@ def _parse_loss(raw: list[dict[str, Any]]) -> list[LossTermConfig]:
 
     for term in raw:
         loss_type_str: str = term.get("loss_type", "").lower()
-        loss_fn_str: str = term.get("loss_function", "").lower()
+        loss_fn_str: str = term.get("loss_function", "mse").lower()
 
         loss_type = _parse_enum(loss_type_str, LossTermLabels)
         loss_function = _parse_enum(loss_fn_str, LossFunctionLabels)
@@ -318,6 +318,8 @@ def _parse_loss(raw: list[dict[str, Any]]) -> list[LossTermConfig]:
                 weight_method_label=weight_method_label,
                 weight_group_label=term.get("weight_group_label"),
                 staggering=int(term.get("staggering", 0)),
+                adaptive_weights=bool(term.get("adaptive_weights", False)),
+                point_weight_equation=term.get("point_weight_equation"),
             )
         )
 

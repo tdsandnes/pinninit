@@ -209,6 +209,8 @@ class LossTermConfig:
     weight_method_label: WeightMethodLabels
     weight_group_label: str | None
     staggering: int = 0
+    adaptive_weights: bool = False
+    point_weight_equation: str | None = None
 
     def __post_init__(self) -> None:
         if self.staggering < 0:

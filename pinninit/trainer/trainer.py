@@ -295,11 +295,16 @@ class Trainer:
                 for label, container in self.loss_containers.items()
             }
 
-            # Save point weights for containers that use them
-            self.best_point_weights = {
-                label: container.train_eval_context.get_point_weights().clone()
+            # Save raw and full point weights for containers that use them
+            self.best_raw_point_weights = {
+                label: container.train_eval_context.get_raw_point_weights().clone()
                 for label, container in self.loss_containers.items()
-                if container.train_eval_context.has_point_weights
+                if container.adaptive_point_weights
+            }
+            self.best_point_weights = {
+                label: container.train_eval_context.get_raw_point_weights().clone()
+                for label, container in self.loss_containers.items()
+                if container.adaptive_point_weights
             }
 
     def load_best_model(
