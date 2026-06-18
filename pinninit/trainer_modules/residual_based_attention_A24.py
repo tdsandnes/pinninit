@@ -77,7 +77,7 @@ class ResidualBasedAttentionA24(TrainerModule):
         if not self.rba_containers:
             raise ValueError(
                 "ResidualBasedAttention found no loss term containers with "
-                "adaptive point weights. Set 'adaptive_weights: true' on at "
+                "adaptive point weights. Set 'adaptive_point_weights: true' on at "
                 "least one loss term."
             )
 

@@ -38,6 +38,7 @@ class LossTermContainer:
         weight_method_label: WeightMethodLabels = WeightMethodLabels.CONSTANT,
         weight_group_label: str | None = None,
         staggering: int = 0,
+        adaptive_point_weights: bool = False,
     ) -> None:
         self.label = label
         self.train_eval_context = train_eval_context
@@ -51,6 +52,7 @@ class LossTermContainer:
         self.weight_method_label = weight_method_label
         self.weight_group_label = weight_group_label
         self.staggering = staggering
+        self.adaptive_point_weights = adaptive_point_weights
 
         # Cycle through training and validation batches across steps
         self._train_batches = BatchCycler(train_eval_context.dataloader)

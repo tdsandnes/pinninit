@@ -99,12 +99,14 @@ class TrainerLogger:
         return f"Learnt constants:             {consts} \n"
 
     def _point_weights_str(self) -> str:
-        """Formatted summary of per-point weights, one line per container
-        that uses them, empty if none do."""
+        """Formatted summary of per-point weights, one line per container whose
+        weights are adapted or reshaped by a modifier, empty if none are."""
         lines = []
         for label, container in self.trainer.loss_containers.items():
-            if container.train_eval_context.has_point_weights:
-                point_weights = container.train_eval_context.get_point_weights()
+            eval_context = container.train_eval_context
+            has_modifier = eval_context.point_weight_modifier is not None
+            if container.adaptive_point_weights or has_modifier:
+                point_weights = eval_context.get_point_weights()
                 lines.append(
                     f"Point weights ({label}): "
                     f"mean {point_weights.mean().item():.4g}, "

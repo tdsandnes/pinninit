@@ -65,4 +65,5 @@ def build_loss_term_container(
         weight_method_label=loss_term_config.weight_method_label,
         weight_group_label=loss_term_config.weight_group_label,
         staggering=loss_term_config.staggering,
+        adaptive_point_weights=loss_term_config.adaptive_point_weights,
     )
