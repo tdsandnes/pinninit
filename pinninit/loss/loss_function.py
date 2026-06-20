@@ -15,11 +15,21 @@ if TYPE_CHECKING:
 class LossFunctionLabels(str, Enum):
     """Enumeration of loss function labels."""
 
-    MSE = "mse"  # sum(w * res^2) / sum(weight) standard MSE when all weights = 1
+    MSE = "mse"  # sum(res^2) / n_points
+    WEIGHTED_MSE = "weighted_mse"  # sum(w * res^2) / sum(w)
     WEIGHTED_POINT_AVERAGED_MSE = "weighted_point_avg_mse"  # sum(w * res^2) / n_points
 
 
 def mse_loss(
+    residuals: torch.Tensor,
+    eval_context: EvaluationContext,
+    eval_coords: CoordsProtocol,
+) -> torch.Tensor:
+    """Standard MSE. Ignores point weights."""
+    return (residuals**2).sum(dim=0) / residuals.shape[0]
+
+
+def weighted_mse_loss(
     residuals: torch.Tensor,
     eval_context: EvaluationContext,
     eval_coords: CoordsProtocol,
@@ -63,5 +73,6 @@ LOSS_FUNCTION_REGISTRY: dict[
     Callable[..., torch.Tensor],
 ] = {
     LossFunctionLabels.MSE: mse_loss,
+    LossFunctionLabels.WEIGHTED_MSE: weighted_mse_loss,
     LossFunctionLabels.WEIGHTED_POINT_AVERAGED_MSE: weighted_point_avg_mse_loss,
 }

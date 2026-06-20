@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING
 
 import torch
+
+from ..loss.loss_function import LOSS_FUNCTION_REGISTRY, LossFunctionLabels
 
 if TYPE_CHECKING:
     from ..loss.loss_term_container import LossTermContainer
@@ -15,30 +16,21 @@ def compute_flat_train_grads(
     model: NeuralNetwork,
     containers: list[LossTermContainer],
     trainer: Trainer,
+    loss_function_label: LossFunctionLabels,
 ) -> torch.Tensor:
-    """Concatenated flat gradient of the containers' unweighted training losses
-    with respect to the model parameters."""
+    """Flat gradient of each container's loss (using loss_function_label)."""
+    loss_fn = LOSS_FUNCTION_REGISTRY[loss_function_label]
     params = list(model.parameters())
     all_grads = []
     for container in containers:
-        loss = trainer.cached_train_loss(container.label)
-        if loss is None:
-            # Closure optimizers (e.g. LBFGS) populate the cache only inside the
-            # closure, which runs after this hook, so an empty cache is expected.
-            if not trainer.optimizer.requires_closure:
-                warnings.warn(
-                    "Recomputing loss: the train-loss cache was empty "
-                    "(expected populated).",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-            batch = (
-                trainer.current_train_batches.get(container.label)
-                or container.next_train_batch()
+        residuals = trainer.cached_train_residuals(container.label)
+        if residuals is None or not residuals.requires_grad:
+            raise RuntimeError(
+                f"No graph-carrying cached residuals for loss term "
+                f"'{container.label}'."
             )
-            loss, _ = container.compute_train_batch_loss_and_residuals(
-                model, batch, detach=False
-            )
+        batch = trainer.current_train_batches.get(container.label)
+        loss = loss_fn(residuals, container.train_eval_context, batch).sum()
         grads = torch.autograd.grad(loss, params, retain_graph=True, allow_unused=True)
         all_grads.append(
             torch.cat([g.detach().reshape(-1) for g in grads if g is not None])

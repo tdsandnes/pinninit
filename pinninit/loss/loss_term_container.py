@@ -98,7 +98,8 @@ class LossTermContainer:
             eval_context, eval_coords
         )
         loss = loss.sum().detach() if detach else loss.sum()
-        return loss, residuals.detach()
+        residuals = residuals.detach() if detach else residuals
+        return loss, residuals
 
     def _compute_full_loss(
         self, model: NeuralNetwork, eval_context: EvaluationContext

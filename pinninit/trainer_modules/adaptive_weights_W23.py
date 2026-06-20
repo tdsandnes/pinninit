@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from ..loss.loss_function import LossFunctionLabels
 from ..loss.loss_term_container import WeightMethodLabels
 from .trainer_module import TrainerModule
 from .trainer_module_utils import compute_flat_train_grads
@@ -28,10 +29,12 @@ class AdaptiveWeightsW23(TrainerModule):
         alpha: float = 0.1,  # NOTE: Wang et al. 2021 alpha definition
         update_iter_frequency: int = 1,
         min_iter: int = 0,
+        loss_function: str = "mse",
     ):
         self.alpha = alpha
         self.update_iter_frequency = update_iter_frequency
         self.min_iter = min_iter
+        self.loss_function = LossFunctionLabels(loss_function.lower())
 
         # Maps weight_group_label to LossTermContainers
         self.adaptive_groups: dict[str, list[LossTermContainer]] = {}
@@ -96,7 +99,7 @@ class AdaptiveWeightsW23(TrainerModule):
         group_grad_norms: dict[str, torch.Tensor] = {}
         for label, container_list in self.adaptive_groups.items():
             all_grads_flat = compute_flat_train_grads(
-                trainer.model, container_list, trainer
+                trainer.model, container_list, trainer, self.loss_function
             )
             group_grad_norms[label] = torch.norm(all_grads_flat, p=2)
 

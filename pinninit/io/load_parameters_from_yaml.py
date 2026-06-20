@@ -295,7 +295,7 @@ def _parse_loss(raw: list[dict[str, Any]]) -> list[LossTermConfig]:
 
     for term in raw:
         loss_type_str: str = term.get("loss_type", "").lower()
-        loss_fn_str: str = term.get("loss_function", "mse").lower()
+        loss_fn_str: str = term.get("loss_function", "weighted_mse").lower()
 
         loss_type = _parse_enum(loss_type_str, LossTermLabels)
         loss_function = _parse_enum(loss_fn_str, LossFunctionLabels)
