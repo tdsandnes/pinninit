@@ -44,7 +44,7 @@ class LossPlateauDetector:
     A plateau is flagged when the best loss so far has improved by less than a
     fraction `frac_tol` over the last `patience` steps:
 
-        best_now > (1 - frac_tol) * best_patience_steps_ago
+        best_now >= (1 - frac_tol) * best_patience_steps_ago
 
     where the "best" loss is the lowest value seen up to that point.
     """
@@ -79,7 +79,7 @@ class LossPlateauDetector:
         best_now = self.best_history[-1]
         best_patience_steps_ago = self.best_history[0]
         self.plateau_detected = (
-            best_now > (1.0 - self.frac_tol) * best_patience_steps_ago
+            best_now >= (1.0 - self.frac_tol) * best_patience_steps_ago
         )
 
     def reset(self) -> None:
