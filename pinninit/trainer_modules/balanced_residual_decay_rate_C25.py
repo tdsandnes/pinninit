@@ -1,0 +1,229 @@
+from __future__ import annotations
+
+import warnings
+from typing import TYPE_CHECKING
+
+import torch
+
+from ..data_structure.field_dataclass import make_field_dataclass
+from .trainer_module import TrainerModule
+
+if TYPE_CHECKING:
+    from ..data_structure.coords_dataclass import CoordsProtocol
+    from ..data_structure.field_dataclass import FieldProtocol
+    from ..loss.loss_term_container import LossTermContainer
+    from ..trainer.trainer import Trainer
+    from ..trainer.trainer_logger import TrainerLogger
+
+
+class BalancedResidualDecayRateC25(TrainerModule):
+    # Class attributes
+    runs_during_coast = True
+
+    def __init__(
+        self,
+        beta_c: float = 0.999,
+        beta_w: float = 0.999,
+        use_scaling_factor_s: bool = True,
+        use_minibatch_effective_betas: bool = True,
+        eps: float = 1e-14,
+        min_iter: int = 0,
+    ) -> None:
+        if not 0.0 < beta_c < 1.0:
+            raise ValueError(f"beta_c must be in (0, 1), got {beta_c}")
+        if not 0.0 < beta_w < 1.0:
+            raise ValueError(f"beta_w must be in (0, 1), got {beta_w}")
+        if eps <= 0.0:
+            raise ValueError(f"eps must be > 0, got {eps}")
+
+        self.beta_c = beta_c
+        self.beta_w = beta_w
+        self.use_scaling_factor_s = use_scaling_factor_s
+        self.use_minibatch_effective_betas = use_minibatch_effective_betas
+        self.eps = eps
+        self.min_iter = min_iter
+
+        # Containers whose training loss uses adaptive point weights
+        self.brdr_containers: dict[str, LossTermContainer] = {}
+        # Per-point state as rank-0 Fields
+        self.r4_bar: dict[str, FieldProtocol] = {}
+        self.n_last: dict[str, FieldProtocol] = {}
+        # Global adaptive scaling factor s
+        self.scaling_factor_s: float = 1.0
+
+    def on_train_start(
+        self, trainer: Trainer, logger: TrainerLogger | None = None
+    ) -> None:
+        self.brdr_containers.clear()
+        self.r4_bar.clear()
+        self.n_last.clear()
+        self.scaling_factor_s = 1.0
+
+        for label, container in trainer.all_loss_containers.items():
+            if not container.adaptive_point_weights:
+                continue
+
+            eval_context = container.train_eval_context
+            coords = eval_context.coords
+            self.brdr_containers[label] = container
+
+            # Weights start at 1
+            eval_context.update_point_weights(
+                torch.ones(coords.n_points, device=coords.device)
+            )
+
+            # Per-point R4 moving average and last-seen iteration
+            Field = make_field_dataclass(rank=0, coords=coords, device=coords.device)
+            self.r4_bar[label] = Field(
+                label="brdr_r4_bar",
+                value=torch.zeros(coords.n_points, device=coords.device),
+            )
+            if self.use_minibatch_effective_betas:
+                self.n_last[label] = Field(
+                    label="brdr_n_last",
+                    value=torch.zeros(
+                        coords.n_points, dtype=torch.long, device=coords.device
+                    ),
+                )
+
+        if not self.brdr_containers:
+            raise ValueError(
+                "BalancedResidualDecayRate found no loss term containers with "
+                "adaptive point weights."
+            )
+
+    def on_pre_optimizer_step(
+        self, trainer: Trainer, logger: TrainerLogger | None = None
+    ) -> None:
+        if trainer.iter < self.min_iter:
+            return
+
+        self._update_point_weights(trainer)
+        if self.use_scaling_factor_s:
+            self._update_scaling_factor_s(trainer)
+
+    def _update_point_weights(self, trainer: Trainer) -> None:
+        n = trainer.iter
+        c_by_label: dict[str, torch.Tensor] = {}
+        bw_eff_by_label: dict[str, float] = {}
+        batch_by_label: dict[str, CoordsProtocol] = {}
+        for label, container in self.brdr_containers.items():
+            # Skip staggered-off terms
+            if label not in trainer.loss_containers:
+                continue
+            batch_coords = trainer.current_train_batches.get(label)
+            if batch_coords is None:
+                continue
+            c, bw_eff = self._compute_irdr(trainer, container, batch_coords, n)
+            c_by_label[label] = c
+            bw_eff_by_label[label] = bw_eff
+            batch_by_label[label] = batch_coords
+
+        if not c_by_label:
+            return
+
+        # Mean across all weighted containers
+        c_bar = torch.cat(list(c_by_label.values())).mean()
+
+        # Update weights
+        for label, c in c_by_label.items():
+            eval_context = self.brdr_containers[label].train_eval_context
+            batch_coords = batch_by_label[label]
+            bw_eff = bw_eff_by_label[label]
+            prev_w = eval_context.get_raw_point_weights(batch_coords)
+
+            # Eq. 19
+            w_ref = c / c_bar
+
+            # Eq. 20
+            new_w = bw_eff * prev_w + (1.0 - bw_eff) * w_ref
+            eval_context.update_point_weights(new_w, coords=batch_coords)
+
+    def _compute_irdr(
+        self,
+        trainer: Trainer,
+        container: LossTermContainer,
+        batch_coords: CoordsProtocol,
+        n: int,
+    ) -> tuple[torch.Tensor, float]:
+        residuals = trainer.cached_train_residuals(container.label)
+        if residuals is None:
+            if not trainer.optimizer.requires_closure:
+                warnings.warn(
+                    "BRDR is recomputing residuals: the train-residual cache was "
+                    "empty for a non-closure optimizer (expected populated).",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            _, residuals = container.compute_train_batch_loss_and_residuals(
+                trainer.model, batch_coords=batch_coords, detach=True
+            )
+        residuals = residuals.detach()
+        mag = residuals.abs() if residuals.ndim == 1 else residuals.norm(dim=1)
+        r2 = mag**2
+        r4 = r2**2
+
+        # Get this batch's per-point state via the Fields.
+        r4_field = self.r4_bar[container.label]
+        prev_r4 = r4_field.tensor(batch_coords)
+
+        if self.use_minibatch_effective_betas:
+            # Effective smoothing factors beta^(n - n_last)  (Eqs. 27-28).
+            nlast_field = self.n_last[container.label]
+            prev_nlast = nlast_field.tensor(batch_coords)
+            dn = n - prev_nlast
+            bc_eff = float(self.beta_c**dn)
+            bw_eff = float(self.beta_w**dn)
+            nlast_field.update_from_tensor(
+                torch.full_like(prev_nlast, n), coords=batch_coords
+            )
+        else:
+            # Plain betas.
+            bc_eff = self.beta_c
+            bw_eff = self.beta_w
+
+        # Eq. 28 (Eq. 10 with effective smoothing when enabled).
+        new_r4 = bc_eff * prev_r4 + (1.0 - bc_eff) * r4
+        r4_field.update_from_tensor(new_r4, coords=batch_coords, detach_new_values=True)
+
+        # Eq. 9 (Note: Algorithm 1 in paper does it slightly differently)
+        c = r2 / (torch.sqrt(new_r4 + self.eps))
+        return c, bw_eff
+
+    def _update_scaling_factor_s(self, trainer: Trainer) -> None:
+        if trainer.optimizer.requires_closure:
+            raise ValueError(
+                "BalancedResidualDecayRate's adaptive scaling factor requires a "
+                "non-closure optimizer."
+            )
+
+        s0 = self.scaling_factor_s
+
+        # Unscaled weighted total loss L = sum_term loss_term_weight * loss_term.
+        l_un = trainer.cached_total_train_loss()
+        if l_un is None:
+            raise RuntimeError(
+                "No cached total training loss while updating the BRDR scaling factor."
+            )
+
+        # sum_theta ||grad_theta L||^2 of the unscaled loss.
+        sum_sq_grad_L = torch.zeros((), device=next(trainer.model.parameters()).device)
+        for p in trainer.model.parameters():
+            if p.grad is None:
+                raise RuntimeError(
+                    "Parameter with no gradient while updating the BRDR scaling factor."
+                )
+            sum_sq_grad_L = sum_sq_grad_L + p.grad.pow(2).sum()
+
+        lr = trainer.optimizer.optimizer.param_groups[0]["lr"]
+
+        # Eq. 26 with Eq. 25 substituted in and taking beta_s = 1 - lr.
+        s_new = (1.0 - lr) * s0 + 2.0 * l_un / float(sum_sq_grad_L)
+
+        # Gradient correction.
+        for p in trainer.model.parameters():
+            assert p.grad is not None
+            p.grad.mul_(s_new)
+
+        # Store new scale factor.
+        self.scaling_factor_s = s_new

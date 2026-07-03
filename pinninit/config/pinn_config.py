@@ -88,12 +88,13 @@ class PINNConfig:
             for module in self.trainer.trainer_modules
             if module.method_name is not None
         }
-        if (
-            TrainerModuleLabels.RESIDUAL_BASED_ATTENTION_A24.value
-            not in builtin_module_names
-        ):
+        point_weight_updaters = {
+            TrainerModuleLabels.RESIDUAL_BASED_ATTENTION_A24.value,
+            TrainerModuleLabels.BALANCED_RESIDUAL_DECAY_RATE_C25.value,
+        }
+        if not (builtin_module_names & point_weight_updaters):
             raise ValueError(
                 f"Loss terms {adaptive} set adaptive_point_weights but no "
-                f"'{TrainerModuleLabels.RESIDUAL_BASED_ATTENTION_A24.value}' trainer "
-                "module is configured. Their point weights would never update."
+                f"point-weight updater module ({sorted(point_weight_updaters)}) "
+                "is configured. Their point weights would never update."
             )

@@ -70,6 +70,7 @@ class Trainer:
         self._full_val_losses_cache: dict[str, float] | None = None
         self._train_losses_cache: dict[str, torch.Tensor] | None = None
         self._train_residuals_cache: dict[str, torch.Tensor] | None = None
+        self._total_train_loss_cache: float | None = None
 
         # Logger
         self.logger = TrainerLogger(self, print_freq=print_freq)
@@ -79,6 +80,7 @@ class Trainer:
         self._full_val_losses_cache = None
         self._train_losses_cache = None
         self._train_residuals_cache = None
+        self._total_train_loss_cache = None
 
         # Mark whether this step completes an epoch (full pass over the training data)
         self._steps_in_epoch += 1
@@ -236,9 +238,11 @@ class Trainer:
             container.loss_term_weight * unweighted_losses[label]
             for label, container in self.loss_containers.items()
         ]
-        return torch.stack(weighted_losses).sum()
+        total = torch.stack(weighted_losses).sum()
+        self._total_train_loss_cache = float(total.detach())
+        return total
 
-    def cached_train_loss(self, label: str) -> torch.Tensor | None:
+    def cached_train_losses(self, label: str) -> torch.Tensor | None:
         if self._train_losses_cache is None:
             return None
         return self._train_losses_cache.get(label)
@@ -257,6 +261,9 @@ class Trainer:
                 for label, container in self.loss_containers.items()
             }
         return self._full_val_losses_cache
+
+    def cached_total_train_loss(self) -> float | None:
+        return self._total_train_loss_cache
 
     @property
     def full_geometric_mean_val_loss(self) -> float:
