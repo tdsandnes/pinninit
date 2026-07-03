@@ -39,10 +39,14 @@ def compute_flat_train_grads(
 
 
 class LossPlateauDetector:
-    """Detects plateau in loss based on significant relative improvement.
+    """Detects a plateau when the best loss stops improving.
 
-    A plateau is detected when we've gone `patience` steps without achieving
-    a relative improvement of at least `frac_tol` over the previous significant best.
+    A plateau is flagged when the best loss so far has improved by less than a
+    fraction `frac_tol` over the last `patience` steps:
+
+        best_now > (1 - frac_tol) * best_patience_steps_ago
+
+    where the "best" loss is the lowest value seen up to that point.
     """
 
     def __init__(self, patience: int, frac_tol: float = 0.0) -> None:
@@ -52,30 +56,33 @@ class LossPlateauDetector:
         self.patience = patience
         self.frac_tol = frac_tol
 
-        self.prev_significant_best: float | None = None
-        self.steps_since_significant_improvement = 0
+        self.best: float | None = None
+        self.best_history: list[float] = []
         self.plateau_detected = False
 
     def step(self, current_value: float) -> None:
-        # If best value hasn't been set, set it as current value and return
-        if self.prev_significant_best is None:
-            self.prev_significant_best = current_value
+        # Update the running best
+        if self.best is None or current_value < self.best:
+            self.best = current_value
+
+        # Record it, keeping only the most recent patience + 1 values
+        self.best_history.append(self.best)
+        if len(self.best_history) > self.patience + 1:
+            self.best_history.pop(0)
+
+        # We can only judge a plateau once we have a full window to compare over
+        if len(self.best_history) < self.patience + 1:
+            self.plateau_detected = False
             return
 
-        # Is the current value an improvement on prev_significant_best
-        is_improved = current_value < self.prev_significant_best * (1.0 - self.frac_tol)
-
-        if is_improved:
-            # If improvement, plateau counting resets
-            self.prev_significant_best = current_value
-            self.steps_since_significant_improvement = 0
-            self.plateau_detected = False
-        else:
-            self.steps_since_significant_improvement += 1
-            if self.steps_since_significant_improvement >= self.patience:
-                self.plateau_detected = True
+        # Get the best value now and the best value as it was patience steps ago
+        best_now = self.best_history[-1]
+        best_patience_steps_ago = self.best_history[0]
+        self.plateau_detected = (
+            best_now > (1.0 - self.frac_tol) * best_patience_steps_ago
+        )
 
     def reset(self) -> None:
-        self.prev_significant_best = None
-        self.steps_since_significant_improvement = 0
+        self.best = None
+        self.best_history = []
         self.plateau_detected = False
