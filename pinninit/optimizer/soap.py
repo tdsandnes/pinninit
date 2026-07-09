@@ -65,6 +65,8 @@ class torch_SOAP(optim.Optimizer):
 
     Implements SOAP algorithm (https://arxiv.org/abs/2409.11321).
 
+    NOTE: Modified for dtype consistency.
+
     Parameters:
         params (`Iterable[nn.parameter.Parameter]`):
             Iterable of parameters to optimize or dictionaries defining parameter groups.
@@ -304,7 +306,7 @@ class torch_SOAP(optim.Optimizer):
                 state["GG"].append([])
             else:
                 state["GG"].append(
-                    torch.zeros(grad.shape[0], grad.shape[0], device=grad.device)
+                    torch.zeros(grad.shape[0], grad.shape[0], device=grad.device, dtype=grad.dtype)
                 )
         else:
             if merge_dims:
@@ -314,7 +316,7 @@ class torch_SOAP(optim.Optimizer):
                 if sh > max_precond_dim:
                     state["GG"].append([])
                 else:
-                    state["GG"].append(torch.zeros(sh, sh, device=grad.device))
+                    state["GG"].append(torch.zeros(sh, sh, device=grad.device, dtype=grad.dtype))
 
         state["Q"] = None  # Will hold all the eigenbases of the preconditioner.
         state["precondition_frequency"] = precondition_frequency
@@ -447,39 +449,24 @@ class torch_SOAP(optim.Optimizer):
     def get_orthogonal_matrix(self, mat):
         """
         Computes the eigenbases of the preconditioner using torch.linalg.eigh decomposition.
-        """
-        matrix = []
-        for m in mat:
-            if len(m) == 0:
-                matrix.append([])
-                continue
-            if m.data.dtype != torch.float:
-                float_data = False
-                original_type = m.data.dtype
-                original_device = m.data.device
-                matrix.append(m.data.float())
-            else:
-                float_data = True
-                matrix.append(m.data)
 
+        NOTE: Changed from original version to avoid accidentally casting to worse precision.
+        """
         final = []
-        for m in matrix:
+        for m in mat:
             if len(m) == 0:
                 final.append([])
                 continue
             try:
                 _, Q = torch.linalg.eigh(
-                    m + 1e-30 * torch.eye(m.shape[0], device=m.device)
+                    m + 1e-30 * torch.eye(m.shape[0], device=m.device, dtype=m.dtype)
                 )
             except:
                 _, Q = torch.linalg.eigh(
-                    m.to(torch.float64) + 1e-30 * torch.eye(m.shape[0], device=m.device)
+                    m.to(torch.float64) + 1e-30 * torch.eye(m.shape[0], device=m.device, dtype=torch.float64)
                 )
                 Q = Q.to(m.dtype)
             Q = torch.flip(Q, [1])
-
-            if not float_data:
-                Q = Q.to(original_device).type(original_type)
             final.append(Q)
         return final
 
@@ -487,6 +474,8 @@ class torch_SOAP(optim.Optimizer):
         """
         Computes the eigenbases of the preconditioner using one round of power iteration
         followed by torch.linalg.qr decomposition.
+
+        NOTE: Changed from original version to avoid accidentally casting to worse precision.
         """
         precond_list = state["GG"]
         orth_list = state["Q"]
@@ -498,16 +487,8 @@ class torch_SOAP(optim.Optimizer):
                 matrix.append([])
                 orth_matrix.append([])
                 continue
-            if m.data.dtype != torch.float:
-                float_data = False
-                original_type = m.data.dtype
-                original_device = m.data.device
-                matrix.append(m.data.float())
-                orth_matrix.append(o.data.float())
-            else:
-                float_data = True
-                matrix.append(m.data.float())
-                orth_matrix.append(o.data.float())
+            matrix.append(m.data)
+            orth_matrix.append(o.data)
 
         orig_shape = state["exp_avg_sq"].shape
         if self._data_format == "channels_last" and len(orig_shape) == 4:
@@ -528,9 +509,6 @@ class torch_SOAP(optim.Optimizer):
             o = o[:, sort_idx]
             power_iter = m @ o
             Q, _ = torch.linalg.qr(power_iter)
-
-            if not float_data:
-                Q = Q.to(original_device).type(original_type)
             final.append(Q)
 
         if merge_dims:
