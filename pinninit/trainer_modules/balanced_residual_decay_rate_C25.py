@@ -45,11 +45,15 @@ class BalancedResidualDecayRateC25(TrainerModule):
 
         # Containers whose training loss uses adaptive point weights
         self.brdr_containers: dict[str, LossTermContainer] = {}
-        # Per-point state as rank-0 Fields
         self.r4_bar: dict[str, FieldProtocol] = {}
         self.n_last: dict[str, FieldProtocol] = {}
-        # Global adaptive scaling factor s
-        self.scaling_factor_s: float = 1.0
+        # Global adaptive scaling factor s and last-update iteration
+        self._s_buffer: torch.Tensor | None = None
+        self._last_update_iter: torch.Tensor | None = None
+
+    @property
+    def scaling_factor_s(self) -> float:
+        return 1.0 if self._s_buffer is None else float(self._s_buffer)
 
     def on_train_start(
         self, trainer: Trainer, logger: TrainerLogger | None = None
@@ -57,7 +61,8 @@ class BalancedResidualDecayRateC25(TrainerModule):
         self.brdr_containers.clear()
         self.r4_bar.clear()
         self.n_last.clear()
-        self.scaling_factor_s = 1.0
+        self._s_buffer = None
+        self._last_update_iter = None
 
         for label, container in trainer.all_loss_containers.items():
             if not container.adaptive_point_weights:
@@ -78,12 +83,18 @@ class BalancedResidualDecayRateC25(TrainerModule):
                 label="brdr_r4_bar",
                 value=torch.zeros(coords.n_points, device=coords.device),
             )
+            trainer.model.register_buffer(
+                f"brdr_r4_bar_{label}", self.r4_bar[label].get_component("value")
+            )
             if self.use_minibatch_effective_betas:
                 self.n_last[label] = Field(
                     label="brdr_n_last",
                     value=torch.zeros(
                         coords.n_points, dtype=torch.long, device=coords.device
                     ),
+                )
+                trainer.model.register_buffer(
+                    f"brdr_n_last_{label}", self.n_last[label].get_component("value")
                 )
 
         if not self.brdr_containers:
@@ -92,11 +103,28 @@ class BalancedResidualDecayRateC25(TrainerModule):
                 "adaptive point weights."
             )
 
+        device = next(trainer.model.parameters()).device
+        self._s_buffer = torch.ones((), device=device)
+        trainer.model.register_buffer("brdr_scaling_factor_s", self._s_buffer)
+        if self.use_minibatch_effective_betas:
+            self._last_update_iter = torch.zeros((), dtype=torch.long, device=device)
+            trainer.model.register_buffer(
+                "brdr_last_update_iter", self._last_update_iter
+            )
+
     def on_pre_optimizer_step(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
         if trainer.iter < self.min_iter:
             return
+
+        if self._last_update_iter is not None:
+            last = int(self._last_update_iter)
+            gap = trainer.iter - 1 - last if last > 0 else 0
+            if gap > 0:
+                for field in self.n_last.values():
+                    field.get_component("value").add_(gap)
+            self._last_update_iter.fill_(trainer.iter)
 
         self._update_point_weights(trainer)
         if self.use_scaling_factor_s:
@@ -177,6 +205,9 @@ class BalancedResidualDecayRateC25(TrainerModule):
             nlast_field.update_from_tensor(
                 torch.full_like(prev_nlast, n), coords=batch_coords
             )
+            trainer.model.register_buffer(
+                f"brdr_n_last_{container.label}", nlast_field.get_component("value")
+            )
         else:
             # Plain betas.
             bc_eff = self.beta_c
@@ -185,6 +216,9 @@ class BalancedResidualDecayRateC25(TrainerModule):
         # Eq. 28 (Eq. 10 with effective smoothing when enabled).
         new_r4 = bc_eff * prev_r4 + (1.0 - bc_eff) * r4
         r4_field.update_from_tensor(new_r4, coords=batch_coords, detach_new_values=True)
+        trainer.model.register_buffer(
+            f"brdr_r4_bar_{container.label}", r4_field.get_component("value")
+        )
 
         # Eq. 9 (Note: Algorithm 1 in paper does it slightly differently)
         c = r2 / (torch.sqrt(new_r4 + self.eps))
@@ -218,6 +252,8 @@ class BalancedResidualDecayRateC25(TrainerModule):
         lr = trainer.optimizer.optimizer.param_groups[0]["lr"]
 
         # Eq. 26 with Eq. 25 substituted in and taking beta_s = 1 - lr.
+        # Note, here s0 factors that are included in L and grad L^2 in paper cancel s0
+        # in second term i.e. 2 * s0 * (s0 * L) / (s0^2 * grad L^2) = 2 * L / grad L^2.
         s_new = (1.0 - lr) * s0 + 2.0 * l_un / float(sum_sq_grad_L)
 
         # Gradient correction.
@@ -226,4 +262,5 @@ class BalancedResidualDecayRateC25(TrainerModule):
             p.grad.mul_(s_new)
 
         # Store new scale factor.
-        self.scaling_factor_s = s_new
+        assert self._s_buffer is not None
+        self._s_buffer.fill_(s_new)

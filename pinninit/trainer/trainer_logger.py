@@ -127,6 +127,14 @@ class TrainerLogger:
         alphas = [round(float(a.detach()), 4) for a in model.skip_alphas]
         return f"Skip connection alphas:       {alphas} \n"
 
+    def _brdr_s_str(self) -> str:
+        """BRDR scaling factor line, empty if no BRDR module is active."""
+        for module in self.trainer.trainer_modules:
+            s = getattr(module, "scaling_factor_s", None)
+            if s is not None:
+                return f"BRDR scaling factor s: {s:.6g} \n"
+        return ""
+
     def _print_epoch(
         self,
         train_losses: dict[str, float],
@@ -162,6 +170,7 @@ class TrainerLogger:
             f"{self._learnt_consts_str()}"
             f"{self._point_weights_str()}"
             f"{self._skip_alphas_str()}"
+            f"{self._brdr_s_str()}"
         )
 
     def record_train_losses(self, losses: dict[str, torch.Tensor]) -> None:
@@ -200,4 +209,5 @@ class TrainerLogger:
             f"{self._learnt_consts_str()}"
             f"{self._point_weights_str()}"
             f"{self._skip_alphas_str()}"
+            f"{self._brdr_s_str()}"
         )
