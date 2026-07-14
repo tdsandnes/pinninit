@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from .trainer_module_utils import LossPlateauDetector
 
 if TYPE_CHECKING:
-    from typing import ClassVar
+    from typing import Any, ClassVar
 
     from ..trainer.trainer import Trainer
     from ..trainer.trainer_logger import TrainerLogger
@@ -57,6 +57,12 @@ class TrainerModule:
         (e.g. optimizer updated)."""
         pass
 
+    def state_dict(self) -> dict[str, Any]:
+        return {}
+
+    def load_state_dict(self, state: dict[str, Any], trainer: Trainer) -> None:
+        pass
+
 
 class PlateauTrainerModule(TrainerModule):
     """Base class for trainer modules that act when validation loss plateaus."""
@@ -94,3 +100,23 @@ class PlateauTrainerModule(TrainerModule):
             else:
                 raise KeyError(f"No loss value found for label {label}")
         return all(d.plateau_detected for d in self.plateau_detectors.values())
+
+    def state_dict(self) -> dict[str, Any]:
+        return {
+            "plateau_detectors": {
+                label: {
+                    "best": d.best,
+                    "best_history": list(d.best_history),
+                    "plateau_detected": d.plateau_detected,
+                }
+                for label, d in self.plateau_detectors.items()
+            }
+        }
+
+    def load_state_dict(self, state: dict[str, Any], trainer: Trainer) -> None:
+        for label, d_state in state.get("plateau_detectors", {}).items():
+            if label in self.plateau_detectors:
+                detector = self.plateau_detectors[label]
+                detector.best = d_state["best"]
+                detector.best_history = list(d_state["best_history"])
+                detector.plateau_detected = d_state["plateau_detected"]

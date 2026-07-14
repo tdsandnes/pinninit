@@ -6,6 +6,8 @@ from .loss_term_staggering import LossTermStaggering
 from .trainer_module import PlateauTrainerModule
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from ..optimizer.optimizer import Optimizer
     from ..trainer.trainer import Trainer
     from ..trainer.trainer_logger import TrainerLogger
@@ -98,3 +100,17 @@ class UpdateOptimizer(PlateauTrainerModule):
 
         # Fully re-initialise plateau detectors in case new containers were added
         self._init_plateau_detectors(trainer)
+
+    def state_dict(self) -> dict[str, Any]:
+        state = super().state_dict()
+        state["updated"] = self.updated
+        return state
+
+    def load_state_dict(self, state: dict[str, Any], trainer: Trainer) -> None:
+        super().load_state_dict(state, trainer)
+        self.updated = state["updated"]
+        # Redo the optimizer swap so the checkpoint's optimizer state dict
+        # is loaded into the optimizer that was active when it was saved
+        if self.updated and trainer.optimizer is not self.new_optimizer:
+            trainer.optimizer = self.new_optimizer
+            trainer.optimizer.attach_trainer(trainer)

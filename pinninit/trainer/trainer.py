@@ -10,6 +10,8 @@ from .trainer_logger import TrainerLogger
 from .trainer_state import TrainerState
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from ..data_structure.coords_dataclass import CoordsProtocol
     from ..nn.neural_network import NeuralNetwork
     from ..optimizer.optimizer import Optimizer
@@ -65,6 +67,9 @@ class Trainer:
         self.best_geometric_mean_val_loss: float | None = None
         self.best_loss_term_weights: dict[str, float] | None = None
         self.best_point_weights: dict[str, torch.Tensor] | None = None
+
+        # Restored state from checkpoint (if any)
+        self._restored_state: dict[str, Any] | None = None
 
         # Cached quantities
         self._full_val_losses_cache: dict[str, float] | None = None
@@ -153,6 +158,10 @@ class Trainer:
         # Execute all trainer modules at start of training
         for module in self.trainer_modules:
             module.on_train_start(self, self.logger)
+
+        # Restore state from checkpoint if available
+        if self._restored_state is not None:
+            self._apply_restored_state()
 
         # Print initial state to terminal
         self.logger.print_losses_and_weights("initial state")
@@ -302,12 +311,7 @@ class Trainer:
                 for label, container in self.loss_containers.items()
             }
 
-            # Save raw and full point weights for containers that use them
-            self.best_raw_point_weights = {
-                label: container.train_eval_context.get_raw_point_weights().clone()
-                for label, container in self.loss_containers.items()
-                if container.adaptive_point_weights
-            }
+            # Save point weights for containers that use them
             self.best_point_weights = {
                 label: container.train_eval_context.get_raw_point_weights().clone()
                 for label, container in self.loss_containers.items()
@@ -363,3 +367,83 @@ class Trainer:
 
         # Log event
         self.logger.log_event("reset_best_model")
+
+    def state_dict(self) -> dict[str, Any]:
+        return {
+            "epoch": self.epoch,
+            "iter": self.iter,
+            "loss_term_weights": {
+                label: container.loss_term_weight
+                for label, container in self._loss_containers.items()
+            },
+            "point_weights": {
+                label: container.train_eval_context.get_raw_point_weights().cpu()
+                for label, container in self._loss_containers.items()
+                if container.adaptive_point_weights
+            },
+            "best_model_epoch": self.best_model_epoch,
+            "best_geometric_mean_val_loss": self.best_geometric_mean_val_loss,
+            "best_model_state": self.best_model_state,
+            "best_loss_term_weights": self.best_loss_term_weights,
+            "best_point_weights": self.best_point_weights,
+            "trainer_state": {
+                "coast_until_epoch": self.state.coast_until_epoch,
+                "stop_requested": self.state.stop_requested,
+                "stop_barriers": dict(self.state._stop_barriers),
+            },
+            "optimizer_state_dict": self.optimizer.optimizer.state_dict(),
+            "modules": {
+                f"{i}:{type(module).__name__}": module.state_dict()
+                for i, module in enumerate(self.trainer_modules)
+            },
+        }
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        device = next(self.model.parameters()).device
+        self.epoch = state["epoch"]
+        self.iter = state["iter"]
+        self.best_model_epoch = state["best_model_epoch"]
+        self.best_geometric_mean_val_loss = state["best_geometric_mean_val_loss"]
+        if state["best_model_state"] is not None:
+            self.best_model_state = {
+                k: v.to(device) for k, v in state["best_model_state"].items()
+            }
+        self.best_loss_term_weights = state["best_loss_term_weights"]
+        if state["best_point_weights"] is not None:
+            self.best_point_weights = {
+                label: w.to(device) for label, w in state["best_point_weights"].items()
+            }
+        self._restored_state = state
+
+    def _apply_restored_state(self) -> None:
+        state = self._restored_state
+        if state is None:
+            return
+        device = next(self.model.parameters()).device
+
+        # Module states
+        module_states = state["modules"]
+        for i, module in enumerate(self.trainer_modules):
+            key = f"{i}:{type(module).__name__}"
+            if key in module_states:
+                module.load_state_dict(module_states[key], self)
+
+        # Loss term weights
+        for label, weight in state["loss_term_weights"].items():
+            self._loss_containers[label].loss_term_weight = weight
+
+        # Point weights
+        for label, weights in state["point_weights"].items():
+            self._loss_containers[label].train_eval_context.update_point_weights(
+                weights.to(device)
+            )
+
+        # Trainer state (after modules have re-registered stop barriers)
+        self.state.coast_until_epoch = state["trainer_state"]["coast_until_epoch"]
+        self.state.stop_requested = state["trainer_state"]["stop_requested"]
+        self.state._stop_barriers.update(state["trainer_state"]["stop_barriers"])
+
+        # Optimizer state
+        self.optimizer.optimizer.load_state_dict(state["optimizer_state_dict"])
+
+        self._restored_state = None

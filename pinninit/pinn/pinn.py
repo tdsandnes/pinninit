@@ -109,6 +109,13 @@ class PINN:
                 "events": logger.events,
                 "best_model_epoch": trainer.best_model_epoch,
                 "best_geometric_mean_val_loss": trainer.best_geometric_mean_val_loss,
+                "trainer_state_dict": trainer.state_dict(),
+                "rng_state": torch.get_rng_state(),
+                "cuda_rng_states": (
+                    torch.cuda.get_rng_state_all()
+                    if torch.cuda.is_available()
+                    else None
+                ),
             },
             path,
         )
@@ -137,3 +144,16 @@ class PINN:
         self.trainer.best_geometric_mean_val_loss = checkpoint.get(
             "best_geometric_mean_val_loss"
         )
+
+        # Full training state
+        trainer_state = checkpoint.get("trainer_state_dict")
+        if trainer_state is not None:
+            self.trainer.load_state_dict(trainer_state)
+
+        # RNG state
+        rng_state = checkpoint.get("rng_state")
+        if rng_state is not None:
+            torch.set_rng_state(rng_state.cpu())
+        cuda_rng_states = checkpoint.get("cuda_rng_states")
+        if cuda_rng_states is not None and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all([s.cpu() for s in cuda_rng_states])

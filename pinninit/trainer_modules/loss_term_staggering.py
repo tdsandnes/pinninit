@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 from .trainer_module import PlateauTrainerModule
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from ..trainer.trainer import Trainer
     from ..trainer.trainer_logger import TrainerLogger
 
@@ -118,3 +120,18 @@ class LossTermStaggering(PlateauTrainerModule):
     ) -> None:
         # Reset counter if another module changed trainer state
         self._reset_plateau_detectors()
+
+    def state_dict(self) -> dict[str, Any]:
+        state = super().state_dict()
+        state["current_stagger_idx"] = self.current_stagger_idx
+        state["completed"] = self.completed
+        return state
+
+    def load_state_dict(self, state: dict[str, Any], trainer: Trainer) -> None:
+        super().load_state_dict(state, trainer)
+        self.current_stagger_idx = state["current_stagger_idx"]
+        self.completed = state["completed"]
+        # Re-activate the stagger groups that were active at save time
+        for idx in range(1, self.current_stagger_idx + 1):
+            for label in self.staggering_container_dict[idx]:
+                trainer.loss_containers[label] = trainer.all_loss_containers[label]

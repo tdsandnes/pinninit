@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 from .trainer_module import PlateauTrainerModule
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from ..trainer.trainer import Trainer
     from ..trainer.trainer_logger import TrainerLogger
 
@@ -144,3 +146,16 @@ class LearningRateSchedule(PlateauTrainerModule):
 
         # Fully re-initialise plateau detectors in case new containers were added
         self._init_plateau_detectors(trainer)
+
+    def state_dict(self) -> dict[str, Any]:
+        state = super().state_dict()
+        state["event_count"] = self.event_count
+        state["lr_init"] = self.lr_init
+        state["lr_after_warmup"] = self.lr_after_warmup
+        return state
+
+    def load_state_dict(self, state: dict[str, Any], trainer: Trainer) -> None:
+        super().load_state_dict(state, trainer)
+        self.event_count = state["event_count"]
+        self.lr_init = state["lr_init"]
+        self.lr_after_warmup = state["lr_after_warmup"]

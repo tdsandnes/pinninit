@@ -126,7 +126,7 @@ class ResidualBasedAttentionA24(TrainerModule):
             return
 
         # Recover lambda from the stored raw weights w = lambda^2
-        weights = weights = eval_context.get_raw_point_weights(batch_coords)
+        weights = eval_context.get_raw_point_weights(batch_coords)
         lambdas = weights.clamp_min(0.0).sqrt()
 
         # Anagnostopoulos et al. (2024) Eqn. 3 (max over the current batch)
