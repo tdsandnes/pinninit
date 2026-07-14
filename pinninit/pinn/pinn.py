@@ -118,7 +118,11 @@ class PINN:
             raise FileNotFoundError(f"No such file: '{path}'")
 
         checkpoint = torch.load(path, map_location=self.device)
-        self.model.load_state_dict(checkpoint["model_state_dict"])
+        missing, _unexpected = self.model.load_state_dict(
+            checkpoint["model_state_dict"], strict=False
+        )
+        if missing:
+            raise RuntimeError(f"Checkpoint is missing model parameters: {missing}")
 
         # Restore logs onto the trainer logger
         logger = self.trainer.logger
