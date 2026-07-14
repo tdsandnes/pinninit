@@ -9,6 +9,8 @@ from ..data_structure.field_dataclass import make_field_dataclass
 from .trainer_module import TrainerModule
 
 if TYPE_CHECKING:
+    from typing import Any
+
     from ..data_structure.coords_dataclass import CoordsProtocol
     from ..data_structure.field_dataclass import FieldProtocol
     from ..loss.loss_term_container import LossTermContainer
@@ -133,7 +135,7 @@ class BalancedResidualDecayRateC25(TrainerModule):
     def _update_point_weights(self, trainer: Trainer) -> None:
         n = trainer.iter
         c_by_label: dict[str, torch.Tensor] = {}
-        bw_eff_by_label: dict[str, float] = {}
+        bw_eff_by_label: dict[str, torch.Tensor | float] = {}
         batch_by_label: dict[str, CoordsProtocol] = {}
         for label, container in self.brdr_containers.items():
             # Skip staggered-off terms
@@ -173,7 +175,7 @@ class BalancedResidualDecayRateC25(TrainerModule):
         container: LossTermContainer,
         batch_coords: CoordsProtocol,
         n: int,
-    ) -> tuple[torch.Tensor, float]:
+    ) -> tuple[torch.Tensor, torch.Tensor | float]:
         residuals = trainer.cached_train_residuals(container.label)
         if residuals is None:
             if not trainer.optimizer.requires_closure:
@@ -191,6 +193,9 @@ class BalancedResidualDecayRateC25(TrainerModule):
         r2 = mag**2
         r4 = r2**2
 
+        bc_eff: torch.Tensor | float
+        bw_eff: torch.Tensor | float
+
         # Get this batch's per-point state via the Fields.
         r4_field = self.r4_bar[container.label]
         prev_r4 = r4_field.tensor(batch_coords)
@@ -200,8 +205,8 @@ class BalancedResidualDecayRateC25(TrainerModule):
             nlast_field = self.n_last[container.label]
             prev_nlast = nlast_field.tensor(batch_coords)
             dn = n - prev_nlast
-            bc_eff = float(self.beta_c**dn)
-            bw_eff = float(self.beta_w**dn)
+            bc_eff = self.beta_c**dn
+            bw_eff = self.beta_w**dn
             nlast_field.update_from_tensor(
                 torch.full_like(prev_nlast, n), coords=batch_coords
             )
@@ -264,3 +269,31 @@ class BalancedResidualDecayRateC25(TrainerModule):
         # Store new scale factor.
         assert self._s_buffer is not None
         self._s_buffer.fill_(s_new)
+
+    def state_dict(self) -> dict[str, Any]:
+        return {
+            "r4_bar": {
+                label: field.get_component("value").detach().cpu().clone()
+                for label, field in self.r4_bar.items()
+            },
+            "n_last": {
+                label: field.get_component("value").detach().cpu().clone()
+                for label, field in self.n_last.items()
+            },
+            "scaling_factor_s": self.scaling_factor_s,
+            "last_update_iter": (
+                None if self._last_update_iter is None else int(self._last_update_iter)
+            ),
+        }
+
+    def load_state_dict(self, state: dict[str, Any], trainer: Trainer) -> None:
+        for label, saved in state["r4_bar"].items():
+            if label in self.r4_bar:
+                self.r4_bar[label].get_component("value").copy_(saved)
+        for label, saved in state["n_last"].items():
+            if label in self.n_last:
+                self.n_last[label].get_component("value").copy_(saved)
+        if self._s_buffer is not None:
+            self._s_buffer.fill_(state["scaling_factor_s"])
+        if self._last_update_iter is not None and state["last_update_iter"] is not None:
+            self._last_update_iter.fill_(state["last_update_iter"])
