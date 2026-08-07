@@ -1,4 +1,5 @@
 model_name: simple_harmonic_oscillator_1D_periodic
+random_seed: 12345
 
 CoordSystems:
   - label: cartesian_x

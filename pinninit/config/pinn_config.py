@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class PINNConfig:
+    random_seed: int | None
     coord_systems: list[CoordSystemConfig]
     coordinates: list[CoordinatesConfig]
     datasets: list[DatasetConfig]
@@ -38,6 +39,7 @@ class PINNConfig:
         raw = load_parameters_from_yaml(path)
 
         return cls(
+            random_seed=raw["random_seed"],
             coord_systems=raw["coord_systems"],
             coordinates=raw["coordinates"],
             datasets=raw["datasets"],

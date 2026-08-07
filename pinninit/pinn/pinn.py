@@ -45,16 +45,15 @@ class PINN:
         param_file_path: str | Path,
         device: torch.device,
         dtype: torch.dtype = torch.float64,
-        seed: int | None = 12345,
     ) -> PINN:
         # Set default dtype to higher precision
         torch.set_default_dtype(dtype)
 
-        # Set torch seed
-        if seed is not None:
-            torch.manual_seed(seed)
-
         config = PINNConfig.from_yaml(param_file_path)
+
+        # Set torch seed from the parameter file (random_seed: random -> unseeded)
+        if config.random_seed is not None:
+            torch.manual_seed(config.random_seed)
 
         # Relative paths in the config resolve against the parameter file
         base_dir = Path(param_file_path).parent

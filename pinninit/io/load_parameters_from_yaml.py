@@ -84,7 +84,7 @@ def load_parameters_from_yaml(path: str | Path) -> dict[str, Any]:
     Returns
     -------
     dict
-        Keys: "coord_systems", "coordinates", "datasets", "fields",
+        Keys: "random_seed", "coord_systems", "coordinates", "datasets", "fields",
         "constants", "loss", "nn", "trainer".
 
     Raises
@@ -111,6 +111,7 @@ def load_parameters_from_yaml(path: str | Path) -> dict[str, Any]:
         )
 
     return {
+        "random_seed": _parse_random_seed(raw.get("random_seed", "random")),
         "coord_systems": _parse_coord_systems(raw["CoordSystems"]),
         "coordinates": _parse_coordinates(raw["Coordinates"]),
         "datasets": _parse_datasets(raw.get("DataSets", [])),
@@ -148,6 +149,14 @@ def _parse_optional_enum(
 
 
 # Section parsers
+def _parse_random_seed(value: int | str) -> int | None:
+    if isinstance(value, str) and value.lower() == "random":
+        return None
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    raise ValueError(f"random_seed must be an int or 'random', got {value!r}.")
+
+
 def _parse_coord_systems(raw: list[dict[str, Any]]) -> list[CoordSystemConfig]:
     return [_parse_coord_system(coord_system) for coord_system in raw]
 
