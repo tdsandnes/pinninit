@@ -39,6 +39,7 @@ class ResidualBasedAttentionA24(TrainerModule):
         eta: float = 0.01,
         lambda_init: float = 1.0,
         min_iter: int = 0,
+        log_point_weight_info: bool = False,
     ) -> None:
         if not 0.0 < gamma < 1.0:
             raise ValueError(f"gamma must be in (0, 1), got {gamma}")
@@ -49,6 +50,7 @@ class ResidualBasedAttentionA24(TrainerModule):
         self.eta = eta
         self.lambda_init = lambda_init
         self.min_iter = min_iter
+        self.log_point_weight_info = log_point_weight_info
 
         # Containers whose training loss uses point weights
         self.rba_containers: dict[str, LossTermContainer] = {}
@@ -97,6 +99,23 @@ class ResidualBasedAttentionA24(TrainerModule):
                 continue
 
             self._update_point_weights(trainer, container, batch_coords)
+
+    def on_epoch_end(
+        self, trainer: Trainer, logger: TrainerLogger | None = None
+    ) -> None:
+        if not self.log_point_weight_info or logger is None:
+            return
+        logger.epoch_point_weight_info_log.append(
+            {
+                label: {
+                    stat: float(getattr(w, stat)())
+                    for stat in ("mean", "median", "min", "max")
+                }
+                for label, container in self.rba_containers.items()
+                if label in trainer.loss_containers  # skip staggered-off terms
+                for w in (container.train_eval_context.get_raw_point_weights(),)
+            }
+        )
 
     def _update_point_weights(
         self,

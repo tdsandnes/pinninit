@@ -31,6 +31,7 @@ class TrainerLogger:
         self.epoch_val_losses_log: list[dict[str, float]] = []
         self.epoch_loss_term_weights_log: list[dict[str, float]] = []
         self.epoch_learnt_consts_log: list[dict[str, float]] = []
+        self.epoch_point_weight_info_log: list[dict[str, dict[str, float]]] = []
 
     def on_step_start(self) -> None:
         self.unweighted_train_losses.reset()

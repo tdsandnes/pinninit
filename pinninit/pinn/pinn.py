@@ -105,6 +105,7 @@ class PINN:
                 "epoch_val_losses_log": logger.epoch_val_losses_log,
                 "epoch_loss_term_weights_log": logger.epoch_loss_term_weights_log,
                 "epoch_learnt_consts_log": logger.epoch_learnt_consts_log,
+                "epoch_point_weight_info_log": logger.epoch_point_weight_info_log,
                 "events": logger.events,
                 "best_model_epoch": trainer.best_model_epoch,
                 "best_geometric_mean_val_loss": trainer.best_geometric_mean_val_loss,
@@ -138,6 +139,9 @@ class PINN:
             "epoch_loss_term_weights_log", []
         )
         logger.epoch_learnt_consts_log = checkpoint.get("epoch_learnt_consts_log", [])
+        logger.epoch_point_weight_info_log = checkpoint.get(
+            "epoch_point_weight_info_log", []
+        )
         logger.events = checkpoint["events"]
         self.trainer.best_model_epoch = checkpoint["best_model_epoch"]
         self.trainer.best_geometric_mean_val_loss = checkpoint.get(
