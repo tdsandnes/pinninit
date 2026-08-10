@@ -40,15 +40,15 @@ class ResidualBasedAttentionA24(TrainerModule):
         lambda_init: float = 1.0,
         min_iter: int = 0,
         log_point_weight_info: bool = False,
-        snapshot_epoch_freq: int | None = None,
+        snapshot_epoch_freq: int = 0,
     ) -> None:
         if not 0.0 < gamma < 1.0:
             raise ValueError(f"gamma must be in (0, 1), got {gamma}")
         if eta <= 0.0:
             raise ValueError(f"eta must be > 0, got {eta}")
-        if snapshot_epoch_freq is not None and snapshot_epoch_freq <= 0:
+        if snapshot_epoch_freq < 0:
             raise ValueError(
-                f"snapshot_epoch_freq must be > 0, got {snapshot_epoch_freq}"
+                f"snapshot_epoch_freq must be >= 0, got {snapshot_epoch_freq}"
             )
 
         self.gamma = gamma
@@ -131,7 +131,7 @@ class ResidualBasedAttentionA24(TrainerModule):
             )
 
         if (
-            self.snapshot_epoch_freq is not None
+            self.snapshot_epoch_freq > 0
             and trainer.epoch % self.snapshot_epoch_freq == 0
         ):
             logger.point_weight_snapshots.append(
