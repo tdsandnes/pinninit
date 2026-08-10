@@ -40,17 +40,23 @@ class ResidualBasedAttentionA24(TrainerModule):
         lambda_init: float = 1.0,
         min_iter: int = 0,
         log_point_weight_info: bool = False,
+        snapshot_epoch_freq: int | None = None,
     ) -> None:
         if not 0.0 < gamma < 1.0:
             raise ValueError(f"gamma must be in (0, 1), got {gamma}")
         if eta <= 0.0:
             raise ValueError(f"eta must be > 0, got {eta}")
+        if snapshot_epoch_freq is not None and snapshot_epoch_freq <= 0:
+            raise ValueError(
+                f"snapshot_epoch_freq must be > 0, got {snapshot_epoch_freq}"
+            )
 
         self.gamma = gamma
         self.eta = eta
         self.lambda_init = lambda_init
         self.min_iter = min_iter
         self.log_point_weight_info = log_point_weight_info
+        self.snapshot_epoch_freq = snapshot_epoch_freq
 
         # Containers whose training loss uses point weights
         self.rba_containers: dict[str, LossTermContainer] = {}
@@ -103,19 +109,43 @@ class ResidualBasedAttentionA24(TrainerModule):
     def on_epoch_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        if not self.log_point_weight_info or logger is None:
+        if logger is None:
             return
-        logger.epoch_point_weight_info_log.append(
-            {
-                label: {
-                    stat: float(getattr(w, stat)())
-                    for stat in ("mean", "median", "min", "max")
+
+        active = {
+            label: container
+            for label, container in self.rba_containers.items()
+            if label in trainer.loss_containers  # skip staggered-off terms
+        }
+
+        if self.log_point_weight_info:
+            logger.epoch_point_weight_info_log.append(
+                {
+                    label: {
+                        stat: float(getattr(w, stat)())
+                        for stat in ("mean", "median", "min", "max")
+                    }
+                    for label, container in active.items()
+                    for w in (container.train_eval_context.get_raw_point_weights(),)
                 }
-                for label, container in self.rba_containers.items()
-                if label in trainer.loss_containers  # skip staggered-off terms
-                for w in (container.train_eval_context.get_raw_point_weights(),)
-            }
-        )
+            )
+
+        if (
+            self.snapshot_epoch_freq is not None
+            and trainer.epoch % self.snapshot_epoch_freq == 0
+        ):
+            logger.point_weight_snapshots.append(
+                {
+                    "epoch": trainer.epoch,
+                    "iter": trainer.iter,
+                    "weights": {
+                        label: container.train_eval_context.get_raw_point_weights()
+                        .clone()
+                        .cpu()
+                        for label, container in active.items()
+                    },
+                }
+            )
 
     def _update_point_weights(
         self,
