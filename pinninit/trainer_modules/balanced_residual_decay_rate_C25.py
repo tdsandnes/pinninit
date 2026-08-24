@@ -30,6 +30,8 @@ class BalancedResidualDecayRateC25(TrainerModule):
         use_minibatch_effective_betas: bool = True,
         eps: float = 1e-14,
         min_iter: int = 0,
+        log_point_weight_info: bool = False,
+        snapshot_epoch_freq: int = 0,
     ) -> None:
         if not 0.0 < beta_c < 1.0:
             raise ValueError(f"beta_c must be in (0, 1), got {beta_c}")
@@ -37,6 +39,10 @@ class BalancedResidualDecayRateC25(TrainerModule):
             raise ValueError(f"beta_w must be in (0, 1), got {beta_w}")
         if eps <= 0.0:
             raise ValueError(f"eps must be > 0, got {eps}")
+        if snapshot_epoch_freq < 0:
+            raise ValueError(
+                f"snapshot_epoch_freq must be >= 0, got {snapshot_epoch_freq}"
+            )
 
         self.beta_c = beta_c
         self.beta_w = beta_w
@@ -44,6 +50,8 @@ class BalancedResidualDecayRateC25(TrainerModule):
         self.use_minibatch_effective_betas = use_minibatch_effective_betas
         self.eps = eps
         self.min_iter = min_iter
+        self.log_point_weight_info = log_point_weight_info
+        self.snapshot_epoch_freq = snapshot_epoch_freq
 
         # Containers whose training loss uses adaptive point weights
         self.brdr_containers: dict[str, LossTermContainer] = {}
@@ -131,6 +139,47 @@ class BalancedResidualDecayRateC25(TrainerModule):
         self._update_point_weights(trainer)
         if self.use_scaling_factor_s:
             self._update_scaling_factor_s(trainer)
+
+    def on_epoch_end(
+        self, trainer: Trainer, logger: TrainerLogger | None = None
+    ) -> None:
+        if logger is None:
+            return
+
+        active = {
+            label: container
+            for label, container in self.brdr_containers.items()
+            if label in trainer.loss_containers  # skip staggered-off terms
+        }
+
+        if self.log_point_weight_info:
+            logger.epoch_point_weight_info_log.append(
+                {
+                    label: {
+                        stat: float(getattr(w, stat)())
+                        for stat in ("mean", "median", "min", "max")
+                    }
+                    for label, container in active.items()
+                    for w in (container.train_eval_context.get_raw_point_weights(),)
+                }
+            )
+
+        if (
+            self.snapshot_epoch_freq > 0
+            and trainer.epoch % self.snapshot_epoch_freq == 0
+        ):
+            logger.point_weight_snapshots.append(
+                {
+                    "epoch": trainer.epoch,
+                    "iter": trainer.iter,
+                    "weights": {
+                        label: container.train_eval_context.get_raw_point_weights()
+                        .clone()
+                        .cpu()
+                        for label, container in active.items()
+                    },
+                }
+            )
 
     def _update_point_weights(self, trainer: Trainer) -> None:
         n = trainer.iter
