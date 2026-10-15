@@ -25,42 +25,42 @@ from tests.data_structure.fixtures import (
 )
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def device() -> torch.device:
     return make_device()
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def n_points() -> int:
     return N_POINTS
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def cartesian_1d(device: torch.device) -> CoordSystem:
     return make_cartesian_1d(device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def cartesian_2d(device: torch.device) -> CoordSystem:
     return make_cartesian_2d(device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def cylindrical_2d(device: torch.device) -> CoordSystem:
     return make_cylindrical_2d(device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def x_1d(device: torch.device) -> torch.Tensor:
     return make_x_1d(device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def xy_2d(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
     return make_xy_2d(device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def r_theta_2d(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
     return make_r_theta_2d(device)
 

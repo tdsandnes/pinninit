@@ -28,7 +28,7 @@ def get_axis_index(coord_system: CoordSystem, axis: str) -> int:
     return coord_system.axes_labels_selected.index(axis)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def device() -> torch.device:
     return make_device()
 
@@ -170,11 +170,11 @@ class TestSphericalConstruction:
 
 # Registry
 class TestCoordSystemRegistry:
-    @pytest.mark.parametrize("label", list(CoordSystemLabels))  # type: ignore[misc]
+    @pytest.mark.parametrize("label", list(CoordSystemLabels))
     def test_registry_contains_all_labels(self, label: CoordSystemLabels) -> None:
         assert label in COORD_SYSTEM_REGISTRY
 
-    @pytest.mark.parametrize("label", list(CoordSystemLabels))  # type: ignore[misc]
+    @pytest.mark.parametrize("label", list(CoordSystemLabels))
     def test_registry_values_are_coord_system_subclasses(
         self, label: CoordSystemLabels
     ) -> None:
@@ -281,7 +281,7 @@ class TestMapGeometricToInternalGeometric:
         assert torch.allclose(result["z"], r * torch.cos(theta))
         assert "y" not in result
 
-    @pytest.mark.parametrize("label", list(CoordSystemLabels))  # type: ignore[misc]
+    @pytest.mark.parametrize("label", list(CoordSystemLabels))
     def test_output_keys_match_internal_geometric_labels(
         self, label: CoordSystemLabels, device: torch.device
     ) -> None:

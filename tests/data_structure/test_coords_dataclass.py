@@ -35,72 +35,72 @@ from .fixtures import (
 
 
 # Local fixtures
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def device() -> torch.device:
     return make_device()
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def n_points() -> int:
     return N_POINTS
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def cartesian_1d(device: torch.device) -> CoordSystem:
     return make_cartesian_1d(device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def cartesian_2d(device: torch.device) -> CoordSystem:
     return make_cartesian_2d(device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def cartesian_3d(device: torch.device) -> CoordSystem:
     return make_cartesian_3d(device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def cylindrical_2d(device: torch.device) -> CoordSystem:
     return make_cylindrical_2d(device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def spherical_3d(device: torch.device) -> CoordSystem:
     return make_spherical_3d(device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def domain_2d_cartesian(device: torch.device, cartesian_2d: CoordSystem) -> Domain:
     return make_domain_2d_cartesian(cartesian_2d, device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def x_1d(device: torch.device) -> torch.Tensor:
     return make_x_1d(device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def xy_2d(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
     return make_xy_2d(device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def xyt_2d(device: torch.device) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     return make_xyt_2d(device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def xyz_3d(device: torch.device) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     return make_xyz_3d(device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def r_theta_2d(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
     return make_r_theta_2d(device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def r_theta_phi_3d(
     device: torch.device,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -905,7 +905,7 @@ class TestCoordsValidationErrors:
         with pytest.raises((AttributeError, TypeError)):
             coords.theta = torch.zeros_like(x)  # type: ignore[attr-defined]
 
-    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")  # type: ignore[misc]
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
     def test_mismatched_devices_raises(
         self,
         cartesian_2d: CoordSystem,

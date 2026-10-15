@@ -18,7 +18,7 @@ def make_device() -> torch.device:
     return torch.device("cpu")
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def device() -> torch.device:
     return make_device()
 

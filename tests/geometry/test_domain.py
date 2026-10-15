@@ -20,39 +20,39 @@ def make_device() -> torch.device:
     return torch.device("cpu")
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def device() -> torch.device:
     return make_device()
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def cartesian_2d(device: torch.device) -> CoordSystem:
     return CartesianCoords(dim_geometric=2, coord_axes={"x", "y"}, device=device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def cartesian_3d(device: torch.device) -> CoordSystem:
     return CartesianCoords(dim_geometric=3, coord_axes={"x", "y", "z"}, device=device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def cylindrical_2d(device: torch.device) -> CoordSystem:
     return CylindricalCoords(dim_geometric=2, coord_axes={"r", "theta"}, device=device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def cylindrical_3d(device: torch.device) -> CoordSystem:
     return CylindricalCoords(
         dim_geometric=3, coord_axes={"r", "theta", "z"}, device=device
     )
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def spherical_2d(device: torch.device) -> CoordSystem:
     return SphericalCoords(dim_geometric=2, coord_axes={"r", "theta"}, device=device)
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def spherical_3d(device: torch.device) -> CoordSystem:
     return SphericalCoords(
         dim_geometric=3, coord_axes={"r", "theta", "phi"}, device=device

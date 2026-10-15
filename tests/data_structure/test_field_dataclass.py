@@ -52,17 +52,17 @@ class MockCoords:
 
 
 # Local fixtures
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def device() -> torch.device:
     return make_device()
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def n_points() -> int:
     return N_POINTS
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def coords_2d(device: torch.device, n_points: int) -> CoordsProtocol:
     return cast(
         CoordsProtocol,
@@ -70,7 +70,7 @@ def coords_2d(device: torch.device, n_points: int) -> CoordsProtocol:
     )
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def coords_3d(device: torch.device, n_points: int) -> CoordsProtocol:
     return cast(
         CoordsProtocol,
@@ -78,7 +78,7 @@ def coords_3d(device: torch.device, n_points: int) -> CoordsProtocol:
     )
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def coords_2d_different(device: torch.device, n_points: int) -> CoordsProtocol:
     return cast(
         CoordsProtocol,
@@ -86,7 +86,7 @@ def coords_2d_different(device: torch.device, n_points: int) -> CoordsProtocol:
     )
 
 
-@pytest.fixture  # type: ignore[misc]
+@pytest.fixture
 def setup_pinn_environment(
     device: torch.device,
 ) -> tuple[CoordsProtocol, FieldProtocol, torch.nn.Linear]:
@@ -156,7 +156,7 @@ class TestFieldTensorShapes:
             (2, (N_POINTS, 4), (N_POINTS, 2, 2)),
             (3, (N_POINTS, 8), (N_POINTS, 2, 2, 2)),
         ],
-    )  # type: ignore[misc]
+    )
     def test_shapes(
         self,
         rank: int,
