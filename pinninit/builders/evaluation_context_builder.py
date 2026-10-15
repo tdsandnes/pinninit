@@ -211,9 +211,10 @@ def _build_one_eval_context(
     )
 
     # Every loss term carries a per-point weight field
-    ScalarField = make_field_dataclass(rank=0, coords=coords, device=coords.device)
+    ScalarField = make_field_dataclass(0, type(coords))
     point_weights = ScalarField(
         label="point_weights",
+        coords=coords,
         value=torch.ones(coords.n_points, device=coords.device),
     )
 
@@ -249,5 +250,7 @@ def _build_point_weight_modifier(
     result = equation.evaluate(output_dc, coords, operators)
     modifier_tensor = result[equation.output_labels[0]].detach()
 
-    ScalarField = make_field_dataclass(rank=0, coords=coords, device=coords.device)
-    return ScalarField(label="point_weight_modifier", value=modifier_tensor)
+    ScalarField = make_field_dataclass(0, type(coords))
+    return ScalarField(
+        label="point_weight_modifier", coords=coords, value=modifier_tensor
+    )

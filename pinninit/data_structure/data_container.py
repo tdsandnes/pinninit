@@ -258,13 +258,11 @@ class DataContainer:
         # Create or retrieve Field dataclass for this rank
         field_class = self._field_rank_to_classes.get(rank)
         if field_class is None:
-            field_class = make_field_dataclass(
-                rank=rank, coords=self.coords, device=self.device
-            )
+            field_class = make_field_dataclass(rank, type(self.coords))
             self._field_rank_to_classes[rank] = field_class
 
         # Return an empty Field instance with the correct label
-        return field_class(label=label)
+        return field_class(label=label, coords=self.coords)
 
     def _validate_eval_coords(
         self,

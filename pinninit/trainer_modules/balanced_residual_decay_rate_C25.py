@@ -88,11 +88,10 @@ class BalancedResidualDecayRateC25(TrainerModule):
             )
 
             # Per-point R4 moving average and last-seen iteration
-            ScalarField = make_field_dataclass(
-                rank=0, coords=coords, device=coords.device
-            )
+            ScalarField = make_field_dataclass(0, type(coords))
             self.r4_bar[label] = ScalarField(
                 label="brdr_r4_bar",
+                coords=coords,
                 value=torch.zeros(coords.n_points, device=coords.device),
             )
             trainer.model.register_buffer(
@@ -101,6 +100,7 @@ class BalancedResidualDecayRateC25(TrainerModule):
             if self.use_minibatch_effective_betas:
                 self.n_last[label] = ScalarField(
                     label="brdr_n_last",
+                    coords=coords,
                     value=torch.zeros(
                         coords.n_points, dtype=torch.long, device=coords.device
                     ),

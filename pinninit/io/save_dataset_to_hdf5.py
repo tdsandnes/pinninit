@@ -112,12 +112,11 @@ class DataSetWriter:
             }
         )
 
-        ScalarField = make_field_dataclass(
-            rank=0, coords=coords_obj, device=self.device
-        )
+        ScalarField = make_field_dataclass(0, type(coords_obj))
         field_objs = {
             f_label: ScalarField(
                 label=f_label,
+                coords=coords_obj,
                 value=torch.as_tensor(
                     arr, dtype=torch.get_default_dtype(), device=self.device
                 ),

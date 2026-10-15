@@ -88,6 +88,19 @@ class Coords:
             return False
         return self.is_ancestor_of(other.parent)
 
+    def indices_in(self, root: Coords) -> torch.Tensor | None:
+        """Indices of these points within root, or None if self is root."""
+        if self is root:
+            return None
+        if self.parent is None or self.parent_idx is None:
+            raise ValueError(
+                "Coords must be the root coords or a batch derived from them."
+            )
+        parent_indices = self.parent.indices_in(root)
+        if parent_indices is None:
+            return self.parent_idx
+        return parent_indices[self.parent_idx]
+
     def validate_in_domain(self, domain: Domain) -> None:
         """Verify that all points are within a domain."""
         if domain.coord_system != self.coord_system:
