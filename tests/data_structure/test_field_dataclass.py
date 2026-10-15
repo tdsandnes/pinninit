@@ -179,6 +179,7 @@ class TestBatches:
 
         expected = field.component_tensor()[idx1[idx2]]
         assert torch.equal(field.component_tensor(batch), expected)
+        assert torch.equal(field.tensor(batch), expected)
         assert torch.equal(field.get_component("x", batch), expected[:, 0])
 
     def test_unrelated_coords_raise(

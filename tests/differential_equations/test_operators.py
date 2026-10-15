@@ -168,6 +168,37 @@ class TestCylindrical:
         assert torch.allclose(operators.grad(x), expected_grad)
 
 
+class TestSpherical:
+    def test_laplacian_of_1_over_r_is_zero(self, coords_spherical: Coords) -> None:
+        operators = Operators(coords_spherical)
+        r = coords_spherical.get_coord("r")
+
+        laplacian = operators.laplacian(1 / r)
+
+        assert torch.allclose(laplacian, torch.zeros_like(r), atol=1e-5)
+
+    def test_div_of_radial_unit_vector(self, coords_spherical: Coords) -> None:
+        # div(e_r) = 2 / r
+        operators = Operators(coords_spherical)
+        r = coords_spherical.get_coord("r")
+        zeros, ones = torch.zeros_like(r), torch.ones_like(r)
+        e_r = torch.stack([ones, zeros, zeros], dim=1)
+
+        assert torch.allclose(operators.div(e_r), 2 / r)
+
+    def test_vector_laplacian_of_radial_unit_vector(
+        self, coords_spherical: Coords
+    ) -> None:
+        # lap(e_r) = -2 e_r / r^2
+        operators = Operators(coords_spherical)
+        r = coords_spherical.get_coord("r")
+        zeros, ones = torch.zeros_like(r), torch.ones_like(r)
+        e_r = torch.stack([ones, zeros, zeros], dim=1)
+
+        expected = torch.stack([-2 / r**2, zeros, zeros], dim=1)
+        assert torch.allclose(operators.vector_laplacian(e_r), expected, atol=1e-5)
+
+
 class TestBatches:
     def test_results_on_a_batch_match_the_full_coords(
         self, coords_2d: Coords, device: torch.device
