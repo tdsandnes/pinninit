@@ -1,6 +1,4 @@
-"""
-Unit tests for metric_tensor.py
-"""
+"""Unit tests for geometry/metric_tensor.py."""
 
 from __future__ import annotations
 
@@ -14,281 +12,109 @@ from pinninit.geometry.metric_tensor import (
 )
 
 
-# IdentityMetricTensor
 class TestIdentityMetricTensor:
-    def test_sqrt_det(self, device: torch.device) -> None:
-        n = 5
-        metric = IdentityMetricTensor(n, device)
+    def test_everything_is_unchanged(self, device: torch.device) -> None:
+        metric = IdentityMetricTensor(4, device)
+        v = torch.randn(4, 3, device=device)
+        s = torch.randn(4, device=device)
 
-        assert metric.sqrt_det.shape == (n,)
-        assert torch.allclose(metric.sqrt_det, torch.ones(n, device=device))
-
-    def test_inv_metric_times_vec(self, device: torch.device) -> None:
-        n = 4
-        metric = IdentityMetricTensor(n, device)
-
-        v = torch.randn(n, 3, device=device)
-        out = metric.inv_metric_times_vec(v)
-
-        assert torch.allclose(out, v)
-
-    def test_sqrt_det_times_vec(self, device: torch.device) -> None:
-        n = 4
-        metric = IdentityMetricTensor(n, device)
-
-        v = torch.randn(n, 3, device=device)
-        out = metric.sqrt_det_times_vec(v)
-
-        assert torch.allclose(out, v)
-
-    def test_inv_sqrt_det_times_scalar(self, device: torch.device) -> None:
-        n = 4
-        metric = IdentityMetricTensor(n, device)
-
-        s = torch.randn(n, device=device)
-        out = metric.inv_sqrt_det_times_scalar(s)
-
-        assert torch.allclose(out, s)
-
-    def test_scale_factors_times_vec(self, device: torch.device) -> None:
-        n = 4
-        metric = IdentityMetricTensor(n, device)
-
-        v = torch.randn(n, 3, device=device)
-        out = metric.scale_factors_times_vec(v)
-
-        assert torch.allclose(out, v)
-
-    def test_inv_scale_factors_times_vec(self, device: torch.device) -> None:
-        n = 4
-        metric = IdentityMetricTensor(n, device)
-
-        v = torch.randn(n, 3, device=device)
-        out = metric.inv_scale_factors_times_vec(v)
-
-        assert torch.allclose(out, v)
+        assert torch.equal(metric.sqrt_det, torch.ones(4, device=device))
+        assert torch.equal(metric.inv_metric_times_vec(v), v)
+        assert torch.equal(metric.sqrt_det_times_vec(v), v)
+        assert torch.equal(metric.inv_sqrt_det_times_scalar(s), s)
+        assert torch.equal(metric.scale_factors_times_vec(v), v)
+        assert torch.equal(metric.inv_scale_factors_times_vec(v), v)
 
 
-# DiagonalMetricTensor
 class TestDiagonalMetricTensor:
-    def test_sqrt_diag_and_sqrt_det(self, device: torch.device) -> None:
-        diag = torch.tensor(
-            [
-                [1.0, 4.0, 9.0],
-                [4.0, 9.0, 16.0],
-                [1.0, 1.0, 1.0],
-                [2.0, 8.0, 18.0],
-                [9.0, 9.0, 9.0],
-                [16.0, 25.0, 36.0],
-            ],
-            device=device,
-        )
-
-        metric = DiagonalMetricTensor(diag)
-
-        expected_sqrt_diag = torch.sqrt(diag)
-        expected_sqrt_det = expected_sqrt_diag.prod(dim=1)
-
-        assert torch.allclose(metric.sqrt_diag, expected_sqrt_diag)
-        assert torch.allclose(metric.sqrt_det, expected_sqrt_det)
-
-    def test_inv_metric_times_vec(self, device: torch.device) -> None:
-        n = 5
-
-        diag = torch.tensor(
-            [
-                [1.0, 2.0],
-                [4.0, 8.0],
-                [9.0, 3.0],
-                [16.0, 2.0],
-                [25.0, 5.0],
-            ],
-            device=device,
-        )
-
-        metric = DiagonalMetricTensor(diag)
-
-        v = torch.randn(n, 2, device=device)
-        out = metric.inv_metric_times_vec(v)
-
-        assert torch.allclose(out, v / diag)
-
-    def test_sqrt_det_times_vec(self, device: torch.device) -> None:
-        n = 4
-
-        diag = torch.tensor(
-            [
-                [1.0, 4.0],
-                [4.0, 9.0],
-                [9.0, 16.0],
-                [16.0, 25.0],
-            ],
-            device=device,
-        )
-
-        metric = DiagonalMetricTensor(diag)
-
-        v = torch.randn(n, 2, device=device)
-        out = metric.sqrt_det_times_vec(v)
-
-        expected = v * metric.sqrt_det.unsqueeze(1)
-        assert torch.allclose(out, expected)
-
-    def test_inv_sqrt_det_times_scalar(self, device: torch.device) -> None:
-        n = 4
-
-        diag = torch.tensor(
-            [
-                [1.0, 4.0],
-                [4.0, 9.0],
-                [9.0, 16.0],
-                [16.0, 25.0],
-            ],
-            device=device,
-        )
-
-        metric = DiagonalMetricTensor(diag)
-
-        s = torch.randn(n, device=device)
-        out = metric.inv_sqrt_det_times_scalar(s)
-
-        assert torch.allclose(out, s / metric.sqrt_det)
-
-    def test_scale_factors_times_vec(self, device: torch.device) -> None:
-        n = 3
-
-        diag = torch.tensor(
-            [
-                [1.0, 4.0],
-                [9.0, 16.0],
-                [25.0, 36.0],
-            ],
-            device=device,
-        )
-
-        metric = DiagonalMetricTensor(diag)
-
-        v = torch.randn(n, 2, device=device)
-        out = metric.scale_factors_times_vec(v)
-
-        assert torch.allclose(out, v * metric.sqrt_diag)
-
-    def test_inv_scale_factors_times_vec(self, device: torch.device) -> None:
-        n = 3
-
-        diag = torch.tensor(
-            [
-                [1.0, 4.0],
-                [9.0, 16.0],
-                [25.0, 36.0],
-            ],
-            device=device,
-        )
-
-        metric = DiagonalMetricTensor(diag)
-
-        v = torch.randn(n, 2, device=device)
-        out = metric.inv_scale_factors_times_vec(v)
-
-        assert torch.allclose(out, v / metric.sqrt_diag)
-
-
-# FullMetricTensor
-class TestFullMetricTensor:
-    def test_invalid_shape_raises(self, device: torch.device) -> None:
-        G = torch.randn(4, 2, 3, device=device)
-
-        with pytest.raises(ValueError, match="square"):
-            FullMetricTensor(G)
-
     def test_sqrt_det(self, device: torch.device) -> None:
-        n = 4
-        dim = 3
+        metric = DiagonalMetricTensor(
+            torch.tensor([[1.0, 4.0], [9.0, 16.0]], device=device)
+        )
 
-        G = torch.randn(n, dim, dim, device=device)
-        G = G @ G.transpose(-1, -2) + 0.5 * torch.eye(dim, device=device)
-
-        metric = FullMetricTensor(G)
-
-        expected = torch.sqrt(torch.det(G))
-
-        assert torch.allclose(metric.sqrt_det, expected)
+        assert torch.allclose(metric.sqrt_det, torch.tensor([2.0, 12.0], device=device))
 
     def test_inv_metric_times_vec(self, device: torch.device) -> None:
-        n = 4
-        dim = 3
+        metric = DiagonalMetricTensor(
+            torch.tensor([[1.0, 4.0], [9.0, 16.0]], device=device)
+        )
+        v = torch.ones(2, 2, device=device)
 
-        G = torch.randn(n, dim, dim, device=device)
-        G = G @ G.transpose(-1, -2) + 0.5 * torch.eye(dim, device=device)
+        expected = torch.tensor([[1.0, 1 / 4], [1 / 9, 1 / 16]], device=device)
+        assert torch.allclose(metric.inv_metric_times_vec(v), expected)
 
-        metric = FullMetricTensor(G)
+    def test_scale_factors_are_the_square_roots_of_the_diagonal(
+        self, device: torch.device
+    ) -> None:
+        metric = DiagonalMetricTensor(
+            torch.tensor([[1.0, 4.0], [9.0, 16.0]], device=device)
+        )
+        v = torch.ones(2, 2, device=device)
 
-        v = torch.randn(n, dim, device=device)
+        expected = torch.tensor([[1.0, 2.0], [3.0, 4.0]], device=device)
+        assert torch.allclose(metric.scale_factors_times_vec(v), expected)
+        assert torch.allclose(metric.inv_scale_factors_times_vec(v), 1 / expected)
 
-        out = metric.inv_metric_times_vec(v)
+    def test_sqrt_det_products(self, device: torch.device) -> None:
+        metric = DiagonalMetricTensor(
+            torch.tensor([[1.0, 4.0], [9.0, 16.0]], device=device)
+        )
+        v = torch.ones(2, 2, device=device)
+        s = torch.ones(2, device=device)
 
-        expected = torch.bmm(torch.linalg.inv(G), v.unsqueeze(-1)).squeeze(-1)
+        expected = torch.tensor([[2.0, 2.0], [12.0, 12.0]], device=device)
+        assert torch.allclose(metric.sqrt_det_times_vec(v), expected)
+        assert torch.allclose(
+            metric.inv_sqrt_det_times_scalar(s),
+            torch.tensor([1 / 2, 1 / 12], device=device),
+        )
 
-        assert torch.allclose(out, expected)
 
-    def test_sqrt_det_times_vec(self, device: torch.device) -> None:
-        n = 4
-        dim = 3
+class TestFullMetricTensor:
+    def test_non_square_matrices_raise(self, device: torch.device) -> None:
+        with pytest.raises(ValueError, match="square"):
+            FullMetricTensor(torch.ones(4, 2, 3, device=device))
 
-        G = torch.randn(n, dim, dim, device=device)
-        G = G @ G.transpose(-1, -2) + 0.5 * torch.eye(dim, device=device)
+    def test_non_diagonal_metric(self, device: torch.device) -> None:
+        # det(G) = 3 and G^-1 = [[2, -1], [-1, 2]] / 3
+        metric = FullMetricTensor(
+            torch.tensor([[[2.0, 1.0], [1.0, 2.0]]], device=device)
+        )
+        v = torch.tensor([[1.0, 0.0]], device=device)
+        s = torch.tensor([1.0], device=device)
 
-        metric = FullMetricTensor(G)
+        sqrt_3 = 3.0**0.5
+        assert torch.allclose(metric.sqrt_det, torch.tensor([sqrt_3], device=device))
+        assert torch.allclose(
+            metric.inv_metric_times_vec(v),
+            torch.tensor([[2 / 3, -1 / 3]], device=device),
+        )
+        assert torch.allclose(
+            metric.sqrt_det_times_vec(v), torch.tensor([[sqrt_3, 0]], device=device)
+        )
+        assert torch.allclose(
+            metric.inv_sqrt_det_times_scalar(s),
+            torch.tensor([1 / sqrt_3], device=device),
+        )
 
-        v = torch.randn(n, dim, device=device)
+    def test_matches_diagonal_metric_for_a_diagonal_matrix(
+        self, device: torch.device
+    ) -> None:
+        diag = torch.tensor([[1.0, 4.0], [9.0, 16.0]], device=device)
+        full = FullMetricTensor(torch.diag_embed(diag))
+        diagonal = DiagonalMetricTensor(diag)
+        v = torch.randn(2, 2, device=device)
 
-        out = metric.sqrt_det_times_vec(v)
+        assert torch.allclose(full.sqrt_det, diagonal.sqrt_det)
+        assert torch.allclose(
+            full.inv_metric_times_vec(v), diagonal.inv_metric_times_vec(v)
+        )
 
-        expected = v * metric.sqrt_det.unsqueeze(1)
-
-        assert torch.allclose(out, expected)
-
-    def test_inv_sqrt_det_times_scalar(self, device: torch.device) -> None:
-        n = 4
-        dim = 3
-
-        G = torch.randn(n, dim, dim, device=device)
-        G = G @ G.transpose(-1, -2) + 0.5 * torch.eye(dim, device=device)
-
-        metric = FullMetricTensor(G)
-
-        s = torch.randn(n, device=device)
-
-        out = metric.inv_sqrt_det_times_scalar(s)
-
-        expected = s / metric.sqrt_det
-
-        assert torch.allclose(out, expected)
-
-    def test_scale_factors_times_vec_raises(self, device: torch.device) -> None:
-        n = 3
-        dim = 2
-
-        G = torch.randn(n, dim, dim, device=device)
-        G = G @ G.transpose(-1, -2) + 0.5 * torch.eye(dim, device=device)
-
-        metric = FullMetricTensor(G)
-
-        v = torch.randn(n, dim, device=device)
+    def test_scale_factors_are_not_defined(self, device: torch.device) -> None:
+        metric = FullMetricTensor(torch.eye(2, device=device).expand(3, 2, 2))
+        v = torch.ones(3, 2, device=device)
 
         with pytest.raises(NotImplementedError):
             metric.scale_factors_times_vec(v)
-
-    def test_inv_scale_factors_times_vec_raises(self, device: torch.device) -> None:
-        n = 3
-        dim = 2
-
-        G = torch.randn(n, dim, dim, device=device)
-        G = G @ G.transpose(-1, -2) + 0.5 * torch.eye(dim, device=device)
-
-        metric = FullMetricTensor(G)
-
-        v = torch.randn(n, dim, device=device)
-
         with pytest.raises(NotImplementedError):
             metric.inv_scale_factors_times_vec(v)
