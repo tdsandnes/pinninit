@@ -44,6 +44,7 @@ class Operators:
         torch.Tensor
             Derivative of each element of f.
         """
+        self._check_differentiable(f)
         coord = self.coords.get_coord(coord_label)
 
         flat = f.reshape(f.shape[0], -1)
@@ -60,6 +61,8 @@ class Operators:
         ]
 
         # Deal with case where f is indep of coord
+        if any(d is None for d in derivatives):
+            self._check_computed_from_coords(f)
         derivatives = [
             d if d is not None else torch.zeros_like(coord) for d in derivatives
         ]
@@ -87,6 +90,7 @@ class Operators:
                 f"contravariant_grad expects a scalar field, got shape {f.shape}"
             )
 
+        self._check_differentiable(f)
         coords = [self.coords.get_coord(label) for label in self.geometric_labels]
 
         derivatives = torch.autograd.grad(
@@ -98,6 +102,8 @@ class Operators:
         )
 
         # Deal with case where f is indep of coord
+        if any(d is None for d in derivatives):
+            self._check_computed_from_coords(f)
         derivatives_list = [
             d if d is not None else torch.zeros_like(coord)
             for d, coord in zip(derivatives, coords, strict=True)
@@ -291,3 +297,20 @@ class Operators:
 
         # Transform back
         return self.coord_system.transform_cartesian_to_geometric(lap, geometric_coords)
+
+    def _check_differentiable(self, f: torch.Tensor) -> None:
+        if not f.requires_grad:
+            raise ValueError(
+                "Can only differentiate tensors computed from the " "operators' coords."
+            )
+
+    def _check_computed_from_coords(self, f: torch.Tensor) -> None:
+        """Raise if f has no autograd path to any of these coords."""
+        coords = [self.coords.get_coord(label) for label in self.coords.coord_labels]
+        grads = torch.autograd.grad(
+            f.sum(), coords, retain_graph=True, allow_unused=True
+        )
+        if all(grad is None for grad in grads):
+            raise ValueError(
+                "Can only differentiate tensors computed from the " "operators' coords."
+            )

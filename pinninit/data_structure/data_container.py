@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections import Counter
 
 import torch
 
@@ -11,6 +11,18 @@ from .field_dataclass import Field, make_field_dataclass
 
 
 class DataContainer:
+    """
+    The fields and constants defined on one set of coords.
+
+    Primary fields are set directly (e.g. from data or the network output).
+    Derived fields are set by evaluating equations.
+
+    Each field is stored on the coords it was last set on: the full coords or a
+    batch of them. It can only be read on those coords or a batch derived from
+    them, so values from another batch are never read by mistake, and setting a
+    field on a batch only costs memory and time for the batch.
+    """
+
     def __init__(
         self,
         coords: Coords,
@@ -19,149 +31,73 @@ class DataContainer:
         const_labels: set[str] | None = None,
         equations: list[Equation] | None = None,
     ) -> None:
+        derived_field_label_to_rank = derived_field_label_to_rank or {}
+        const_labels = const_labels or set()
+        _check_labels_unique(
+            [
+                *coords.coord_labels,
+                *primary_field_label_to_rank,
+                *derived_field_label_to_rank,
+                *const_labels,
+            ]
+        )
+
         self.coords = coords
         self.coord_labels = coords.coord_labels
         self.device = coords.device
-        self.equations = equations or []
-        self.equation_evaluator = EquationEvaluator(self)
-
-        # Store field labels
-        derived_field_label_to_rank = derived_field_label_to_rank or {}
         self.primary_field_labels = set(primary_field_label_to_rank)
         self.derived_field_labels = set(derived_field_label_to_rank)
 
-        # Init dict of empty fields
-        self._field_rank_to_classes: dict[int, type[Field]] = {}
-        self.primary_fields: dict[str, Field] = {
-            label: self._empty_field_of_rank(label, rank)
-            for label, rank in primary_field_label_to_rank.items()
+        # The Field class of each field, and the field once it has been set
+        field_label_to_rank = primary_field_label_to_rank | derived_field_label_to_rank
+        self.field_classes: dict[str, type[Field]] = {
+            label: make_field_dataclass(rank, type(coords))
+            for label, rank in field_label_to_rank.items()
         }
-        self.derived_fields: dict[str, Field] = {
-            label: self._empty_field_of_rank(label, rank)
-            for label, rank in derived_field_label_to_rank.items()
-        }
+        self.fields: dict[str, Field] = {}
 
-        # Init dict of empty consts
-        self.consts: dict[str, torch.Tensor | None] = dict.fromkeys(
-            const_labels or set()
-        )
+        # Constant values, None until set
+        self.consts: dict[str, torch.Tensor | None] = dict.fromkeys(const_labels)
 
-        # Keep track of the active set of coords used when updating fields or consts
-        self.primary_fields_active_coords: dict[str, Coords | None] = dict.fromkeys(
-            self.primary_field_labels, None
-        )
-        self.derived_fields_active_coords: dict[str, Coords | None] = dict.fromkeys(
-            self.derived_field_labels, None
-        )
-        self.consts_active_coords: dict[str, Coords | None] = dict.fromkeys(
-            const_labels or set(), None
-        )
-
-        # Cache for accessing fields
-        self._fields_cache: dict[str, Field] | None = None
-        self._fields_active_coords_cache: dict[str, Coords | None] | None = None
+        self.equations = equations or []
+        self.equation_evaluator = EquationEvaluator(self)
 
     @property
     def field_labels(self) -> set[str]:
-        return self.primary_field_labels | self.derived_field_labels
-
-    @property
-    def fields(self) -> dict[str, Field]:
-        if self._fields_cache is None:
-            self._fields_cache = {**self.primary_fields, **self.derived_fields}
-        return self._fields_cache
-
-    @property
-    def fields_active_coords(self) -> dict[str, Coords | None]:
-        if self._fields_active_coords_cache is None:
-            self._fields_active_coords_cache = {
-                **self.primary_fields_active_coords,
-                **self.derived_fields_active_coords,
-            }
-        return self._fields_active_coords_cache
+        return set(self.field_classes)
 
     def get_field(self, label: str) -> Field:
-        if label not in self.field_labels:
+        if label not in self.field_classes:
             raise KeyError(f"Field '{label}' not found.")
-
+        if label not in self.fields:
+            raise ValueError(f"Field '{label}' has not been initialised.")
         return self.fields[label]
 
     def get_field_tensor(
-        self,
-        label: str,
-        coords: Coords | None = None,
+        self, label: str, coords: Coords | None = None
     ) -> torch.Tensor:
-        coords = coords or self.coords
-        active_coords = self._get_active_coords(label)
-        self._validate_eval_coords(label, active_coords, coords)
-        return self.get_field(label).tensor(coords)
+        field, coords = self._field_to_read(label, coords)
+        return field.tensor(coords)
 
     def get_field_component(
-        self,
-        field_label: str,
-        component_label: str,
-        coords: Coords | None = None,
+        self, field_label: str, component_label: str, coords: Coords | None = None
     ) -> torch.Tensor:
-        coords = coords or self.coords
-        active_coords = self._get_active_coords(field_label)
-        self._validate_eval_coords(field_label, active_coords, coords)
-        return self.get_field(field_label).get_component(component_label, coords)
+        field, coords = self._field_to_read(field_label, coords)
+        return field.get_component(component_label, coords)
 
     def get_field_component_tensor(
-        self,
-        label: str,
-        coords: Coords | None = None,
+        self, label: str, coords: Coords | None = None
     ) -> torch.Tensor:
-        coords = coords or self.coords
-        active_coords = self._get_active_coords(label)
-        self._validate_eval_coords(label, active_coords, coords)
-        return self.get_field(label).component_tensor(coords)
+        field, coords = self._field_to_read(label, coords)
+        return field.component_tensor(coords)
 
-    def get_const(
-        self,
-        label: str,
-        coords: Coords | None = None,
-    ) -> torch.Tensor:
-        coords = coords or self.coords
-        active_coords = self._get_active_coords(label)
-        self._validate_eval_coords(label, active_coords, coords)
-
+    def get_const(self, label: str) -> torch.Tensor:
+        if label not in self.consts:
+            raise KeyError(f"Const '{label}' not found.")
         value = self.consts[label]
         if value is None:
-            raise RuntimeError(
-                f"Constant '{label}' has active coordinates tracked, "
-                f"but its tensor value is unexpectedly None."
-            )
-
+            raise ValueError(f"Constant '{label}' has not been initialised.")
         return value
-
-    def _set_field(
-        self,
-        label: str,
-        coords: Coords | None,
-        allow_derived: bool,
-        update: Callable[[Field, Coords], None],
-    ) -> None:
-        # Guard against setting derived field outside of equation evaluator
-        if label in self.derived_field_labels and not allow_derived:
-            raise ValueError(
-                f"Field '{label}' is a derived field and cannot be set directly."
-            )
-
-        # Update field
-        coords = coords or self.coords
-        self._validate_eval_coords(label, self.coords, coords)
-        update(self.get_field(label), coords)
-
-        # Update active coords for the field
-        if label in self.primary_field_labels:
-            self.primary_fields_active_coords[label] = coords
-        elif label in self.derived_field_labels:
-            self.derived_fields_active_coords[label] = coords
-
-        # Reset field cache
-        self._fields_cache = None
-        self._fields_active_coords_cache = None
 
     def set_field_from_tensor(
         self,
@@ -170,12 +106,9 @@ class DataContainer:
         coords: Coords | None = None,
         allow_derived: bool = False,
     ) -> None:
-        self._set_field(
-            label,
-            coords,
-            allow_derived,
-            lambda field, c: field.update_from_tensor(tensor, coords=c),
-        )
+        field = self._new_field(label, coords, allow_derived)
+        field.update_from_tensor(tensor)
+        self.fields[label] = field
 
     def set_field_from_component_tensor(
         self,
@@ -184,14 +117,9 @@ class DataContainer:
         coords: Coords | None = None,
         allow_derived: bool = False,
     ) -> None:
-        self._set_field(
-            label,
-            coords,
-            allow_derived,
-            lambda field, c: field.update_from_component_tensor(
-                component_tensor, coords=c
-            ),
-        )
+        field = self._new_field(label, coords, allow_derived)
+        field.update_from_component_tensor(component_tensor)
+        self.fields[label] = field
 
     def set_field_from_component_dict(
         self,
@@ -200,79 +128,60 @@ class DataContainer:
         coords: Coords | None = None,
         allow_derived: bool = False,
     ) -> None:
-        self._set_field(
-            label,
-            coords,
-            allow_derived,
-            lambda field, c: field.update_from_component_dict(component_dict, coords=c),
-        )
+        field = self._new_field(label, coords, allow_derived)
+        field.update_from_component_dict(component_dict)
+        self.fields[label] = field
 
-    def set_const(
-        self, label: str, value: torch.Tensor, coords: Coords | None = None
-    ) -> None:
-        # Check that input is a scalar
+    def set_const(self, label: str, value: torch.Tensor) -> None:
+        if label not in self.consts:
+            raise KeyError(f"Const '{label}' not found.")
         if value.ndim != 0:
             raise ValueError(
                 f"Constant '{label}' must be a scalar tensor, got shape {value.shape}."
             )
-
-        # Update constant
-        if label not in self.consts:
-            raise KeyError(f"Const '{label}' not found.")
         self.consts[label] = value
 
-        # Update active coords for the constant
-        coords = coords or self.coords
-        self._validate_eval_coords(label, self.coords, coords)
-        self.consts_active_coords[label] = coords
-
     def evaluate_derived_fields(self, coords: Coords | None = None) -> None:
-        coords = coords or self.coords
+        """Evaluate the equations at coords and store the results."""
+        coords = self.coords if coords is None else coords
         self.equation_evaluator.evaluate(coords)
 
-    def validate_eval_coords_primary_fields(self, coords: Coords) -> None:
-        for label in self.primary_field_labels:
-            active_coords = self.primary_fields_active_coords[label]
+    def _new_field(
+        self, label: str, coords: Coords | None, allow_derived: bool
+    ) -> Field:
+        """Check a field can be set on coords, and return a new field on them."""
+        if label not in self.field_classes:
+            raise KeyError(f"Field '{label}' not found.")
+        if label in self.derived_field_labels and not allow_derived:
+            raise ValueError(
+                f"Field '{label}' is a derived field and cannot be set directly."
+            )
 
-            if active_coords is None:
-                raise ValueError(f"Primary field '{label}' has not been initialised.")
-
-            if not active_coords.is_ancestor_of(coords):
-                raise ValueError(
-                    f"Evaluation coords for '{label}' must be the active coords or a "
-                    "descendant of them."
-                )
-
-    def _empty_field_of_rank(self, label: str, rank: int) -> Field:
-        # Create or retrieve Field dataclass for this rank
-        field_class = self._field_rank_to_classes.get(rank)
-        if field_class is None:
-            field_class = make_field_dataclass(rank, type(self.coords))
-            self._field_rank_to_classes[rank] = field_class
-
-        # Return an empty Field instance with the correct label
-        return field_class(label=label, coords=self.coords)
-
-    def _validate_eval_coords(
-        self,
-        label: str,
-        active_coords: Coords | None,
-        coords: Coords,
-    ) -> None:
-        if active_coords is None:
-            raise ValueError(f"'{label}' has not been initialised.")
-
-        if not active_coords.is_ancestor_of(coords):
+        coords = self.coords if coords is None else coords
+        if not self.coords.is_ancestor_of(coords):
             raise ValueError(
                 f"Evaluation coords for '{label}' must be the active coords "
                 "or a descendant of them."
             )
+        return self.field_classes[label](label=label, coords=coords)
 
-    def _get_active_coords(self, label: str) -> Coords | None:
-        # Check for label in fields and consts
-        if label in self.field_labels:
-            return self.fields_active_coords[label]
-        elif label in self.consts:
-            return self.consts_active_coords[label]
-        else:
-            raise KeyError(f"Label '{label}' not found in fields or consts.")
+    def _field_to_read(self, label: str, coords: Coords | None) -> tuple[Field, Coords]:
+        """Check a field can be read on coords, and return it with the coords."""
+        field = self.get_field(label)
+        coords = self.coords if coords is None else coords
+        if not field.coords.is_ancestor_of(coords):
+            raise ValueError(
+                f"Evaluation coords for '{label}' must be the active coords "
+                "or a descendant of them."
+            )
+        return field, coords
+
+
+def _check_labels_unique(labels: list[str]) -> None:
+    """Coord, field and const labels share one namespace in equation arguments."""
+    duplicates = sorted(label for label, count in Counter(labels).items() if count > 1)
+    if duplicates:
+        raise ValueError(
+            f"Labels {duplicates} are used more than once across coords, fields "
+            "and consts."
+        )

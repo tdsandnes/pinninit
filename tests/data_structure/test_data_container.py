@@ -30,6 +30,25 @@ class TestConstruction:
         with pytest.raises(KeyError, match="'missing' not found"):
             data.set_const("missing", torch.tensor(1.0))
 
+    def test_labels_must_be_unique_across_coords_fields_and_consts(
+        self, coords_2d: Coords
+    ) -> None:
+        # They share one namespace as equation arguments
+        with pytest.raises(ValueError, match=r"\['x'\] are used more than once"):
+            DataContainer(coords=coords_2d, primary_field_label_to_rank={"x": 0})
+        with pytest.raises(ValueError, match=r"\['u'\] are used more than once"):
+            DataContainer(
+                coords=coords_2d,
+                primary_field_label_to_rank={"u": 0},
+                const_labels={"u"},
+            )
+        with pytest.raises(ValueError, match=r"\['u'\] are used more than once"):
+            DataContainer(
+                coords=coords_2d,
+                primary_field_label_to_rank={"u": 0},
+                derived_field_label_to_rank={"u": 0},
+            )
+
 
 class TestFields:
     def test_set_field_from_tensor(self, data: DataContainer) -> None:
@@ -74,20 +93,18 @@ class TestFields:
 
         assert torch.equal(data.get_field_tensor("u", batch), values[idx])
 
-    def test_write_on_batch_updates_only_batch_rows(
+    def test_write_on_batch_stores_values_for_the_batch(
         self, data: DataContainer, device: torch.device
     ) -> None:
         data.set_field_from_tensor("u", torch.zeros(N_POINTS, device=device))
-        idx = torch.tensor([1, 4, 6], device=device)
+        batch = data.coords.get_batch(torch.tensor([1, 4, 6], device=device))
         batch_values = torch.tensor([1.0, 2.0, 3.0], device=device)
 
-        data.set_field_from_tensor("u", batch_values, data.coords.get_batch(idx))
+        data.set_field_from_tensor("u", batch_values, batch)
 
-        expected = torch.zeros(N_POINTS, device=device)
-        expected[idx] = batch_values
-        assert torch.equal(data.get_field("u").tensor(data.coords), expected)
-
-        # The other rows are now stale, so the full field can't be read
+        assert data.get_field("u").coords is batch
+        assert torch.equal(data.get_field_tensor("u", batch), batch_values)
+        # The other points have no values now, so the full field can't be read
         with pytest.raises(ValueError, match="must be the active coords"):
             data.get_field_tensor("u")
 
@@ -160,7 +177,7 @@ class TestDerivedFieldEvaluation:
                 ],
             )
 
-    def test_evaluating_on_batch_updates_only_batch_rows(
+    def test_evaluating_on_batch_stores_values_for_the_batch(
         self, coords_2d: Coords, device: torch.device
     ) -> None:
         def make_a(x: torch.Tensor, operators: Operators) -> torch.Tensor:
@@ -172,13 +189,13 @@ class TestDerivedFieldEvaluation:
             derived_field_label_to_rank={"a": 0},
             equations=[Equation("a", make_a, {"a": 0})],
         )
-        idx = torch.tensor([1, 3, 5], device=device)
+        batch = coords_2d.get_batch(torch.tensor([1, 3, 5], device=device))
 
-        data.evaluate_derived_fields(coords_2d.get_batch(idx))
+        data.evaluate_derived_fields(batch)
 
-        expected = torch.zeros(N_POINTS, device=device)
-        expected[idx] = coords_2d.get_coord("x")[idx].detach()
-        assert torch.equal(data.get_field("a").tensor(coords_2d).detach(), expected)
+        assert torch.equal(data.get_field_tensor("a", batch), batch.get_coord("x"))
+        with pytest.raises(ValueError, match="must be the active coords"):
+            data.get_field_tensor("a")
 
     def test_unset_primary_field_input_raises(self, coords_2d: Coords) -> None:
         def make_w(u: torch.Tensor, operators: Operators) -> torch.Tensor:
@@ -215,3 +232,23 @@ class TestDerivedFieldEvaluation:
 
         # Polar Laplacian of r^2 sin(theta) is 4 sin(theta) - sin(theta)
         assert torch.allclose(data.get_field_tensor("w", batch), 3 * torch.sin(theta))
+
+    def test_derivatives_of_a_field_set_on_other_coords_raise(
+        self, coords_2d: Coords, device: torch.device
+    ) -> None:
+        # u is set on the full coords, so it can be read on a batch, but its
+        # derivatives with respect to the batch coords would all be zero
+        def make_w(u: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return operators.d_dcoord(u, "x")
+
+        data = DataContainer(
+            coords=coords_2d,
+            primary_field_label_to_rank={"u": 0},
+            derived_field_label_to_rank={"w": 0},
+            equations=[Equation("w", make_w, {"w": 0})],
+        )
+        data.set_field_from_tensor("u", coords_2d.get_coord("x") ** 2)
+        batch = coords_2d.get_batch(torch.tensor([1, 4, 6], device=device))
+
+        with pytest.raises(ValueError, match="computed from the operators' coords"):
+            data.evaluate_derived_fields(batch)

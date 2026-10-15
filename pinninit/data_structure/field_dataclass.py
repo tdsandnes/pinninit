@@ -184,9 +184,6 @@ class Field:
         return coords.indices_in(self.coords)
 
     def _validate_inputs(self) -> None:
-        if self.label in self.coords.coord_labels:
-            raise ValueError(f"label '{self.label}' clashes with a coordinate label")
-
         dtypes = set()
         for label in self.component_labels:
             component = getattr(self, label)

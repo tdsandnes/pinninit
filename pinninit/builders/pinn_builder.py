@@ -123,9 +123,7 @@ def build_pinn(
             container.val_eval_context,
         ):
             for label, param in learnt_consts.items():
-                eval_context.output_data.set_const(
-                    label, param, coords=eval_context.coords
-                )
+                eval_context.output_data.set_const(label, param)
 
     # Neural network
     domains = [container.domain for container in loss_containers.values()]

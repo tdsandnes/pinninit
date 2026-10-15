@@ -68,6 +68,21 @@ class TestCartesian:
         with pytest.raises(ValueError, match="expects a scalar field"):
             operators.grad(coords_2d.geometric)
 
+    def test_tensor_not_computed_from_the_coords_raises(
+        self, coords_2d: Coords, device: torch.device
+    ) -> None:
+        idx = torch.tensor([1, 4, 6], device=device)
+        operators = Operators(coords_2d.get_batch(idx))
+        # Computed from the full coords, so not from the batch coords
+        f = coords_2d.get_coord("x")[idx] ** 2
+
+        with pytest.raises(ValueError, match="computed from the operators' coords"):
+            operators.d_dcoord(f, "x")
+        with pytest.raises(ValueError, match="computed from the operators' coords"):
+            operators.grad(f)
+        with pytest.raises(ValueError, match="computed from the operators' coords"):
+            operators.grad(f.detach())
+
     def test_div(self, coords_2d: Coords) -> None:
         operators = Operators(coords_2d)
         x, y = coords_2d.get_coord("x"), coords_2d.get_coord("y")

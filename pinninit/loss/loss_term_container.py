@@ -71,9 +71,8 @@ class LossTermContainer:
         output_tensor = model.evaluate(coords)
         idx = 0
         for field_label in model.output_field_labels:
-            # Get field from output_data to set n_components
-            field = eval_context.output_data.get_field(field_label)
-            n_components = len(field.component_labels)
+            field_class = eval_context.output_data.field_classes[field_label]
+            n_components = len(field_class.component_labels)
 
             # Set field based on NN output
             value = output_tensor[:, idx : idx + n_components]

@@ -94,11 +94,6 @@ class TestConstruction:
         with pytest.raises(TypeError, match="unexpected keyword"):
             field_class(label="f", coords=coords_2d, rank=2)  # type: ignore[arg-type]
 
-    def test_label_clashing_with_a_coord_label_raises(self, coords_2d: Coords) -> None:
-        field_class = make_field_dataclass(0, type(coords_2d))
-        with pytest.raises(ValueError, match="clashes with a coordinate label"):
-            field_class(label="x", coords=coords_2d)
-
     def test_components_of_different_dtypes_raise(
         self, coords_2d: Coords, device: torch.device
     ) -> None:

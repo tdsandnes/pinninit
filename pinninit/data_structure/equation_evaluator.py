@@ -81,9 +81,6 @@ class EquationEvaluator:
 
     def evaluate(self, coords: Coords) -> None:
         """Evaluate all equations in dependency order."""
-        # Ensure all primary fields are compatible with evaluation coordinates.
-        self.data_container.validate_eval_coords_primary_fields(coords)
-
         # Set operators
         operators = Operators(coords)
 

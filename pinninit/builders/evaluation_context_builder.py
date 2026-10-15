@@ -200,7 +200,7 @@ def _build_one_eval_context(
         const_configs=const_configs,
         equations=equations,
     )
-    populate_consts(output_dc, const_configs, coords)
+    populate_consts(output_dc, const_configs)
 
     # Make dataloader
     dataloader = make_dataloader(

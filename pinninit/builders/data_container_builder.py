@@ -40,7 +40,6 @@ def build_output_data_container(
 def populate_consts(
     data_container: DataContainer,
     const_configs: list[ConstConfig],
-    coords: Coords,
 ) -> None:
     """
     Set constant values on a DataContainer from ConstConfig.
@@ -51,13 +50,11 @@ def populate_consts(
         Container whose consts will be populated.
     const_configs:
         Configs with label and value for each constant.
-    coords:
-        The active coords to register for each constant.
     """
 
     for cfg in const_configs:
         if not cfg.learnable:
-            value = torch.tensor(cfg.value, device=coords.device)
-            data_container.set_const(cfg.label, value, coords=coords)
+            value = torch.tensor(cfg.value, device=data_container.device)
+            data_container.set_const(cfg.label, value)
         # Learnable constants are handled separately by the NN/trainer builder
         # since they need to be registered as nn.Parameters.
