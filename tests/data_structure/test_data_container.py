@@ -192,3 +192,26 @@ class TestDerivedFieldEvaluation:
         )
         with pytest.raises(ValueError, match="'u' has not been initialised"):
             data.evaluate_derived_fields()
+
+    def test_equation_with_derivatives_evaluated_on_a_batch(
+        self, coords_cylindrical: Coords, device: torch.device
+    ) -> None:
+        # As in training: u is computed from the batch coords, and an equation
+        # then takes its derivatives on the same batch
+        def make_w(u: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return operators.laplacian(u)
+
+        data = DataContainer(
+            coords=coords_cylindrical,
+            primary_field_label_to_rank={"u": 0},
+            derived_field_label_to_rank={"w": 0},
+            equations=[Equation("w", make_w, {"w": 0})],
+        )
+        batch = coords_cylindrical.get_batch(torch.tensor([1, 4, 6], device=device))
+        r, theta = batch.get_coord("r"), batch.get_coord("theta")
+
+        data.set_field_from_tensor("u", r**2 * torch.sin(theta), batch)
+        data.evaluate_derived_fields(batch)
+
+        # Polar Laplacian of r^2 sin(theta) is 4 sin(theta) - sin(theta)
+        assert torch.allclose(data.get_field_tensor("w", batch), 3 * torch.sin(theta))
