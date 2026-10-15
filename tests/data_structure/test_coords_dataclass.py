@@ -8,7 +8,7 @@ import pytest
 import torch
 
 from pinninit.data_structure.coords_dataclass import Coords, make_coords_dataclass
-from pinninit.geometry.coordinate_system import CoordSystem
+from pinninit.geometry.coordinate_system import CartesianCoords, CoordSystem
 from pinninit.geometry.domain import Domain
 
 from ..helpers import N_POINTS, make_coords
@@ -47,6 +47,36 @@ class TestConstruction:
         assert coords_spherical.internal_labels == ("x", "y", "z")
         assert coords_spherical.internal.shape == (N_POINTS, 3)
 
+    def test_labels_coord_system_and_device_are_set_on_the_class(
+        self, cartesian_2d: CoordSystem, device: torch.device
+    ) -> None:
+        coords_class = make_coords_dataclass({"y", "x", "t"}, cartesian_2d, device)
+
+        assert coords_class.coord_labels == ("t", "x", "y")
+        assert coords_class.geometric_labels == ("x", "y")
+        assert coords_class.internal_labels == ("t", "x", "y")
+        assert coords_class.coord_system is cartesian_2d
+        assert coords_class.device == device
+
+    def test_class_constants_cannot_be_passed_in(
+        self, cartesian_2d: CoordSystem, device: torch.device
+    ) -> None:
+        coords_class = make_coords_dataclass({"x", "y"}, cartesian_2d, device)
+        x = y = torch.zeros(3, device=device)
+        with pytest.raises(TypeError, match="unexpected keyword"):
+            coords_class(x=x, y=y, coord_labels=("x",))  # type: ignore[arg-type]
+
+    def test_float64_coords(
+        self, cylindrical_2d: CoordSystem, device: torch.device
+    ) -> None:
+        r = torch.linspace(0.5, 2.0, N_POINTS, dtype=torch.float64, device=device)
+        theta = torch.linspace(0.1, 1.5, N_POINTS, dtype=torch.float64, device=device)
+
+        coords = make_coords(cylindrical_2d, r=r, theta=theta)
+
+        assert coords.dtype == torch.float64
+        assert coords.internal.dtype == torch.float64
+
     def test_coords_are_frozen(self, coords_2d: Coords) -> None:
         with pytest.raises(FrozenInstanceError):
             coords_2d.x = torch.zeros(N_POINTS)  # type: ignore[attr-defined]
@@ -67,6 +97,20 @@ class TestConstruction:
         with pytest.raises(ValueError, match="requires geometric axes"):
             make_coords_dataclass({"x"}, cartesian_2d, device)
 
+    def test_reserved_coord_label_raises(
+        self, cartesian_2d: CoordSystem, device: torch.device
+    ) -> None:
+        # Coords already has an attribute called tensor
+        with pytest.raises(ValueError, match="reserved"):
+            make_coords_dataclass({"x", "y", "tensor"}, cartesian_2d, device)
+
+    def test_coord_system_on_another_device_raises(self, device: torch.device) -> None:
+        coord_system = CartesianCoords(
+            dim_geometric=2, coord_axes={"x", "y"}, device=torch.device("meta")
+        )
+        with pytest.raises(ValueError, match="coord_system is on meta"):
+            make_coords_dataclass({"x", "y"}, coord_system, device)
+
     def test_coords_of_different_lengths_raise(
         self, cartesian_2d: CoordSystem, device: torch.device
     ) -> None:
@@ -84,6 +128,24 @@ class TestConstruction:
             coords_class(
                 x=torch.zeros(3, 2, device=device), y=torch.zeros(3, device=device)
             )
+
+    def test_coords_of_different_dtypes_raise(
+        self, cartesian_2d: CoordSystem, device: torch.device
+    ) -> None:
+        coords_class = make_coords_dataclass({"x", "y"}, cartesian_2d, device)
+        x = torch.zeros(3, dtype=torch.float32, device=device)
+        y = torch.zeros(3, dtype=torch.float64, device=device)
+        with pytest.raises(ValueError, match="same dtype"):
+            coords_class(x=x, y=y)
+
+    def test_integer_coord_raises(
+        self, cartesian_2d: CoordSystem, device: torch.device
+    ) -> None:
+        coords_class = make_coords_dataclass({"x", "y"}, cartesian_2d, device)
+        x = torch.zeros(3, dtype=torch.long, device=device)
+        y = torch.zeros(3, device=device)
+        with pytest.raises(TypeError, match="floating point"):
+            coords_class(x=x, y=y)
 
 
 class TestInternalCoords:

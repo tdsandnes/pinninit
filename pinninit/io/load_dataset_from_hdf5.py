@@ -6,7 +6,6 @@ import h5py
 import torch
 
 from ..config.config import DatasetConfig
-from ..data_structure.coords_dataclass import get_coords_class_default
 from ..data_structure.field_dataclass import (
     generate_tensor_component_labels,
 )
@@ -18,7 +17,6 @@ if TYPE_CHECKING:
 def load_coords_from_hdf5(
     dataset_config: DatasetConfig,
     role: str,
-    coord_labels: tuple[str, ...],
     coords_class: type[Coords],
 ) -> Coords:
     """
@@ -33,8 +31,6 @@ def load_coords_from_hdf5(
         Config object describing the dataset (label, file path, etc.).
     role:
         Split identifier inside the HDF5 file, e.g. "train" or "val".
-    coord_labels:
-        All coordinate labels expected on the returned Coords object.
     coords_class:
         The Coords dataclass produced by make_coords_dataclass.
 
@@ -71,18 +67,17 @@ def load_coords_from_hdf5(
 
         coords_group = role_group["Coords"]
         coords_dict: dict[str, torch.Tensor] = {}
-        for label in coord_labels:
+        for label in coords_class.coord_labels:
             if label not in coords_group:
                 raise KeyError(
                     f"'{label}' not found in '{dataset_label}/{role}/Coords' "
                     f"in '{file_path}'."
                 )
             data = coords_group[label][()]
-            device = get_coords_class_default(coords_class, "device")
             coords_dict[label] = torch.tensor(
                 data,
                 dtype=torch.get_default_dtype(),
-                device=device,
+                device=coords_class.device,
                 requires_grad=True,
             )
 

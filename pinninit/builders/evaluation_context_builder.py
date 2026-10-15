@@ -11,7 +11,6 @@ from ..config.config import (
     LossTermConfig,
 )
 from ..data_structure.batching import make_dataloader
-from ..data_structure.coords_dataclass import get_coords_class_default
 from ..data_structure.equation import Equation
 from ..data_structure.field_dataclass import make_field_dataclass
 from ..differential_equations.operators import Operators
@@ -85,8 +84,6 @@ def build_evaluation_contexts(
     tuple[EvaluationContext, EvaluationContext]
         (train_eval_context, val_eval_context)
     """
-    coord_labels = get_coords_class_default(coords_class, "coord_labels")
-
     # Determine which fields to load from file (only input fields are in the HDF5)
     input_field_label_to_rank = fields_config.input_field_label_to_rank
 
@@ -100,7 +97,6 @@ def build_evaluation_contexts(
     train_coords = load_coords_from_hdf5(
         dataset_config=dataset_config,
         role=dataset_config.train_label,
-        coord_labels=coord_labels,
         coords_class=coords_class,
     )
     # Physics losses use collocation points only; no input fields to load
@@ -120,7 +116,6 @@ def build_evaluation_contexts(
     val_coords = load_coords_from_hdf5(
         dataset_config=dataset_config,
         role=dataset_config.val_label,
-        coord_labels=coord_labels,
         coords_class=coords_class,
     )
     val_input_fields = (
