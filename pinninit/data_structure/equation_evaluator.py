@@ -92,5 +92,5 @@ class EquationEvaluator:
 
             for label, tensor in result.items():
                 self.data_container.set_field_from_tensor(
-                    label, tensor, coords, detach_stale_values=True, allow_derived=True
+                    label, tensor, coords, allow_derived=True
                 )

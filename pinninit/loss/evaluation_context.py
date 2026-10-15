@@ -75,12 +75,7 @@ class EvaluationContext:
             )
 
         # Update Field
-        self.raw_point_weights.update_from_tensor(
-            new_tensor=new_weights,
-            coords=coords,
-            detach_stale_values=True,
-            detach_new_values=True,
-        )
+        self.raw_point_weights.update_from_tensor(new_weights.detach(), coords)
 
     def get_raw_point_weights(self, coords: Coords | None = None) -> torch.Tensor:
         """

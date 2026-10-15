@@ -271,7 +271,7 @@ class BalancedResidualDecayRateC25(TrainerModule):
 
         # Eq. 28 (Eq. 10 with effective smoothing when enabled).
         new_r4 = bc_eff * prev_r4 + (1.0 - bc_eff) * r4
-        r4_field.update_from_tensor(new_r4, coords=batch_coords, detach_new_values=True)
+        r4_field.update_from_tensor(new_r4.detach(), coords=batch_coords)
         trainer.model.register_buffer(
             f"brdr_r4_bar_{container.label}", r4_field.get_component("value")
         )

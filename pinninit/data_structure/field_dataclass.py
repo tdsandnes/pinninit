@@ -96,8 +96,6 @@ class Field:
         self,
         new_components: dict[str, torch.Tensor],
         coords: Coords | None = None,
-        detach_stale_values: bool = True,
-        detach_new_values: bool = False,
     ) -> None:
         """Update field from dict of components in form
         dict[component label: tensor with shape (n_points,)]
@@ -119,20 +117,17 @@ class Field:
         new_tensor = torch.stack(
             [new_components[label] for label in self.component_labels], dim=1
         )
-        self.update_from_component_tensor(
-            new_tensor, coords, detach_stale_values, detach_new_values
-        )
+        self.update_from_component_tensor(new_tensor, coords)
 
     def update_from_component_tensor(
         self,
         new_tensor: torch.Tensor,
         coords: Coords | None = None,
-        detach_stale_values: bool = True,
-        detach_new_values: bool = False,
     ) -> None:
         """Update the field from a component tensor of shape (n_points, n_components).
 
-        If coords is a batch, only the batch rows are updated.
+        If coords is a batch, only the batch rows are updated, and the values
+        in all other rows are detached from the autograd graph.
         """
         coords = self.coords if coords is None else coords
 
@@ -154,16 +149,11 @@ class Field:
                 f"has dtype {self.dtype}"
             )
 
-        if detach_new_values:
-            new_tensor = new_tensor.detach()
-
         for i, label in enumerate(self.component_labels):
             if indices is None:
                 setattr(self, label, new_tensor[:, i])
             else:
-                component = getattr(self, label)
-                if detach_stale_values:
-                    component = component.detach()
+                component = getattr(self, label).detach()
                 component[indices] = new_tensor[:, i]
                 setattr(self, label, component)
 
@@ -171,8 +161,6 @@ class Field:
         self,
         new_tensor: torch.Tensor,
         coords: Coords | None = None,
-        detach_stale_values: bool = True,
-        detach_new_values: bool = False,
     ) -> None:
         """Update the field from a tensor of shape
         (n_points, n_geometric, ..., n_geometric)
@@ -186,10 +174,7 @@ class Field:
             )
 
         self.update_from_component_tensor(
-            new_tensor.reshape(coords.n_points, -1),
-            coords,
-            detach_stale_values,
-            detach_new_values,
+            new_tensor.reshape(coords.n_points, -1), coords
         )
 
     def _indices(self, coords: Coords | None) -> torch.Tensor | None:

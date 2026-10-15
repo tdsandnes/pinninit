@@ -90,11 +90,10 @@ class DataContainer:
         self,
         label: str,
         coords: Coords | None = None,
-        enforce_ancestry: bool = True,
     ) -> torch.Tensor:
         coords = coords or self.coords
         active_coords = self._get_active_coords(label)
-        self._validate_eval_coords(label, active_coords, coords, enforce_ancestry)
+        self._validate_eval_coords(label, active_coords, coords)
         return self.get_field(label).tensor(coords)
 
     def get_field_component(
@@ -102,33 +101,30 @@ class DataContainer:
         field_label: str,
         component_label: str,
         coords: Coords | None = None,
-        enforce_ancestry: bool = True,
     ) -> torch.Tensor:
         coords = coords or self.coords
         active_coords = self._get_active_coords(field_label)
-        self._validate_eval_coords(field_label, active_coords, coords, enforce_ancestry)
+        self._validate_eval_coords(field_label, active_coords, coords)
         return self.get_field(field_label).get_component(component_label, coords)
 
     def get_field_component_tensor(
         self,
         label: str,
         coords: Coords | None = None,
-        enforce_ancestry: bool = True,
     ) -> torch.Tensor:
         coords = coords or self.coords
         active_coords = self._get_active_coords(label)
-        self._validate_eval_coords(label, active_coords, coords, enforce_ancestry)
+        self._validate_eval_coords(label, active_coords, coords)
         return self.get_field(label).component_tensor(coords)
 
     def get_const(
         self,
         label: str,
         coords: Coords | None = None,
-        enforce_ancestry: bool = True,
     ) -> torch.Tensor:
         coords = coords or self.coords
         active_coords = self._get_active_coords(label)
-        self._validate_eval_coords(label, active_coords, coords, enforce_ancestry)
+        self._validate_eval_coords(label, active_coords, coords)
 
         value = self.consts[label]
         if value is None:
@@ -154,7 +150,7 @@ class DataContainer:
 
         # Update field
         coords = coords or self.coords
-        self._validate_eval_coords(label, self.coords, coords, enforce_ancestry=True)
+        self._validate_eval_coords(label, self.coords, coords)
         update(self.get_field(label), coords)
 
         # Update active coords for the field
@@ -172,16 +168,13 @@ class DataContainer:
         label: str,
         tensor: torch.Tensor,
         coords: Coords | None = None,
-        detach_stale_values: bool = True,
         allow_derived: bool = False,
     ) -> None:
         self._set_field(
             label,
             coords,
             allow_derived,
-            lambda field, c: field.update_from_tensor(
-                tensor, coords=c, detach_stale_values=detach_stale_values
-            ),
+            lambda field, c: field.update_from_tensor(tensor, coords=c),
         )
 
     def set_field_from_component_tensor(
@@ -189,7 +182,6 @@ class DataContainer:
         label: str,
         component_tensor: torch.Tensor,
         coords: Coords | None = None,
-        detach_stale_values: bool = True,
         allow_derived: bool = False,
     ) -> None:
         self._set_field(
@@ -197,7 +189,7 @@ class DataContainer:
             coords,
             allow_derived,
             lambda field, c: field.update_from_component_tensor(
-                component_tensor, coords=c, detach_stale_values=detach_stale_values
+                component_tensor, coords=c
             ),
         )
 
@@ -206,16 +198,13 @@ class DataContainer:
         label: str,
         component_dict: dict[str, torch.Tensor],
         coords: Coords | None = None,
-        detach_stale_values: bool = True,
         allow_derived: bool = False,
     ) -> None:
         self._set_field(
             label,
             coords,
             allow_derived,
-            lambda field, c: field.update_from_component_dict(
-                component_dict, coords=c, detach_stale_values=detach_stale_values
-            ),
+            lambda field, c: field.update_from_component_dict(component_dict, coords=c),
         )
 
     def set_const(
@@ -234,7 +223,7 @@ class DataContainer:
 
         # Update active coords for the constant
         coords = coords or self.coords
-        self._validate_eval_coords(label, self.coords, coords, enforce_ancestry=True)
+        self._validate_eval_coords(label, self.coords, coords)
         self.consts_active_coords[label] = coords
 
     def evaluate_derived_fields(self, coords: Coords | None = None) -> None:
@@ -269,14 +258,9 @@ class DataContainer:
         label: str,
         active_coords: Coords | None,
         coords: Coords,
-        enforce_ancestry: bool,
     ) -> None:
         if active_coords is None:
             raise ValueError(f"'{label}' has not been initialised.")
-
-        # Bypasses the tree search if not enforcing coord ancestry
-        if not enforce_ancestry:
-            return
 
         if not active_coords.is_ancestor_of(coords):
             raise ValueError(
