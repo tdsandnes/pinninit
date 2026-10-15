@@ -9,6 +9,8 @@ from pinninit.data_structure.coords_dataclass import Coords
 from pinninit.differential_equations.operators import Operators
 from pinninit.geometry.coordinate_system import CoordSystem
 
+from ..helpers import N_POINTS, make_coords
+
 
 def test_metric_tensor_comes_from_the_coords(
     cartesian_2d: CoordSystem, coords_2d: Coords
@@ -197,6 +199,45 @@ class TestSpherical:
 
         expected = torch.stack([-2 / r**2, zeros, zeros], dim=1)
         assert torch.allclose(operators.vector_laplacian(e_r), expected, atol=1e-5)
+
+
+class TestPrecision:
+    def test_float64_coords_keep_float64_precision(
+        self, cylindrical_2d: CoordSystem, device: torch.device
+    ) -> None:
+        # The default dtype is float32, so this catches anything computed at the
+        # default dtype rather than the coords' dtype
+        r = torch.linspace(0.5, 2.0, N_POINTS, dtype=torch.float64, device=device)
+        theta = torch.linspace(0.1, 1.5, N_POINTS, dtype=torch.float64, device=device)
+        coords = make_coords(
+            cylindrical_2d, r=r.requires_grad_(), theta=theta.requires_grad_()
+        )
+        operators = Operators(coords)
+        r = coords.get_coord("r")
+        zeros, ones = torch.zeros_like(r), torch.ones_like(r)
+        e_r = torch.stack([ones, zeros], dim=1)
+
+        laplacian = operators.laplacian(torch.log(r))
+        vector_laplacian = operators.vector_laplacian(e_r)
+
+        assert torch.allclose(laplacian, zeros, atol=1e-12)
+        expected = torch.stack([-1 / r**2, zeros], dim=1)
+        assert torch.allclose(vector_laplacian, expected, rtol=0, atol=1e-12)
+
+    def test_float64_cartesian_vector_operators(
+        self, cartesian_2d: CoordSystem, device: torch.device
+    ) -> None:
+        x = torch.linspace(0.1, 0.9, N_POINTS, dtype=torch.float64, device=device)
+        y = torch.linspace(0.2, 0.8, N_POINTS, dtype=torch.float64, device=device)
+        coords = make_coords(cartesian_2d, x=x.requires_grad_(), y=y.requires_grad_())
+        operators = Operators(coords)
+        x, y = coords.get_coord("x"), coords.get_coord("y")
+        v = torch.stack([x**2, y**2], dim=1)
+
+        result = operators.v_dot_grad(v, v)
+
+        assert result.dtype == torch.float64
+        assert torch.allclose(result, torch.stack([2 * x**3, 2 * y**3], dim=1))
 
 
 class TestBatches:

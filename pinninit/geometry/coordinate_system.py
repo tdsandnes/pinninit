@@ -143,12 +143,20 @@ class CoordSystem(ABC):
     ) -> torch.Tensor:
         if axis_label in self.axes_labels_selected:
             return geometric_coords[axis_label]
-        elif self.fixed_axes is not None and axis_label in self.fixed_axes:
-            return torch.tensor(self.fixed_axes[axis_label], device=self.device)
+
+        if self.fixed_axes is not None and axis_label in self.fixed_axes:
+            value = self.fixed_axes[axis_label]
         elif default is not None:
-            return torch.tensor(default, device=self.device)
+            value = default
         else:
             raise ValueError(f"Missing required axis: {axis_label}")
+        return torch.tensor(
+            value, dtype=self._dtype(geometric_coords), device=self.device
+        )
+
+    def _dtype(self, geometric_coords: dict[str, torch.Tensor]) -> torch.dtype:
+        """The dtype of the given coords, so that results keep their precision."""
+        return next(iter(geometric_coords.values())).dtype
 
     def _validate_selected_dimensions(self, dim_geometric: int) -> None:
         # Check value of dim_geometric
@@ -266,7 +274,11 @@ class CartesianCoords(CoordSystem):
         self, n_points: int, geometric_coords: dict[str, torch.Tensor]
     ) -> torch.Tensor:
         # In Cartesian the basis vectors are already the Cartesian axes
-        rotation = torch.eye(self.metadata.max_dim_geometric, device=self.device)
+        rotation = torch.eye(
+            self.metadata.max_dim_geometric,
+            dtype=self._dtype(geometric_coords),
+            device=self.device,
+        )
         rotation = rotation.expand(n_points, -1, -1)
 
         # Only use the columns of the axes included in geometric_coords
@@ -302,7 +314,9 @@ class CylindricalCoords(CoordSystem):
 
         # Construct metric corrsponding to max_dim_geometric
         diag = torch.ones(
-            (n_points, self.metadata.max_dim_geometric), device=self.device
+            (n_points, self.metadata.max_dim_geometric),
+            dtype=self._dtype(geometric_coords),
+            device=self.device,
         )
         diag[:, 1] = r**2  # theta-theta component
 
@@ -407,7 +421,9 @@ class CylindricalCoords(CoordSystem):
         sin_theta = torch.sin(theta)
 
         # Each column is a unit basis vector, written in Cartesian (x, y, z)
-        rotation = torch.zeros((n_points, 3, 3), device=self.device)
+        rotation = torch.zeros(
+            (n_points, 3, 3), dtype=self._dtype(geometric_coords), device=self.device
+        )
 
         # e_r = (cos(theta), sin(theta), 0)
         rotation[:, 0, 0] = cos_theta
@@ -454,7 +470,9 @@ class SphericalCoords(CoordSystem):
 
         # Construct metric corrsponding to max_dim_geometric
         diag = torch.ones(
-            (n_points, self.metadata.max_dim_geometric), device=self.device
+            (n_points, self.metadata.max_dim_geometric),
+            dtype=self._dtype(geometric_coords),
+            device=self.device,
         )
         diag[:, 1] = r**2  # theta-theta component
         diag[:, 2] = r**2 * torch.sin(theta) ** 2  # phi-phi component
@@ -599,7 +617,9 @@ class SphericalCoords(CoordSystem):
         sin_phi, cos_phi = torch.sin(phi), torch.cos(phi)
 
         # Each column is a unit basis vector, written in Cartesian (x, y, z)
-        rotation = torch.zeros((n_points, 3, 3), device=self.device)
+        rotation = torch.zeros(
+            (n_points, 3, 3), dtype=self._dtype(geometric_coords), device=self.device
+        )
 
         # e_r = (sin(theta)cos(phi), sin(theta)sin(phi), cos(theta))
         rotation[:, 0, 0] = sin_theta * cos_phi
