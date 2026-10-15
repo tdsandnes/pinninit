@@ -4,9 +4,9 @@ from collections import Counter
 
 import torch
 
+from ..differential_equations.operators import Operators
 from .coords_dataclass import Coords
-from .equation import Equation
-from .equation_evaluator import EquationEvaluator
+from .equation import Equation, sort_equations
 from .field_dataclass import Field, make_field_dataclass
 
 
@@ -59,8 +59,16 @@ class DataContainer:
         # Constant values, None until set
         self.consts: dict[str, torch.Tensor | None] = dict.fromkeys(const_labels)
 
-        self.equations = equations or []
-        self.equation_evaluator = EquationEvaluator(self)
+        # Equations that compute the derived fields, sorted so each equation comes
+        # after the equations it depends on
+        self.equations = sort_equations(equations or [])
+        for equation in self.equations:
+            not_derived = set(equation.output_labels) - self.derived_field_labels
+            if not_derived:
+                raise ValueError(
+                    f"Equation '{equation.label}' outputs {sorted(not_derived)}, "
+                    "which are not derived fields."
+                )
 
     @property
     def field_labels(self) -> set[str]:
@@ -144,7 +152,11 @@ class DataContainer:
     def evaluate_derived_fields(self, coords: Coords | None = None) -> None:
         """Evaluate the equations at coords and store the results."""
         coords = self.coords if coords is None else coords
-        self.equation_evaluator.evaluate(coords)
+        operators = Operators(coords)
+        for equation in self.equations:
+            outputs = equation.evaluate(self, coords, operators)
+            for label, tensor in outputs.items():
+                self.set_field_from_tensor(label, tensor, coords, allow_derived=True)
 
     def _new_field(
         self, label: str, coords: Coords | None, allow_derived: bool

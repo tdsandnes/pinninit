@@ -166,7 +166,7 @@ class TestDerivedFieldEvaluation:
         def make_b(a: torch.Tensor, operators: Operators) -> torch.Tensor:
             return a
 
-        with pytest.raises(ValueError, match="Cyclic equation dependency"):
+        with pytest.raises(ValueError, match="nodes are in a cycle"):
             DataContainer(
                 coords=coords_2d,
                 primary_field_label_to_rank={},
@@ -209,6 +209,47 @@ class TestDerivedFieldEvaluation:
         )
         with pytest.raises(ValueError, match="'u' has not been initialised"):
             data.evaluate_derived_fields()
+
+    def test_equation_outputs_must_be_derived_fields(self, coords_2d: Coords) -> None:
+        def make_u(x: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return x
+
+        with pytest.raises(ValueError, match="not derived fields"):
+            DataContainer(
+                coords=coords_2d,
+                primary_field_label_to_rank={"u": 0},
+                equations=[Equation("u", make_u, {"u": 0})],
+            )
+
+    def test_field_output_by_two_equations_raises(self, coords_2d: Coords) -> None:
+        def make_a(x: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return x
+
+        with pytest.raises(ValueError, match="output by more than one equation"):
+            DataContainer(
+                coords=coords_2d,
+                primary_field_label_to_rank={},
+                derived_field_label_to_rank={"a": 0},
+                equations=[
+                    Equation("first", make_a, {"a": 0}),
+                    Equation("second", make_a, {"a": 0}),
+                ],
+            )
+
+    def test_equation_labels_must_be_unique(self, coords_2d: Coords) -> None:
+        def make_a(x: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return x
+
+        with pytest.raises(ValueError, match="Equation labels must be unique"):
+            DataContainer(
+                coords=coords_2d,
+                primary_field_label_to_rank={},
+                derived_field_label_to_rank={"a": 0, "b": 0},
+                equations=[
+                    Equation("same", make_a, {"a": 0}),
+                    Equation("same", make_a, {"b": 0}),
+                ],
+            )
 
     def test_equation_with_derivatives_evaluated_on_a_batch(
         self, coords_cylindrical: Coords, device: torch.device

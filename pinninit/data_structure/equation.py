@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 from dataclasses import dataclass, field
+from graphlib import TopologicalSorter
 from typing import TYPE_CHECKING
 
 import torch
@@ -100,3 +101,31 @@ class Equation:
             else:
                 raise KeyError(f"Label '{label}' not found in data container.")
         return inputs
+
+
+def sort_equations(equations: list[Equation]) -> list[Equation]:
+    """Order equations so each one comes after the equations it depends on."""
+    equations_by_label = {equation.label: equation for equation in equations}
+    if len(equations_by_label) != len(equations):
+        raise ValueError("Equation labels must be unique.")
+
+    producers: dict[str, Equation] = {}
+    for equation in equations:
+        for output_label in equation.output_labels:
+            if output_label in producers:
+                raise ValueError(
+                    f"Field '{output_label}' is output by more than one equation."
+                )
+            producers[output_label] = equation
+
+    dependencies = {
+        equation.label: {
+            producers[label].label
+            for label in equation.input_labels
+            if label in producers
+        }
+        for equation in equations
+    }
+
+    order = TopologicalSorter(dependencies).static_order()
+    return [equations_by_label[label] for label in order]
