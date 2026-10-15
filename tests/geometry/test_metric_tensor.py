@@ -14,15 +14,6 @@ from pinninit.geometry.metric_tensor import (
 )
 
 
-def make_device() -> torch.device:
-    return torch.device("cpu")
-
-
-@pytest.fixture
-def device() -> torch.device:
-    return make_device()
-
-
 # IdentityMetricTensor
 class TestIdentityMetricTensor:
     def test_sqrt_det(self, device: torch.device) -> None:

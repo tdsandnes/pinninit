@@ -4,106 +4,21 @@ Unit tests for differential_equations/operators.py.
 
 from __future__ import annotations
 
-import pytest
 import torch
 
-from pinninit.data_structure.coords_dataclass import (
-    Coords,
-    make_coords_dataclass,
-)
+from pinninit.data_structure.coords_dataclass import Coords
 from pinninit.differential_equations.operators import Operators
 from pinninit.geometry.coordinate_system import CoordSystem
-from tests.data_structure.fixtures import (
-    N_POINTS,
-    make_cartesian_1d,
-    make_cartesian_2d,
-    make_cylindrical_2d,
-    make_device,
-    make_r_theta_2d,
-    make_x_1d,
-    make_xy_2d,
-)
-
-
-@pytest.fixture
-def device() -> torch.device:
-    return make_device()
-
-
-@pytest.fixture
-def n_points() -> int:
-    return N_POINTS
-
-
-@pytest.fixture
-def cartesian_1d(device: torch.device) -> CoordSystem:
-    return make_cartesian_1d(device)
-
-
-@pytest.fixture
-def cartesian_2d(device: torch.device) -> CoordSystem:
-    return make_cartesian_2d(device)
-
-
-@pytest.fixture
-def cylindrical_2d(device: torch.device) -> CoordSystem:
-    return make_cylindrical_2d(device)
-
-
-@pytest.fixture
-def x_1d(device: torch.device) -> torch.Tensor:
-    return make_x_1d(device)
-
-
-@pytest.fixture
-def xy_2d(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
-    return make_xy_2d(device)
-
-
-@pytest.fixture
-def r_theta_2d(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
-    return make_r_theta_2d(device)
-
-
-# Helpers
-def make_coords_cartesian_1d(coord_system: CoordSystem, x: torch.Tensor) -> Coords:
-    coords_class = make_coords_dataclass(
-        coord_labels={"x"}, coord_system=coord_system, device=x.device
-    )
-    return coords_class(x=x)
-
-
-def make_coords_cartesian_2d(
-    coord_system: CoordSystem, x: torch.Tensor, y: torch.Tensor
-) -> Coords:
-    coords_class = make_coords_dataclass(
-        coord_labels={"x", "y"},
-        coord_system=coord_system,
-        device=x.device,
-    )
-    return coords_class(x=x, y=y)
-
-
-def make_coords_cylindrical_2d(
-    coord_system: CoordSystem, r: torch.Tensor, theta: torch.Tensor
-) -> Coords:
-    coords_class = make_coords_dataclass(
-        coord_labels={"r", "theta"},
-        coord_system=coord_system,
-        device=r.device,
-    )
-    return coords_class(r=r, theta=theta)
 
 
 class TestOperatorsConstruction:
     def test_initialises_metric_tensor_from_coords(
         self,
         cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_2d: Coords,
         device: torch.device,
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        coords = coords_2d
         operators = Operators(coords)
 
         assert operators.coords is coords
@@ -117,11 +32,9 @@ class TestOperatorsConstruction:
 class TestCartesianDerivatives:
     def test_d_dcoord_returns_elementwise_derivative(
         self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_2d: Coords,
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        coords = coords_2d
         operators = Operators(coords)
 
         x = coords.get_coord("x")
@@ -136,11 +49,9 @@ class TestCartesianDerivatives:
 
     def test_d_dcoord_vector_field(
         self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_2d: Coords,
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        coords = coords_2d
         operators = Operators(coords)
 
         x = coords.get_coord("x")
@@ -169,11 +80,9 @@ class TestCartesianDerivatives:
 
     def test_d_dcoord_rank_two_tensor(
         self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_2d: Coords,
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        coords = coords_2d
         operators = Operators(coords)
 
         x = coords.get_coord("x")
@@ -202,11 +111,9 @@ class TestCartesianDerivatives:
 
     def test_contravariant_grad_and_grad_match_cartesian_gradient(
         self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_2d: Coords,
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        coords = coords_2d
         operators = Operators(coords)
 
         geometric = coords.geometric
@@ -221,11 +128,9 @@ class TestCartesianDerivatives:
 
     def test_divergence_of_cartesian_vector_field(
         self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_2d: Coords,
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        coords = coords_2d
         operators = Operators(coords)
 
         x = coords.get_coord("x")
@@ -239,12 +144,10 @@ class TestCartesianDerivatives:
 
     def test_laplacian_of_quadratic_cartesian_scalar(
         self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_2d: Coords,
         device: torch.device,
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        coords = coords_2d
         operators = Operators(coords)
 
         geometric = coords.geometric
@@ -258,11 +161,9 @@ class TestCartesianDerivatives:
 
     def test_laplacian_matches_div_grad(
         self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_2d: Coords,
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        coords = coords_2d
         operators = Operators(coords)
 
         x = coords.get_coord("x")
@@ -277,11 +178,9 @@ class TestCartesianDerivatives:
 
     def test_vector_laplacian_applies_componentwise(
         self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_2d: Coords,
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        coords = coords_2d
         operators = Operators(coords)
 
         geometric = coords.geometric
@@ -301,11 +200,9 @@ class TestCartesianDerivatives:
 
     def test_v_dot_grad_cartesian_vector_field(
         self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_2d: Coords,
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        coords = coords_2d
         operators = Operators(coords)
 
         geometric = coords.geometric
@@ -323,11 +220,9 @@ class TestCartesianDerivatives:
 class TestCylindricalDerivatives:
     def test_cylindrical_contravariant_and_physical_gradient(
         self,
-        cylindrical_2d: CoordSystem,
-        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_cylindrical: Coords,
     ) -> None:
-        r, theta = r_theta_2d
-        coords = make_coords_cylindrical_2d(cylindrical_2d, r, theta)
+        coords = coords_cylindrical
         operators = Operators(coords)
 
         geometric = coords.geometric
@@ -355,11 +250,9 @@ class TestCylindricalDerivatives:
 
     def test_cylindrical_laplacian_matches_div_grad(
         self,
-        cylindrical_2d: CoordSystem,
-        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_cylindrical: Coords,
     ) -> None:
-        r, theta = r_theta_2d
-        coords = make_coords_cylindrical_2d(cylindrical_2d, r, theta)
+        coords = coords_cylindrical
         operators = Operators(coords)
 
         r = coords.get_coord("r")
@@ -374,11 +267,9 @@ class TestCylindricalDerivatives:
 
     def test_laplacian_log_r_is_zero(
         self,
-        cylindrical_2d: CoordSystem,
-        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_cylindrical: Coords,
     ) -> None:
-        r, theta = r_theta_2d
-        coords = make_coords_cylindrical_2d(cylindrical_2d, r, theta)
+        coords = coords_cylindrical
         operators = Operators(coords)
 
         r = coords.get_coord("r")
@@ -391,11 +282,9 @@ class TestCylindricalDerivatives:
 
     def test_v_dot_grad_recovers_centripetal_acceleration(
         self,
-        cylindrical_2d: CoordSystem,
-        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_cylindrical: Coords,
     ) -> None:
-        r, theta = r_theta_2d
-        coords = make_coords_cylindrical_2d(cylindrical_2d, r, theta)
+        coords = coords_cylindrical
         operators = Operators(coords)
 
         r = coords.get_coord("r")
@@ -427,11 +316,9 @@ class TestCylindricalDerivatives:
 
     def test_vector_laplacian_recovers_basis_vector_curvature(
         self,
-        cylindrical_2d: CoordSystem,
-        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_cylindrical: Coords,
     ) -> None:
-        r, theta = r_theta_2d
-        coords = make_coords_cylindrical_2d(cylindrical_2d, r, theta)
+        coords = coords_cylindrical
         operators = Operators(coords)
 
         r = coords.get_coord("r")
@@ -465,11 +352,9 @@ class TestCylindricalDerivatives:
 class TestBatchedCoordinates:
     def test_grad_matches_root_result_on_batch(
         self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_2d: Coords,
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        coords = coords_2d
         root_ops = Operators(coords)
         root_x = coords.get_coord("x")
         root_y = coords.get_coord("y")
@@ -477,7 +362,7 @@ class TestBatchedCoordinates:
         expected = root_ops.grad(f)
 
         # Batch
-        idx = torch.tensor([0, 2, 5, 7, 9], device=x.device)
+        idx = torch.tensor([0, 2, 5, 7, 9], device=coords.device)
         batch_coords = coords.get_batch(idx)
         batch_x = batch_coords.get_coord("x")
         batch_y = batch_coords.get_coord("y")
@@ -491,11 +376,9 @@ class TestBatchedCoordinates:
 
     def test_divergence_matches_root_result_on_batch(
         self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_2d: Coords,
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        coords = coords_2d
         root_ops = Operators(coords)
         root_x = coords.get_coord("x")
         root_y = coords.get_coord("y")
@@ -503,7 +386,7 @@ class TestBatchedCoordinates:
         expected = root_ops.div(vector)
 
         # Batch
-        idx = torch.tensor([1, 4, 6, 8], device=x.device)
+        idx = torch.tensor([1, 4, 6, 8], device=coords.device)
         batch_coords = coords.get_batch(idx)
         batch_x = batch_coords.get_coord("x")
         batch_y = batch_coords.get_coord("y")
@@ -520,11 +403,9 @@ class TestBatchedCoordinates:
 
     def test_laplacian_matches_root_result_on_batch(
         self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_2d: Coords,
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        coords = coords_2d
         root_ops = Operators(coords)
         root_x = coords.get_coord("x")
         root_y = coords.get_coord("y")
@@ -532,7 +413,7 @@ class TestBatchedCoordinates:
         expected = root_ops.laplacian(f)
 
         # Batch
-        idx = torch.tensor([0, 3, 6, 9], device=x.device)
+        idx = torch.tensor([0, 3, 6, 9], device=coords.device)
         batch_coords = coords.get_batch(idx)
         batch_x = batch_coords.get_coord("x")
         batch_y = batch_coords.get_coord("y")
@@ -546,11 +427,9 @@ class TestBatchedCoordinates:
 
     def test_nested_batch_grad_matches_root_result(
         self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_2d: Coords,
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        coords = coords_2d
         root_ops = Operators(coords)
         root_x = coords.get_coord("x")
         root_y = coords.get_coord("y")
@@ -558,11 +437,11 @@ class TestBatchedCoordinates:
         expected = root_ops.grad(f)
 
         # batch 1
-        idx1 = torch.tensor([0, 2, 4, 6, 8], device=x.device)
+        idx1 = torch.tensor([0, 2, 4, 6, 8], device=coords.device)
         batch1 = coords.get_batch(idx1)
 
         # batch 2
-        idx2 = torch.tensor([1, 3], device=x.device)
+        idx2 = torch.tensor([1, 3], device=coords.device)
         batch2 = batch1.get_batch(idx2)
         batch2_x = batch2.get_coord("x")
         batch2_y = batch2.get_coord("y")
@@ -580,15 +459,14 @@ class TestBatchedCoordinates:
 class TestCoordinateGraphStructure:
     def test_d_dcoord_of_internal_coordinate(
         self,
-        cylindrical_2d: CoordSystem,
-        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_cylindrical: Coords,
     ) -> None:
-        r, theta = r_theta_2d
-        coords = make_coords_cylindrical_2d(cylindrical_2d, r, theta)
+        coords = coords_cylindrical
+        r, theta = coords.get_coord("r"), coords.get_coord("theta")
         operators = Operators(coords)
 
         # Make linear combination of internal coords
-        a = torch.tensor([1.0, 2.0], device=r.device)
+        a = torch.tensor([1.0, 2.0], device=coords.device)
         f = (coords.internal * a).sum(dim=1)
         dx_dr = operators.d_dcoord(f, "r")
         dx_dtheta = operators.d_dcoord(f, "theta")
@@ -602,15 +480,14 @@ class TestCoordinateGraphStructure:
 
     def test_grad_of_internal_coordinate(
         self,
-        cylindrical_2d: CoordSystem,
-        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_cylindrical: Coords,
     ) -> None:
-        r, theta = r_theta_2d
-        coords = make_coords_cylindrical_2d(cylindrical_2d, r, theta)
+        coords = coords_cylindrical
+        theta = coords.get_coord("theta")
         operators = Operators(coords)
 
         # Make linear combination of internal coords
-        a = torch.tensor([1.0, 2.0], device=r.device)
+        a = torch.tensor([1.0, 2.0], device=coords.device)
         f = (coords.internal * a).sum(dim=1)
         grad_f = operators.grad(f)
         expected = torch.stack(
@@ -625,11 +502,9 @@ class TestCoordinateGraphStructure:
 
     def test_d_dcoord_of_geometric_coordinate(
         self,
-        cylindrical_2d: CoordSystem,
-        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+        coords_cylindrical: Coords,
     ) -> None:
-        r, theta = r_theta_2d
-        coords = make_coords_cylindrical_2d(cylindrical_2d, r, theta)
+        coords = coords_cylindrical
         operators = Operators(coords)
 
         r_geom = coords.get_coord("r")
@@ -638,5 +513,5 @@ class TestCoordinateGraphStructure:
 
         assert torch.allclose(
             derivative,
-            torch.ones_like(r),
+            torch.ones_like(r_geom),
         )

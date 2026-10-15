@@ -19,18 +19,8 @@ from pinninit.geometry.coordinate_system import (
 from pinninit.geometry.metric_tensor import DiagonalMetricTensor, IdentityMetricTensor
 
 
-# Device
-def make_device() -> torch.device:
-    return torch.device("cpu")
-
-
 def get_axis_index(coord_system: CoordSystem, axis: str) -> int:
     return coord_system.axes_labels_selected.index(axis)
-
-
-@pytest.fixture
-def device() -> torch.device:
-    return make_device()
 
 
 def make_bounds(d: dict[str, float], device: torch.device) -> dict[str, torch.Tensor]:

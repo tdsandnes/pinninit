@@ -1,6 +1,4 @@
-"""
-Unit tests for coords_dataclass / make_coords_dataclass.
-"""
+"""Unit tests for data_structure/coords_dataclass.py."""
 
 from __future__ import annotations
 
@@ -9,915 +7,205 @@ from dataclasses import FrozenInstanceError
 import pytest
 import torch
 
-from pinninit.data_structure.coords_dataclass import (
-    Coords,
-    make_coords_dataclass,
-)
+from pinninit.data_structure.coords_dataclass import Coords, make_coords_dataclass
 from pinninit.geometry.coordinate_system import CoordSystem
 from pinninit.geometry.domain import Domain
 
-from .fixtures import (
-    N_POINTS,
-    make_cartesian_1d,
-    make_cartesian_2d,
-    make_cartesian_3d,
-    make_cylindrical_2d,
-    make_device,
-    make_domain_2d_cartesian,
-    make_r_theta_2d,
-    make_r_theta_phi_3d,
-    make_spherical_3d,
-    make_x_1d,
-    make_xy_2d,
-    make_xyt_2d,
-    make_xyz_3d,
-)
+from ..helpers import N_POINTS, make_coords
 
 
-# Local fixtures
-@pytest.fixture
-def device() -> torch.device:
-    return make_device()
+class TestConstruction:
+    def test_cartesian_labels_and_tensors(self, coords_2d: Coords) -> None:
+        assert coords_2d.coord_labels == ("x", "y")
+        assert coords_2d.geometric_labels == ("x", "y")
+        assert coords_2d.internal_labels == ("x", "y")
+        assert coords_2d.n_points == N_POINTS
+        assert coords_2d.tensor.shape == (N_POINTS, 2)
+        assert torch.equal(coords_2d.tensor[:, 0], coords_2d.get_coord("x"))
+        assert torch.equal(coords_2d.tensor[:, 1], coords_2d.get_coord("y"))
 
-
-@pytest.fixture
-def n_points() -> int:
-    return N_POINTS
-
-
-@pytest.fixture
-def cartesian_1d(device: torch.device) -> CoordSystem:
-    return make_cartesian_1d(device)
-
-
-@pytest.fixture
-def cartesian_2d(device: torch.device) -> CoordSystem:
-    return make_cartesian_2d(device)
-
-
-@pytest.fixture
-def cartesian_3d(device: torch.device) -> CoordSystem:
-    return make_cartesian_3d(device)
-
-
-@pytest.fixture
-def cylindrical_2d(device: torch.device) -> CoordSystem:
-    return make_cylindrical_2d(device)
-
-
-@pytest.fixture
-def spherical_3d(device: torch.device) -> CoordSystem:
-    return make_spherical_3d(device)
-
-
-@pytest.fixture
-def domain_2d_cartesian(device: torch.device, cartesian_2d: CoordSystem) -> Domain:
-    return make_domain_2d_cartesian(cartesian_2d, device)
-
-
-@pytest.fixture
-def x_1d(device: torch.device) -> torch.Tensor:
-    return make_x_1d(device)
-
-
-@pytest.fixture
-def xy_2d(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
-    return make_xy_2d(device)
-
-
-@pytest.fixture
-def xyt_2d(device: torch.device) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    return make_xyt_2d(device)
-
-
-@pytest.fixture
-def xyz_3d(device: torch.device) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    return make_xyz_3d(device)
-
-
-@pytest.fixture
-def r_theta_2d(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
-    return make_r_theta_2d(device)
-
-
-@pytest.fixture
-def r_theta_phi_3d(
-    device: torch.device,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    return make_r_theta_phi_3d(device)
-
-
-# Helpers
-def make_coords_cartesian_1d(coord_system: CoordSystem, x: torch.Tensor) -> Coords:
-    coords_class = make_coords_dataclass(
-        coord_labels={"x"}, coord_system=coord_system, device=x.device
-    )
-    return coords_class(x=x)
-
-
-def make_coords_cartesian_2d(
-    coord_system: CoordSystem, x: torch.Tensor, y: torch.Tensor
-) -> Coords:
-    coords_class = make_coords_dataclass(
-        coord_labels={"x", "y"},
-        coord_system=coord_system,
-        device=x.device,
-    )
-    return coords_class(x=x, y=y)
-
-
-def make_coords_cartesian_2d_with_time(
-    coord_system: CoordSystem, x: torch.Tensor, y: torch.Tensor, t: torch.Tensor
-) -> Coords:
-    coords_class = make_coords_dataclass(
-        coord_labels={"x", "y", "t"},
-        coord_system=coord_system,
-        device=x.device,
-    )
-    return coords_class(x=x, y=y, t=t)
-
-
-def make_coords_cartesian_3d(
-    coord_system: CoordSystem, x: torch.Tensor, y: torch.Tensor, z: torch.Tensor
-) -> Coords:
-    coords_class = make_coords_dataclass(
-        coord_labels={"x", "y", "z"},
-        coord_system=coord_system,
-        device=x.device,
-    )
-    return coords_class(x=x, y=y, z=z)
-
-
-def make_coords_cylindrical_2d(
-    coord_system: CoordSystem, r: torch.Tensor, theta: torch.Tensor
-) -> Coords:
-    coords_class = make_coords_dataclass(
-        coord_labels={"r", "theta"},
-        coord_system=coord_system,
-        device=r.device,
-    )
-    return coords_class(r=r, theta=theta)
-
-
-def make_coords_spherical_3d(
-    coord_system: CoordSystem, r: torch.Tensor, theta: torch.Tensor, phi: torch.Tensor
-) -> Coords:
-    coords_class = make_coords_dataclass(
-        coord_labels={"r", "theta", "phi"},
-        coord_system=coord_system,
-        device=r.device,
-    )
-    return coords_class(r=r, theta=theta, phi=phi)
-
-
-# Construction and basic attributes
-class TestCoordsConstructionCartesian:
-    def test_coordinate_metadata_consistency(
-        self,
-        cartesian_3d: CoordSystem,
-        xyz_3d: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-        spherical_3d: CoordSystem,
-        r_theta_phi_3d: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
+    def test_time_is_a_coord_but_not_geometric(
+        self, cartesian_2d: CoordSystem, device: torch.device
     ) -> None:
-        x, y, z = xyz_3d
-        r, theta, phi = r_theta_phi_3d
-        cartesian_coords = make_coords_cartesian_3d(cartesian_3d, x, y, z)
-        spherical_coords = make_coords_spherical_3d(spherical_3d, r, theta, phi)
+        x = torch.linspace(0.1, 0.9, N_POINTS, device=device)
+        y = torch.linspace(0.2, 0.8, N_POINTS, device=device)
+        t = torch.linspace(0.3, 0.7, N_POINTS, device=device)
 
-        assert cartesian_coords.coord_labels == tuple(sorted(("z", "y", "x")))
-        assert cartesian_coords.geometric_labels == cartesian_3d.axes_labels_selected
-        assert cartesian_coords.internal_labels == tuple(sorted(("z", "y", "x")))
-        assert spherical_coords.coord_labels == tuple(sorted(("theta", "r", "phi")))
-        assert spherical_coords.geometric_labels == spherical_3d.axes_labels_selected
-        assert spherical_coords.internal_labels == tuple(sorted(("z", "y", "x")))
+        coords = make_coords(cartesian_2d, x=x, y=y, t=t)
 
-    def test_tensor_columns_match_coord_labels(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+        assert coords.coord_labels == ("t", "x", "y")
+        assert coords.geometric_labels == ("x", "y")
+        assert coords.internal_labels == ("t", "x", "y")
+        assert coords.geometric.shape == (N_POINTS, 2)
+
+    def test_curvilinear_internal_coords_are_cartesian(
+        self, coords_cylindrical: Coords, coords_spherical: Coords
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        assert coords_cylindrical.geometric_labels == ("r", "theta")
+        assert coords_cylindrical.internal_labels == ("x", "y")
+        assert coords_spherical.geometric_labels == ("r", "theta", "phi")
+        assert coords_spherical.internal_labels == ("x", "y", "z")
+        assert coords_spherical.internal.shape == (N_POINTS, 3)
 
-        for i, label in enumerate(coords.coord_labels):
-            assert torch.allclose(
-                coords.tensor[:, i],
-                getattr(coords, label),
+    def test_coords_are_frozen(self, coords_2d: Coords) -> None:
+        with pytest.raises(FrozenInstanceError):
+            coords_2d.x = torch.zeros(N_POINTS)  # type: ignore[attr-defined]
+
+    def test_unknown_coord_label_raises(self, coords_2d: Coords) -> None:
+        with pytest.raises(KeyError, match="not found in coords"):
+            coords_2d.get_coord("z")
+
+    def test_empty_coord_labels_raise(
+        self, cartesian_2d: CoordSystem, device: torch.device
+    ) -> None:
+        with pytest.raises(ValueError, match="must not be empty"):
+            make_coords_dataclass(set(), cartesian_2d, device)
+
+    def test_missing_geometric_coord_raises(
+        self, cartesian_2d: CoordSystem, device: torch.device
+    ) -> None:
+        with pytest.raises(ValueError, match="requires geometric axes"):
+            make_coords_dataclass({"x"}, cartesian_2d, device)
+
+    def test_coords_of_different_lengths_raise(
+        self, cartesian_2d: CoordSystem, device: torch.device
+    ) -> None:
+        coords_class = make_coords_dataclass({"x", "y"}, cartesian_2d, device)
+        with pytest.raises(ValueError, match="same length"):
+            coords_class(
+                x=torch.zeros(3, device=device), y=torch.zeros(4, device=device)
             )
 
-    def test_all_coord_tensors_have_requires_grad(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+    def test_coord_that_is_not_1d_raises(
+        self, cartesian_2d: CoordSystem, device: torch.device
     ) -> None:
-        x, y = xy_2d
-        x.requires_grad_(True)
-        y.requires_grad_(True)
+        coords_class = make_coords_dataclass({"x", "y"}, cartesian_2d, device)
+        with pytest.raises(ValueError, match="must be 1D"):
+            coords_class(
+                x=torch.zeros(3, 2, device=device), y=torch.zeros(3, device=device)
+            )
 
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
 
-        for label in coords.coord_labels:
-            assert getattr(coords, label).requires_grad is True
-        assert coords.tensor.requires_grad is True
+class TestInternalCoords:
+    def test_cylindrical_derivatives(self, coords_cylindrical: Coords) -> None:
+        r = coords_cylindrical.get_coord("r")
+        theta = coords_cylindrical.get_coord("theta")
 
-    def test_n_points_correct(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-        n_points: int,
+        # internal = (r cos(theta), r sin(theta))
+        internal_sum = coords_cylindrical.internal.sum()
+        grad_r, grad_theta = torch.autograd.grad(internal_sum, [r, theta])
+
+        assert torch.allclose(grad_r, torch.cos(theta) + torch.sin(theta))
+        assert torch.allclose(grad_theta, r * (torch.cos(theta) - torch.sin(theta)))
+
+    def test_gradients_through_geometric_match_gradients_through_coords(
+        self, coords_spherical: Coords
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        coords = coords_spherical
+        r, theta, phi = (coords.get_coord(label) for label in ("r", "theta", "phi"))
 
-        assert coords.n_points == n_points
-
-    def test_coords_are_immutable(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
-
-        with pytest.raises(FrozenInstanceError):
-            coords.x = torch.zeros_like(coords.get_coord("x"))  # type: ignore[attr-defined]
-
-        with pytest.raises(FrozenInstanceError):
-            coords.n_points = 123
-
-
-# Cartesian: internal coords are identity map of geometric coords
-class TestCartesianInternalCoords:
-    def test_internal_labels_match_geometric_labels(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
-
-        assert coords.internal_labels == coords.geometric_labels
-
-    def test_diff_internal_wrt_coords(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y = xy_2d
-
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
-
-        loss = coords.internal.sum()
-
-        inputs = (coords.get_coord("x"), coords.get_coord("y"))
-        grads = torch.autograd.grad(
-            outputs=loss,
-            inputs=inputs,
-            retain_graph=False,
-            allow_unused=False,
+        grad_geometric, grad_r, grad_theta, grad_phi = torch.autograd.grad(
+            coords.internal.sum(), [coords.geometric, r, theta, phi]
         )
 
-        for grad, input in zip(grads, inputs, strict=True):
-            assert grad.shape == input.shape
-            assert torch.allclose(grad, torch.ones_like(input))
+        assert torch.allclose(grad_r, grad_geometric[:, 0])
+        assert torch.allclose(grad_theta, grad_geometric[:, 1])
+        assert torch.allclose(grad_phi, grad_geometric[:, 2])
 
-    def test_diff_internal_wrt_geometric(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
+
+class TestBatches:
+    def test_get_batch(self, coords_2d: Coords, device: torch.device) -> None:
+        idx = torch.tensor([0, 2, 4], device=device)
+
+        batch = coords_2d.get_batch(idx)
+
+        assert type(batch) is type(coords_2d)
+        assert batch.n_points == 3
+        assert batch.is_batch
+        assert not coords_2d.is_batch
+        assert batch.parent is coords_2d
+        assert batch.parent_idx is not None
+        assert torch.equal(batch.parent_idx, idx)
+        assert torch.equal(batch.tensor, coords_2d.tensor[idx].detach())
+
+    def test_batch_coords_are_new_leaf_tensors(
+        self, coords_2d: Coords, device: torch.device
     ) -> None:
-        x, y = xy_2d
+        batch = coords_2d.get_batch(torch.tensor([0, 2, 4], device=device))
 
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
+        x = batch.get_coord("x")
+        assert x.requires_grad
+        assert x.grad_fn is None
 
-        loss = coords.internal.sum()
-
-        grad = torch.autograd.grad(
-            outputs=loss,
-            inputs=coords.geometric,
-            retain_graph=False,
-            allow_unused=False,
-        )[0]
-
-        assert grad.shape == coords.geometric.shape
-        assert torch.allclose(grad, torch.ones_like(coords.geometric))
-
-
-# Cylindrical: internal coords are Cartesian (x, y from r, theta)
-class TestCylindricalInternalCoords:
-    def test_internal_labels_are_cartesian(
-        self,
-        cylindrical_2d: CoordSystem,
-        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+    def test_batch_internal_coords_match_full_coords(
+        self, coords_spherical: Coords, device: torch.device
     ) -> None:
-        r, theta = r_theta_2d
+        idx = torch.tensor([1, 5, 8], device=device)
 
-        coords = make_coords_cylindrical_2d(
-            cylindrical_2d,
-            r,
-            theta,
-        )
+        batch = coords_spherical.get_batch(idx)
 
-        assert coords.internal_labels == ("x", "y")
+        assert torch.allclose(batch.internal, coords_spherical.internal[idx].detach())
 
-    def test_diff_internal_wrt_coords(
-        self,
-        cylindrical_2d: CoordSystem,
-        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
+    def test_nested_batch(self, coords_2d: Coords, device: torch.device) -> None:
+        idx1 = torch.tensor([0, 2, 4], device=device)
+        idx2 = torch.tensor([0, 2], device=device)
+
+        batch = coords_2d.get_batch(idx1).get_batch(idx2)
+
+        assert torch.equal(batch.tensor, coords_2d.tensor[idx1[idx2]].detach())
+        assert coords_2d.is_ancestor_of(batch)
+        assert not batch.is_ancestor_of(coords_2d)
+
+    def test_batch_gradients_do_not_flow_to_full_coords(
+        self, coords_2d: Coords, device: torch.device
     ) -> None:
-        r, theta = r_theta_2d
+        batch = coords_2d.get_batch(torch.tensor([0, 1, 2], device=device))
 
-        coords = make_coords_cylindrical_2d(
-            cylindrical_2d,
-            r,
-            theta,
-        )
+        batch.internal.sum().backward()  # type: ignore[no-untyped-call]
 
-        loss = coords.internal.sum()
+        assert coords_2d.get_coord("x").grad is None
 
-        inputs = (coords.get_coord("r"), coords.get_coord("theta"))
-        grads = torch.autograd.grad(
-            outputs=loss,
-            inputs=inputs,
-            retain_graph=False,
-            allow_unused=False,
-        )
+    def test_float_idx_raises(self, coords_2d: Coords, device: torch.device) -> None:
+        with pytest.raises(TypeError, match="integer tensor"):
+            coords_2d.get_batch(torch.tensor([0.0, 1.0], device=device))
 
-        expected_r = torch.cos(theta) + torch.sin(theta)
-        expected_theta = r * (-torch.sin(theta) + torch.cos(theta))
-        expecteds = (expected_r, expected_theta)
-
-        for grad, input, expected in zip(grads, inputs, expecteds, strict=True):
-            assert grad.shape == input.shape
-            assert torch.allclose(grad, expected)
-
-    def test_diff_internal_wrt_geometric(
-        self,
-        cylindrical_2d: CoordSystem,
-        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        r, theta = r_theta_2d
-
-        coords = make_coords_cylindrical_2d(
-            cylindrical_2d,
-            r,
-            theta,
-        )
-
-        loss = coords.internal.sum()
-
-        grad = torch.autograd.grad(
-            outputs=loss,
-            inputs=coords.geometric,
-            retain_graph=False,
-            allow_unused=False,
-        )[0]
-
-        expected_r = torch.cos(theta) + torch.sin(theta)
-        expected_theta = r * (-torch.sin(theta) + torch.cos(theta))
-        expected = torch.stack((expected_r, expected_theta), dim=1)
-
-        assert grad.shape == coords.geometric.shape
-        assert torch.allclose(grad, expected)
+    def test_2d_idx_raises(self, coords_2d: Coords, device: torch.device) -> None:
+        with pytest.raises(ValueError, match="1D"):
+            coords_2d.get_batch(torch.tensor([[0, 1], [2, 3]], device=device))
 
 
-# Spherical: internal coords are Cartesian (x, y, z from r, theta, phi)
-class TestSphericalInternalCoords:
-    def test_internal_labels_are_cartesian(
-        self,
-        spherical_3d: CoordSystem,
-        r_theta_phi_3d: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-    ) -> None:
-        r, theta, phi = r_theta_phi_3d
-
-        coords = make_coords_spherical_3d(
-            spherical_3d,
-            r,
-            theta,
-            phi,
-        )
-
-        assert coords.internal_labels == ("x", "y", "z")
-
-    def test_diff_internal_wrt_coords(
-        self,
-        spherical_3d: CoordSystem,
-        r_theta_phi_3d: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-    ) -> None:
-        r, theta, phi = r_theta_phi_3d
-
-        coords = make_coords_spherical_3d(
-            spherical_3d,
-            r,
-            theta,
-            phi,
-        )
-
-        loss = coords.internal.sum()
-
-        inputs = (
-            coords.get_coord("r"),
-            coords.get_coord("theta"),
-            coords.get_coord("phi"),
-        )
-        grads = torch.autograd.grad(
-            outputs=loss,
-            inputs=inputs,
-            retain_graph=False,
-            allow_unused=False,
-        )
-
-        expected_r = (
-            torch.sin(theta) * torch.cos(phi)
-            + torch.sin(theta) * torch.sin(phi)
-            + torch.cos(theta)
-        )
-
-        expected_theta = r * (
-            torch.cos(theta) * (torch.cos(phi) + torch.sin(phi)) - torch.sin(theta)
-        )
-
-        expected_phi = r * torch.sin(theta) * (-torch.sin(phi) + torch.cos(phi))
-
-        expecteds = (expected_r, expected_theta, expected_phi)
-
-        for grad, input, expected in zip(grads, inputs, expecteds, strict=True):
-            assert grad.shape == input.shape
-            assert torch.allclose(grad, expected)
-
-    def test_diff_internal_wrt_geometric(
-        self,
-        spherical_3d: CoordSystem,
-        r_theta_phi_3d: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-    ) -> None:
-        r, theta, phi = r_theta_phi_3d
-
-        coords = make_coords_spherical_3d(
-            spherical_3d,
-            r,
-            theta,
-            phi,
-        )
-
-        loss = coords.internal.sum()
-
-        grad = torch.autograd.grad(
-            outputs=loss,
-            inputs=coords.geometric,
-            retain_graph=False,
-            allow_unused=False,
-        )[0]
-
-        expected_r = (
-            torch.sin(theta) * torch.cos(phi)
-            + torch.sin(theta) * torch.sin(phi)
-            + torch.cos(theta)
-        )
-
-        expected_theta = r * (
-            torch.cos(theta) * (torch.cos(phi) + torch.sin(phi)) - torch.sin(theta)
-        )
-
-        expected_phi = r * torch.sin(theta) * (-torch.sin(phi) + torch.cos(phi))
-
-        expected = torch.stack(
-            (expected_r, expected_theta, expected_phi),
-            dim=1,
-        )
-
-        assert grad.shape == coords.geometric.shape
-        assert torch.allclose(grad, expected)
-
-
-# Non-geometric extra coordinate (e.g. time)
-class TestNonGeometricCoord:
-    def test_time_coord_in_coord_labels(
-        self,
-        cartesian_2d: CoordSystem,
-        xyt_2d: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-        n_points: int,
-    ) -> None:
-        x, y, t = xyt_2d
-
-        coords = make_coords_cartesian_2d_with_time(cartesian_2d, x, y, t)
-
-        assert "t" in coords.coord_labels
-        assert "t" not in coords.geometric_labels
-        assert "t" in coords.internal_labels
-        assert coords.tensor.shape == (n_points, 3)
-        assert coords.geometric.shape == (n_points, 2)
-        assert coords.internal.shape == (n_points, 3)
-
-    def test_diff_internal_wrt_coords(
-        self,
-        cartesian_2d: CoordSystem,
-        xyt_2d: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y, t = xyt_2d
-
-        coords = make_coords_cartesian_2d_with_time(cartesian_2d, x, y, t)
-
-        loss = coords.internal.sum()
-
-        grad = torch.autograd.grad(
-            outputs=loss,
-            inputs=coords.get_coord("t"),
-            retain_graph=False,
-            allow_unused=False,
-        )[0]
-
-        assert grad.shape == coords.get_coord("t").shape
-        assert torch.allclose(grad, torch.ones_like(coords.get_coord("t")))
-
-    def test_diff_internal_wrt_geometric(
-        self,
-        cartesian_2d: CoordSystem,
-        xyt_2d: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y, t = xyt_2d
-
-        coords = make_coords_cartesian_2d_with_time(cartesian_2d, x, y, t)
-
-        loss = coords.internal.sum()
-
-        grad = torch.autograd.grad(
-            outputs=loss,
-            inputs=coords.geometric,
-            retain_graph=False,
-            allow_unused=False,
-        )[0]
-
-        assert grad.shape == coords.geometric.shape
-        assert torch.allclose(grad, torch.ones_like(coords.geometric))
-
-
-# Domain validation
 class TestDomainValidation:
     def test_points_inside_domain_pass(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-        domain_2d_cartesian: Domain,
+        self, coords_2d: Coords, cartesian_2d: CoordSystem, device: torch.device
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
-        coords.validate_in_domain(domain_2d_cartesian)
+        domain = Domain(
+            coord_system=cartesian_2d,
+            geometric_bounds={"x": (0.0, 1.0), "y": (0.0, 1.0)},
+            periodic_coords=None,
+            device=device,
+        )
+        coords_2d.validate_in_domain(domain)
 
     def test_points_outside_domain_raise(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-        device: torch.device,
+        self, coords_2d: Coords, cartesian_2d: CoordSystem, device: torch.device
     ) -> None:
-        x, y = xy_2d
         domain = Domain(
             coord_system=cartesian_2d,
             geometric_bounds={"x": (0.2, 0.8), "y": (0.0, 1.0)},
             periodic_coords=None,
             device=device,
         )
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
         with pytest.raises(ValueError, match="outside of domain"):
-            coords.validate_in_domain(domain)
+            coords_2d.validate_in_domain(domain)
 
-    def test_mismatched_coord_system_raises(
-        self,
-        cartesian_2d: CoordSystem,
-        spherical_3d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-        device: torch.device,
+    def test_domain_with_other_coord_system_raises(
+        self, coords_2d: Coords, spherical_3d: CoordSystem, device: torch.device
     ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
         domain = Domain(
             coord_system=spherical_3d,
             geometric_bounds=None,
             periodic_coords=None,
             device=device,
         )
-        with pytest.raises(ValueError, match="Domain"):
-            coords.validate_in_domain(domain)
-
-
-class TestGetBatch:
-    def test_get_batch_returns_coords_protocol(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
-        assert coords.is_batch is False
-
-        idx = torch.tensor([0, 2, 4])
-        batch_coords = coords.get_batch(idx)
-
-        required = Coords.__annotations__.keys()
-        assert all(hasattr(batch_coords, key) for key in required)
-        assert batch_coords.n_points == len(idx)
-        assert batch_coords.is_batch is True
-        assert batch_coords.parent is coords
-        assert batch_coords.coord_labels == coords.coord_labels
-        assert batch_coords.internal_labels == coords.internal_labels
-        assert batch_coords.geometric_labels == coords.geometric_labels
-        assert batch_coords.parent is coords
-        assert batch_coords.__class__ is coords.__class__
-
-        # Batch coord tensors have requires_grad True
-        for label in batch_coords.coord_labels:
-            assert getattr(batch_coords, label).requires_grad is True
-
-        # Detaches from original graph
-        for label in batch_coords.coord_labels:
-            assert getattr(batch_coords, label).grad_fn is None
-
-    def test_get_batch_internal_values_correct_cylindrical(
-        self,
-        cylindrical_2d: CoordSystem,
-        r_theta_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        r, theta = r_theta_2d
-        coords = make_coords_cylindrical_2d(cylindrical_2d, r, theta)
-
-        idx = torch.tensor([0, 2, 4])
-        batch_coords = coords.get_batch(idx)
-
-        expected_x = r[idx] * torch.cos(theta[idx])
-        expected_y = r[idx] * torch.sin(theta[idx])
-
-        internal_label_to_index = {
-            label: i for i, label in enumerate(coords.internal_labels)
-        }
-        x_idx = internal_label_to_index["x"]
-        y_idx = internal_label_to_index["y"]
-
-        assert torch.allclose(batch_coords.internal[:, x_idx], expected_x.detach())
-        assert torch.allclose(batch_coords.internal[:, y_idx], expected_y.detach())
-
-    def test_get_batch_internal_values_correct_spherical(
-        self,
-        spherical_3d: CoordSystem,
-        r_theta_phi_3d: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-    ) -> None:
-        r, theta, phi = r_theta_phi_3d
-        coords = make_coords_spherical_3d(spherical_3d, r, theta, phi)
-
-        idx = torch.tensor([0, 2, 4])
-        batch_coords = coords.get_batch(idx)
-
-        expected_x = r[idx] * torch.sin(theta[idx]) * torch.cos(phi[idx])
-        expected_y = r[idx] * torch.sin(theta[idx]) * torch.sin(phi[idx])
-        expected_z = r[idx] * torch.cos(theta[idx])
-
-        internal_label_to_index = {
-            label: i for i, label in enumerate(coords.internal_labels)
-        }
-        x_idx = internal_label_to_index["x"]
-        y_idx = internal_label_to_index["y"]
-        z_idx = internal_label_to_index["z"]
-
-        assert torch.allclose(batch_coords.internal[:, x_idx], expected_x.detach())
-        assert torch.allclose(batch_coords.internal[:, y_idx], expected_y.detach())
-        assert torch.allclose(batch_coords.internal[:, z_idx], expected_z.detach())
-
-    def test_batch_grad_does_not_flow_to_parent_coords(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
-        batch = coords.get_batch(torch.tensor([0, 1, 2]))
-
-        loss = batch.internal.sum()
-        loss.backward()  # type: ignore[no-untyped-call]
-
-        assert x.grad is None
-        assert y.grad is None
-
-    def test_nested_batch_internal_values_correct(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
-
-        idx1 = torch.tensor([0, 2, 4])
-        idx2 = torch.tensor([0, 2])
-        batch1 = coords.get_batch(idx1)
-        batch2 = batch1.get_batch(idx2)
-
-        # idx2 into idx1 maps to root indices [0, 4]
-        expected = coords.internal[idx1[idx2]].detach()
-        assert torch.allclose(batch2.internal, expected)
-
-    def test_nested_batch_grad_wrt_batch_coords(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
-
-        idx1 = torch.tensor([0, 2, 4])
-        idx2 = torch.tensor([0, 2])
-        batch2 = coords.get_batch(idx1).get_batch(idx2)
-
-        loss = batch2.internal.sum()
-        grads = torch.autograd.grad(
-            outputs=loss,
-            inputs=(batch2.get_coord("x"), batch2.get_coord("y")),
-            retain_graph=False,
-            allow_unused=False,
-        )
-
-        for grad, coord in zip(
-            grads, (batch2.get_coord("x"), batch2.get_coord("y")), strict=True
-        ):
-            assert grad.shape == coord.shape
-            assert torch.allclose(grad, torch.ones_like(coord))
-
-    def test_get_batch_float_idx_raises(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
-
-        float_idx = torch.tensor([0.0, 1.0, 2.0])
-        with pytest.raises(TypeError, match="integer tensor"):
-            coords.get_batch(float_idx)
-
-    def test_get_batch_2d_idx_raises(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
-
-        idx_2d = torch.tensor([[0, 1], [2, 3]])
-        with pytest.raises(ValueError, match="1D"):
-            coords.get_batch(idx_2d)
-
-    def test_diff_batch_internal_wrt_batch_coords_cartesian(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
-
-        idx = torch.tensor([0, 2, 4])
-        batch_coords = coords.get_batch(idx)
-        loss = batch_coords.internal.sum()
-
-        grads = torch.autograd.grad(
-            outputs=loss,
-            inputs=(batch_coords.get_coord("x"), batch_coords.get_coord("y")),
-            retain_graph=False,
-            allow_unused=False,
-        )
-
-        for grad, coord in zip(
-            grads,
-            (batch_coords.get_coord("x"), batch_coords.get_coord("y")),
-            strict=True,
-        ):
-            assert grad.shape == coord.shape
-            assert torch.allclose(grad, torch.ones_like(coord))
-
-    def test_diff_batch_internal_wrt_batch_geometric_cartesian(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
-
-        idx = torch.tensor([0, 2, 4])
-        batch_coords = coords.get_batch(idx)
-        loss = batch_coords.internal.sum()
-
-        grad = torch.autograd.grad(
-            outputs=loss,
-            inputs=batch_coords.geometric,
-            retain_graph=False,
-            allow_unused=False,
-        )[0]
-
-        assert grad.shape == batch_coords.geometric.shape
-        assert torch.allclose(grad, torch.ones_like(batch_coords.geometric))
-
-    def test_nested_batch_internal_values_correct_spherical(
-        self,
-        spherical_3d: CoordSystem,
-        r_theta_phi_3d: tuple[torch.Tensor, torch.Tensor, torch.Tensor],
-    ) -> None:
-        r, theta, phi = r_theta_phi_3d
-        coords = make_coords_spherical_3d(spherical_3d, r, theta, phi)
-        idx1 = torch.tensor([0, 2, 4])
-        idx2 = torch.tensor([0, 2])
-        batch2 = coords.get_batch(idx1).get_batch(idx2)
-
-        # Manually compute absolute expected positions from absolute root indexes [0, 4]
-        root_idx = idx1[idx2]
-        expected_x = r[root_idx] * torch.sin(theta[root_idx]) * torch.cos(phi[root_idx])
-        expected_y = r[root_idx] * torch.sin(theta[root_idx]) * torch.sin(phi[root_idx])
-        expected_z = r[root_idx] * torch.cos(theta[root_idx])
-
-        internal_label_to_index = {
-            label: i for i, label in enumerate(coords.internal_labels)
-        }
-        x_idx = internal_label_to_index["x"]
-        y_idx = internal_label_to_index["y"]
-        z_idx = internal_label_to_index["z"]
-
-        assert torch.allclose(batch2.internal[:, x_idx], expected_x.detach())
-        assert torch.allclose(batch2.internal[:, y_idx], expected_y.detach())
-        assert torch.allclose(batch2.internal[:, z_idx], expected_z.detach())
-
-
-class TestGetCoordErrors:
-    def test_invalid_coord_label_raises_keyerror(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
-
-        with pytest.raises(KeyError, match="not found in coords"):
-            coords.get_coord("invalid_label")
-
-
-# Validation errors
-class TestCoordsValidationErrors:
-    def test_mismatched_coord_lengths_raise(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y = xy_2d
-        y = y[:-2]
-
-        with pytest.raises(ValueError, match="same length"):
-            make_coords_cartesian_2d(
-                cartesian_2d,
-                x,
-                y,
-            )
-
-    def test_2d_coord_tensor_raises(
-        self,
-        cartesian_1d: CoordSystem,
-        device: torch.device,
-    ) -> None:
-        x = torch.ones((5, 2), device=device, requires_grad=True)
-
-        with pytest.raises(ValueError, match="1D"):
-            make_coords_cartesian_1d(
-                cartesian_1d,
-                x,
-            )
-
-    def test_empty_coordinates_raises(
-        self,
-        cartesian_1d: CoordSystem,
-        device: torch.device,
-    ) -> None:
-        with pytest.raises(ValueError, match="empty"):
-            make_coords_dataclass(
-                coord_labels=set(), coord_system=cartesian_1d, device=device
-            )
-
-    def test_cannot_set_undeclared_attribute(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y = xy_2d
-        coords = make_coords_cartesian_2d(cartesian_2d, x, y)
-        with pytest.raises((AttributeError, TypeError)):
-            coords.theta = torch.zeros_like(x)  # type: ignore[attr-defined]
-
-    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
-    def test_mismatched_devices_raises(
-        self,
-        cartesian_2d: CoordSystem,
-        xy_2d: tuple[torch.Tensor, torch.Tensor],
-    ) -> None:
-        x, y = xy_2d
-        cpu_device = torch.device("cpu")
-        gpu_device = torch.device("cuda")
-        x = x.to(cpu_device)
-        y = y.to(gpu_device)
-
-        with pytest.raises(ValueError, match="expected cpu"):
-            make_coords_cartesian_2d(
-                cartesian_2d,
-                x,
-                y,
-            )
+        with pytest.raises(ValueError, match="does not match"):
+            coords_2d.validate_in_domain(domain)
