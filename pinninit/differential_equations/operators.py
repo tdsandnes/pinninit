@@ -301,7 +301,7 @@ class Operators:
     def _check_differentiable(self, f: torch.Tensor) -> None:
         if not f.requires_grad:
             raise ValueError(
-                "Can only differentiate tensors computed from the " "operators' coords."
+                "Can only differentiate tensors computed from the operators' coords."
             )
 
     def _check_computed_from_coords(self, f: torch.Tensor) -> None:
@@ -312,5 +312,5 @@ class Operators:
         )
         if all(grad is None for grad in grads):
             raise ValueError(
-                "Can only differentiate tensors computed from the " "operators' coords."
+                "Can only differentiate tensors computed from the operators' coords."
             )
