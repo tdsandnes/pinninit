@@ -3,10 +3,10 @@ from __future__ import annotations
 import torch
 
 from pinninit.data_structure.coords_dataclass import (
-    CoordsProtocol,
+    Coords,
     make_coords_dataclass,
 )
-from pinninit.data_structure.field_dataclass import FieldProtocol, make_field_dataclass
+from pinninit.data_structure.field_dataclass import Field, make_field_dataclass
 from pinninit.geometry.coordinate_system import (
     CartesianCoords,
     CoordSystem,
@@ -156,22 +156,24 @@ def make_batch_tensor_indices(device: torch.device) -> torch.Tensor:
 # PINN environment setup
 def make_pinn_environment(
     device: torch.device,
-) -> tuple[CoordsProtocol, FieldProtocol, torch.nn.Linear]:
+) -> tuple[Coords, Field, torch.nn.Linear]:
     """
     Helper function to set up coordinate and field instances for NN integration.
     """
     # Create the coordinate dataclass class
     coord_system = make_cartesian_2d(device=device)
-    Coords = make_coords_dataclass({"x", "y"}, coord_system=coord_system, device=device)
+    coords_class = make_coords_dataclass(
+        {"x", "y"}, coord_system=coord_system, device=device
+    )
     x = torch.tensor([1.5, 2.5, 3.5, 4.5], device=device, requires_grad=True)
     y = torch.tensor([5.5, 6.5, 7.5, 8.5], device=device, requires_grad=True)
-    coords = Coords(x=x, y=y)
+    coords = coords_class(x=x, y=y)
 
     # Set up field
     f_x = torch.tensor([10.0, 20.0, 30.0, 40.0], device=device, requires_grad=True)
     f_y = torch.tensor([50.0, 60.0, 70.0, 80.0], device=device, requires_grad=True)
-    Field = make_field_dataclass(rank=1, coords=coords, device=device)
-    reference_field = Field(label="f", x=f_x, y=f_y)
+    field_class = make_field_dataclass(rank=1, coords=coords, device=device)
+    reference_field = field_class(label="f", x=f_x, y=f_y)
 
     # Define a predictable single-layer NN (Linear transformation)
     nn_layer = torch.nn.Linear(2, 2, device=device)

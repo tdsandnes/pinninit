@@ -8,7 +8,7 @@ import torch
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from ..data_structure.coords_dataclass import CoordsProtocol
+    from ..data_structure.coords_dataclass import Coords
     from .evaluation_context import EvaluationContext
 
 
@@ -23,7 +23,7 @@ class LossFunctionLabels(str, Enum):
 def mse_loss(
     residuals: torch.Tensor,
     eval_context: EvaluationContext,
-    eval_coords: CoordsProtocol,
+    eval_coords: Coords,
 ) -> torch.Tensor:
     """Standard MSE. Ignores point weights."""
     return (residuals**2).sum(dim=0) / residuals.shape[0]
@@ -32,7 +32,7 @@ def mse_loss(
 def weighted_mse_loss(
     residuals: torch.Tensor,
     eval_context: EvaluationContext,
-    eval_coords: CoordsProtocol,
+    eval_coords: Coords,
 ) -> torch.Tensor:
     """
     Weight mean square loss between predicted and exact function values.
@@ -51,7 +51,7 @@ def weighted_mse_loss(
 def weighted_point_avg_mse_loss(
     residuals: torch.Tensor,
     eval_context: EvaluationContext,
-    eval_coords: CoordsProtocol,
+    eval_coords: Coords,
 ) -> torch.Tensor:
     """
     Weight mean square loss, but not divided by total weight.

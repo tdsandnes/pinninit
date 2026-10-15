@@ -10,7 +10,7 @@ import pytest
 import torch
 
 from pinninit.data_structure.coords_dataclass import (
-    CoordsProtocol,
+    Coords,
     make_coords_dataclass,
 )
 from pinninit.geometry.coordinate_system import CoordSystem
@@ -108,68 +108,66 @@ def r_theta_phi_3d(
 
 
 # Helpers
-def make_coords_cartesian_1d(
-    coord_system: CoordSystem, x: torch.Tensor
-) -> CoordsProtocol:
-    Coords = make_coords_dataclass(
+def make_coords_cartesian_1d(coord_system: CoordSystem, x: torch.Tensor) -> Coords:
+    coords_class = make_coords_dataclass(
         coord_labels={"x"}, coord_system=coord_system, device=x.device
     )
-    return Coords(x=x)
+    return coords_class(x=x)
 
 
 def make_coords_cartesian_2d(
     coord_system: CoordSystem, x: torch.Tensor, y: torch.Tensor
-) -> CoordsProtocol:
-    Coords = make_coords_dataclass(
+) -> Coords:
+    coords_class = make_coords_dataclass(
         coord_labels={"x", "y"},
         coord_system=coord_system,
         device=x.device,
     )
-    return Coords(x=x, y=y)
+    return coords_class(x=x, y=y)
 
 
 def make_coords_cartesian_2d_with_time(
     coord_system: CoordSystem, x: torch.Tensor, y: torch.Tensor, t: torch.Tensor
-) -> CoordsProtocol:
-    Coords = make_coords_dataclass(
+) -> Coords:
+    coords_class = make_coords_dataclass(
         coord_labels={"x", "y", "t"},
         coord_system=coord_system,
         device=x.device,
     )
-    return Coords(x=x, y=y, t=t)
+    return coords_class(x=x, y=y, t=t)
 
 
 def make_coords_cartesian_3d(
     coord_system: CoordSystem, x: torch.Tensor, y: torch.Tensor, z: torch.Tensor
-) -> CoordsProtocol:
-    Coords = make_coords_dataclass(
+) -> Coords:
+    coords_class = make_coords_dataclass(
         coord_labels={"x", "y", "z"},
         coord_system=coord_system,
         device=x.device,
     )
-    return Coords(x=x, y=y, z=z)
+    return coords_class(x=x, y=y, z=z)
 
 
 def make_coords_cylindrical_2d(
     coord_system: CoordSystem, r: torch.Tensor, theta: torch.Tensor
-) -> CoordsProtocol:
-    Coords = make_coords_dataclass(
+) -> Coords:
+    coords_class = make_coords_dataclass(
         coord_labels={"r", "theta"},
         coord_system=coord_system,
         device=r.device,
     )
-    return Coords(r=r, theta=theta)
+    return coords_class(r=r, theta=theta)
 
 
 def make_coords_spherical_3d(
     coord_system: CoordSystem, r: torch.Tensor, theta: torch.Tensor, phi: torch.Tensor
-) -> CoordsProtocol:
-    Coords = make_coords_dataclass(
+) -> Coords:
+    coords_class = make_coords_dataclass(
         coord_labels={"r", "theta", "phi"},
         coord_system=coord_system,
         device=r.device,
     )
-    return Coords(r=r, theta=theta, phi=phi)
+    return coords_class(r=r, theta=theta, phi=phi)
 
 
 # Construction and basic attributes
@@ -614,7 +612,7 @@ class TestGetBatch:
         idx = torch.tensor([0, 2, 4])
         batch_coords = coords.get_batch(idx)
 
-        required = CoordsProtocol.__annotations__.keys()
+        required = Coords.__annotations__.keys()
         assert all(hasattr(batch_coords, key) for key in required)
         assert batch_coords.n_points == len(idx)
         assert batch_coords.is_batch is True

@@ -11,7 +11,7 @@ from ..config.pinn_config import PINNConfig
 if TYPE_CHECKING:
     import torch.nn as nn
 
-    from ..data_structure.coords_dataclass import CoordsProtocol
+    from ..data_structure.coords_dataclass import Coords
     from ..loss.loss_term_container import LossTermContainer
     from ..nn.neural_network import NeuralNetwork
     from ..optimizer.optimizer import Optimizer
@@ -65,7 +65,7 @@ class PINN:
     def train(self) -> None:
         self.trainer.train()
 
-    def evaluate_model(self, coords: CoordsProtocol) -> torch.Tensor:
+    def evaluate_model(self, coords: Coords) -> torch.Tensor:
         """Evaluate the model at the given coords."""
         self.model.eval()
         with torch.no_grad():

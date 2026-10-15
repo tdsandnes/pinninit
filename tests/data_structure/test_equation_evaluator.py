@@ -8,7 +8,7 @@ import pytest
 import torch
 
 from pinninit.data_structure.coords_dataclass import (
-    CoordsProtocol,
+    Coords,
     make_coords_dataclass,
 )
 from pinninit.data_structure.data_container import DataContainer
@@ -37,13 +37,13 @@ def xy_2d(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
 
 def make_coords_cartesian_2d(
     coord_system: CoordSystem, x: torch.Tensor, y: torch.Tensor
-) -> CoordsProtocol:
-    Coords = make_coords_dataclass(
+) -> Coords:
+    coords_class = make_coords_dataclass(
         coord_labels={"x", "y"},
         coord_system=coord_system,
         device=x.device,
     )
-    return Coords(x=x, y=y)
+    return coords_class(x=x, y=y)
 
 
 class TestEquationEvaluatorSorting:

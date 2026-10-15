@@ -11,8 +11,8 @@ from .trainer_module import TrainerModule
 if TYPE_CHECKING:
     from typing import Any
 
-    from ..data_structure.coords_dataclass import CoordsProtocol
-    from ..data_structure.field_dataclass import FieldProtocol
+    from ..data_structure.coords_dataclass import Coords
+    from ..data_structure.field_dataclass import Field
     from ..loss.loss_term_container import LossTermContainer
     from ..trainer.trainer import Trainer
     from ..trainer.trainer_logger import TrainerLogger
@@ -55,8 +55,8 @@ class BalancedResidualDecayRateC25(TrainerModule):
 
         # Containers whose training loss uses adaptive point weights
         self.brdr_containers: dict[str, LossTermContainer] = {}
-        self.r4_bar: dict[str, FieldProtocol] = {}
-        self.n_last: dict[str, FieldProtocol] = {}
+        self.r4_bar: dict[str, Field] = {}
+        self.n_last: dict[str, Field] = {}
         # Global adaptive scaling factor s and last-update iteration
         self._s_buffer: torch.Tensor | None = None
         self._last_update_iter: torch.Tensor | None = None
@@ -88,8 +88,10 @@ class BalancedResidualDecayRateC25(TrainerModule):
             )
 
             # Per-point R4 moving average and last-seen iteration
-            Field = make_field_dataclass(rank=0, coords=coords, device=coords.device)
-            self.r4_bar[label] = Field(
+            ScalarField = make_field_dataclass(
+                rank=0, coords=coords, device=coords.device
+            )
+            self.r4_bar[label] = ScalarField(
                 label="brdr_r4_bar",
                 value=torch.zeros(coords.n_points, device=coords.device),
             )
@@ -97,7 +99,7 @@ class BalancedResidualDecayRateC25(TrainerModule):
                 f"brdr_r4_bar_{label}", self.r4_bar[label].get_component("value")
             )
             if self.use_minibatch_effective_betas:
-                self.n_last[label] = Field(
+                self.n_last[label] = ScalarField(
                     label="brdr_n_last",
                     value=torch.zeros(
                         coords.n_points, dtype=torch.long, device=coords.device
@@ -185,7 +187,7 @@ class BalancedResidualDecayRateC25(TrainerModule):
         n = trainer.iter
         c_by_label: dict[str, torch.Tensor] = {}
         bw_eff_by_label: dict[str, torch.Tensor | float] = {}
-        batch_by_label: dict[str, CoordsProtocol] = {}
+        batch_by_label: dict[str, Coords] = {}
         for label, container in self.brdr_containers.items():
             # Skip staggered-off terms
             if label not in trainer.loss_containers:
@@ -222,7 +224,7 @@ class BalancedResidualDecayRateC25(TrainerModule):
         self,
         trainer: Trainer,
         container: LossTermContainer,
-        batch_coords: CoordsProtocol,
+        batch_coords: Coords,
         n: int,
     ) -> tuple[torch.Tensor, torch.Tensor | float]:
         residuals = trainer.cached_train_residuals(container.label)

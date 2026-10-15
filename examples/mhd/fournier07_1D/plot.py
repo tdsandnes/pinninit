@@ -17,7 +17,7 @@ from pinninit.data_structure.coords_dataclass import make_coords_dataclass
 from pinninit.geometry.coordinate_system import CartesianCoords
 
 if TYPE_CHECKING:
-    from pinninit.data_structure.coords_dataclass import CoordsProtocol
+    from pinninit.data_structure.coords_dataclass import Coords
 
 
 def read_snapshot(path: Path) -> tuple[float, np.ndarray, np.ndarray, np.ndarray]:
@@ -32,13 +32,13 @@ def read_snapshot(path: Path) -> tuple[float, np.ndarray, np.ndarray, np.ndarray
 
 def evaluate_pinn_at_test_points(
     pinn: pinninit.PINN,
-    Coords: type[CoordsProtocol],
+    coords_class: type[Coords],
     x_test: np.ndarray,
     t_test: np.ndarray,
     device: torch.device,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Evaluate PINN at test coordinates for u and b."""
-    coords = Coords(
+    coords = coords_class(
         x=torch.tensor(x_test, device=device),
         t=torch.tensor(t_test, device=device),
     )
@@ -74,7 +74,7 @@ if __name__ == "__main__":
 
     # Coords class matching the training configuration
     coord_system = CartesianCoords(dim_geometric=1, coord_axes={"x"}, device=device)
-    Coords = make_coords_dataclass({"x", "t"}, coord_system, device)
+    coords_class = make_coords_dataclass({"x", "t"}, coord_system, device)
 
     # Load PINN
     pinn = pinninit.PINN.from_yaml(PARAM_FILE, device)
@@ -117,7 +117,7 @@ if __name__ == "__main__":
 
         # Evaluate PINN at test points
         u_pred_test, b_pred_test = evaluate_pinn_at_test_points(
-            pinn, Coords, x_test, t_test, device
+            pinn, coords_class, x_test, t_test, device
         )
 
         # Plot true solution from snapshot

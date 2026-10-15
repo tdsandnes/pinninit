@@ -5,11 +5,11 @@ from typing import TYPE_CHECKING
 import torch
 
 if TYPE_CHECKING:
-    from ..data_structure.coords_dataclass import CoordsProtocol
+    from ..data_structure.coords_dataclass import Coords
 
 
 class Operators:
-    def __init__(self, coords: CoordsProtocol):
+    def __init__(self, coords: Coords):
         # Extract from coords
         self.coords = coords
         self.coord_system = coords.coord_system

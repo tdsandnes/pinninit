@@ -4,7 +4,7 @@ from typing import cast
 import torch
 from torch.utils.data import DataLoader, Dataset, Sampler
 
-from .coords_dataclass import CoordsProtocol
+from .coords_dataclass import Coords
 
 
 class BatchDataset(Dataset[int]):
@@ -48,11 +48,11 @@ class EqualSplitBatchSampler(Sampler[list[int]]):
 
 
 def make_dataloader(
-    coords: CoordsProtocol,
+    coords: Coords,
     n_batches: int,
     shuffle: bool = True,
     num_workers: int = 0,
-) -> DataLoader[CoordsProtocol]:
+) -> DataLoader[Coords]:
     """Create a DataLoader that yields exactly n_batches batches per pass,
     together covering every point exactly once."""
     if num_workers < 0:
@@ -65,7 +65,7 @@ def make_dataloader(
     dataset = BatchDataset(coords.n_points)
 
     # Define collate_fn to convert list of indices into a batched coordinates
-    def collate_fn(idx_list: list[int]) -> CoordsProtocol:
+    def collate_fn(idx_list: list[int]) -> Coords:
         idx_tensor = torch.tensor(idx_list, dtype=torch.long, device=coords.device)
         return coords.get_batch(idx_tensor)
 
@@ -77,12 +77,12 @@ def make_dataloader(
     )
 
     # Return the DataLoader with the correct type annotation
-    return cast(DataLoader[CoordsProtocol], loader)
+    return cast(DataLoader[Coords], loader)
 
 
 def iter_batches(
-    dataloader: DataLoader[CoordsProtocol],
-) -> Iterator[CoordsProtocol]:
+    dataloader: DataLoader[Coords],
+) -> Iterator[Coords]:
     """Typed boundary around DataLoader iteration"""
     yield from dataloader
 
@@ -91,14 +91,14 @@ class BatchCycler:
     """Cycles indefinitely through a dataloader's batches, restarting (and
     reshuffling) each time the dataloader is exhausted."""
 
-    def __init__(self, dataloader: DataLoader[CoordsProtocol]) -> None:
+    def __init__(self, dataloader: DataLoader[Coords]) -> None:
         self.dataloader = dataloader
-        self._iter: Iterator[CoordsProtocol] | None = None
+        self._iter: Iterator[Coords] | None = None
 
     def __len__(self) -> int:
         return len(self.dataloader)
 
-    def next(self) -> CoordsProtocol:
+    def next(self) -> Coords:
         if self._iter is None:
             self._iter = iter_batches(self.dataloader)
         try:

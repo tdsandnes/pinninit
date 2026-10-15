@@ -8,7 +8,7 @@ import pytest
 import torch
 
 from pinninit.data_structure.coords_dataclass import (
-    CoordsProtocol,
+    Coords,
     make_coords_dataclass,
 )
 from pinninit.differential_equations.operators import Operators
@@ -66,35 +66,33 @@ def r_theta_2d(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
 
 
 # Helpers
-def make_coords_cartesian_1d(
-    coord_system: CoordSystem, x: torch.Tensor
-) -> CoordsProtocol:
-    Coords = make_coords_dataclass(
+def make_coords_cartesian_1d(coord_system: CoordSystem, x: torch.Tensor) -> Coords:
+    coords_class = make_coords_dataclass(
         coord_labels={"x"}, coord_system=coord_system, device=x.device
     )
-    return Coords(x=x)
+    return coords_class(x=x)
 
 
 def make_coords_cartesian_2d(
     coord_system: CoordSystem, x: torch.Tensor, y: torch.Tensor
-) -> CoordsProtocol:
-    Coords = make_coords_dataclass(
+) -> Coords:
+    coords_class = make_coords_dataclass(
         coord_labels={"x", "y"},
         coord_system=coord_system,
         device=x.device,
     )
-    return Coords(x=x, y=y)
+    return coords_class(x=x, y=y)
 
 
 def make_coords_cylindrical_2d(
     coord_system: CoordSystem, r: torch.Tensor, theta: torch.Tensor
-) -> CoordsProtocol:
-    Coords = make_coords_dataclass(
+) -> Coords:
+    coords_class = make_coords_dataclass(
         coord_labels={"r", "theta"},
         coord_system=coord_system,
         device=r.device,
     )
-    return Coords(r=r, theta=theta)
+    return coords_class(r=r, theta=theta)
 
 
 class TestOperatorsConstruction:

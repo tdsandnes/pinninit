@@ -8,7 +8,7 @@ import torch
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from ..data_structure.coords_dataclass import CoordsProtocol
+    from ..data_structure.coords_dataclass import Coords
 
 
 class InputTransformationLabels(str, Enum):
@@ -21,7 +21,7 @@ class InputTransformationLabels(str, Enum):
 class InputTransformation:
     """Base class for input transformations."""
 
-    def transform(self, coords: CoordsProtocol) -> torch.Tensor:
+    def transform(self, coords: Coords) -> torch.Tensor:
         raise NotImplementedError
 
     @property
@@ -50,7 +50,7 @@ class ScaleLinear(InputTransformation):
     def out_features(self) -> int:
         return self.lb.shape[-1]
 
-    def transform(self, coords: CoordsProtocol) -> torch.Tensor:
+    def transform(self, coords: Coords) -> torch.Tensor:
         return self.out_lb + (self.out_ub - self.out_lb) * (
             (coords.internal - self.lb) / (self.ub - self.lb)
         )
@@ -90,7 +90,7 @@ class PeriodicW23(InputTransformation):
         n_non_periodic = len(self.internal_labels) - len(self.periodic_coords)
         return 2 * len(self.periodic_coords) + n_non_periodic
 
-    def transform(self, coords: CoordsProtocol) -> torch.Tensor:
+    def transform(self, coords: Coords) -> torch.Tensor:
         x = coords.internal
         embeddings: list[torch.Tensor] = []
 

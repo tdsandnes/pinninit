@@ -7,14 +7,14 @@ from typing import TYPE_CHECKING, Any, Protocol
 import torch
 
 if TYPE_CHECKING:
-    from .coords_dataclass import CoordsProtocol
+    from .coords_dataclass import Coords
 
 
-class FieldProtocol(Protocol):
+class Field(Protocol):
     # Attributes
     # Input fields at class creation time
     rank: int
-    coords: CoordsProtocol  # bound as class attribute in make_field_dataclass
+    coords: Coords  # bound as class attribute in make_field_dataclass
     device: torch.device
 
     # Input fields at instance creation time
@@ -27,32 +27,30 @@ class FieldProtocol(Protocol):
     # Methods
     def __init__(self, **kwargs: Any) -> None: ...
     def __post_init__(self) -> None: ...
-    def _root_indices_for_coords(
-        self, coords: CoordsProtocol
-    ) -> torch.Tensor | None: ...
+    def _root_indices_for_coords(self, coords: Coords) -> torch.Tensor | None: ...
     def get_component(
-        self, label: str, coords: CoordsProtocol | None = None
+        self, label: str, coords: Coords | None = None
     ) -> torch.Tensor: ...
-    def component_tensor(self, coords: CoordsProtocol) -> torch.Tensor: ...
-    def tensor(self, coords: CoordsProtocol) -> torch.Tensor: ...
+    def component_tensor(self, coords: Coords) -> torch.Tensor: ...
+    def tensor(self, coords: Coords) -> torch.Tensor: ...
     def update_from_component_dict(
         self,
         new_components: dict[str, torch.Tensor],
-        coords: CoordsProtocol | None = None,
+        coords: Coords | None = None,
         detach_stale_values: bool = True,
         detach_new_values: bool = False,
     ) -> None: ...
     def update_from_component_tensor(
         self,
         new_tensor: torch.Tensor,
-        coords: CoordsProtocol | None = None,
+        coords: Coords | None = None,
         detach_stale_values: bool = True,
         detach_new_values: bool = False,
     ) -> None: ...
     def update_from_tensor(
         self,
         new_tensor: torch.Tensor,
-        coords: CoordsProtocol | None = None,
+        coords: Coords | None = None,
         detach_stale_values: bool = True,
         detach_new_values: bool = False,
     ) -> None: ...
@@ -63,7 +61,7 @@ class FieldProtocol(Protocol):
     def _tensor(self) -> torch.Tensor: ...
 
 
-def _field_post_init(self: FieldProtocol) -> None:
+def _field_post_init(self: Field) -> None:
     """__post_init__ executed on initialistion of each field object."""
     # Fill missing components with zeros.
     for label in self.component_labels:
@@ -79,12 +77,12 @@ def _field_post_init(self: FieldProtocol) -> None:
 
 
 # @property (defined as property below)
-def _component_tensor(self: FieldProtocol) -> torch.Tensor:
+def _component_tensor(self: Field) -> torch.Tensor:
     return torch.stack([getattr(self, label) for label in self.component_labels], dim=1)
 
 
 # @property (defined as property below)
-def _tensor(self: FieldProtocol) -> torch.Tensor:
+def _tensor(self: Field) -> torch.Tensor:
     component_tensor = self._component_tensor
     if self.rank == 0:
         return component_tensor.squeeze(1)
@@ -96,8 +94,8 @@ def _tensor(self: FieldProtocol) -> torch.Tensor:
 
 
 def _root_indices_for_coords(
-    self: FieldProtocol,
-    coords: CoordsProtocol,
+    self: Field,
+    coords: Coords,
 ) -> torch.Tensor | None:
     """
     Get indices of coords in this field's root coords.
@@ -126,7 +124,7 @@ def _root_indices_for_coords(
 
 
 def get_component(
-    self: FieldProtocol, label: str, coords: CoordsProtocol | None = None
+    self: Field, label: str, coords: Coords | None = None
 ) -> torch.Tensor:
     """Get a specific component of the field by label."""
     coords = coords or self.coords
@@ -137,9 +135,7 @@ def get_component(
     return component if root_indices is None else component[root_indices]
 
 
-def component_tensor(
-    self: FieldProtocol, coords: CoordsProtocol | None = None
-) -> torch.Tensor:
+def component_tensor(self: Field, coords: Coords | None = None) -> torch.Tensor:
     """
     Field values arranged in tensor of shape (n_points, n_components).
     Useful for e.g. component-wise comparisons.
@@ -155,7 +151,7 @@ def component_tensor(
     )
 
 
-def tensor(self: FieldProtocol, coords: CoordsProtocol | None = None) -> torch.Tensor:
+def tensor(self: Field, coords: Coords | None = None) -> torch.Tensor:
     """
     Field values arranged in tensor of shape (n_points, n_geometric, ..., n_geometric).
     Useful for e.g. linear algebra.
@@ -181,9 +177,9 @@ def tensor(self: FieldProtocol, coords: CoordsProtocol | None = None) -> torch.T
 
 
 def update_from_component_dict(
-    self: FieldProtocol,
+    self: Field,
     new_components: dict[str, torch.Tensor],
-    coords: CoordsProtocol | None = None,
+    coords: Coords | None = None,
     detach_stale_values: bool = True,
     detach_new_values: bool = False,
 ) -> None:
@@ -199,8 +195,7 @@ def update_from_component_dict(
     # Check that new labels contain all field components
     if set(new_components.keys()) != set(self.component_labels):
         raise KeyError(
-            "New components must contain all field component labels when "
-            "updating field"
+            "New components must contain all field component labels when updating field"
         )
 
     # Check that all new components have correct shape
@@ -225,9 +220,9 @@ def update_from_component_dict(
 
 
 def update_from_component_tensor(
-    self: FieldProtocol,
+    self: Field,
     new_tensor: torch.Tensor,
-    coords: CoordsProtocol | None = None,
+    coords: Coords | None = None,
     detach_stale_values: bool = True,
     detach_new_values: bool = False,
 ) -> None:
@@ -274,9 +269,9 @@ def update_from_component_tensor(
 
 
 def update_from_tensor(
-    self: FieldProtocol,
+    self: Field,
     new_tensor: torch.Tensor,
-    coords: CoordsProtocol | None = None,
+    coords: Coords | None = None,
     detach_stale_values: bool = True,
     detach_new_values: bool = False,
 ) -> None:
@@ -316,7 +311,7 @@ def update_from_tensor(
     )
 
 
-def _validate_inputs(self: FieldProtocol) -> None:
+def _validate_inputs(self: Field) -> None:
     # field label must not clash with any coord label
     if self.label in self.coords.coord_labels:
         raise ValueError(f"label '{self.label}' clashes with a coordinate label")
@@ -383,8 +378,8 @@ def _build_dataclass_fields(
 
 
 def make_field_dataclass(
-    rank: int, coords: CoordsProtocol, device: torch.device
-) -> type[FieldProtocol]:
+    rank: int, coords: Coords, device: torch.device
+) -> type[Field]:
     # Normalise device so it matches realised tensor devices ("cuda" -> "cuda:0")
     device = torch.empty(0, device=device).device
 

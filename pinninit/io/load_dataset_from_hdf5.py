@@ -12,17 +12,17 @@ from ..data_structure.field_dataclass import (
 )
 
 if TYPE_CHECKING:
-    from ..data_structure.coords_dataclass import CoordsProtocol
+    from ..data_structure.coords_dataclass import Coords
 
 
 def load_coords_from_hdf5(
     dataset_config: DatasetConfig,
     role: str,
     coord_labels: tuple[str, ...],
-    Coords: type[CoordsProtocol],
-) -> CoordsProtocol:
+    coords_class: type[Coords],
+) -> Coords:
     """
-    Load coordinate tensors from an HDF5 file and return a CoordsProtocol instance.
+    Load coordinate tensors from an HDF5 file and return a Coords instance.
 
     Expected HDF5 structure:
         file[dataset_label][role]/Coords/<coord_label>   shape: (n_points,)
@@ -35,12 +35,12 @@ def load_coords_from_hdf5(
         Split identifier inside the HDF5 file, e.g. "train" or "val".
     coord_labels:
         All coordinate labels expected on the returned Coords object.
-    Coords:
+    coords_class:
         The Coords dataclass produced by make_coords_dataclass.
 
     Returns
     -------
-    CoordsProtocol
+    Coords
         A fully-initialised Coords instance with requires_grad=True on each tensor.
     """
     dataset_label = dataset_config.label
@@ -78,7 +78,7 @@ def load_coords_from_hdf5(
                     f"in '{file_path}'."
                 )
             data = coords_group[label][()]
-            device = get_coords_class_default(Coords, "device")
+            device = get_coords_class_default(coords_class, "device")
             coords_dict[label] = torch.tensor(
                 data,
                 dtype=torch.get_default_dtype(),
@@ -86,13 +86,13 @@ def load_coords_from_hdf5(
                 requires_grad=True,
             )
 
-    return Coords(**coords_dict)
+    return coords_class(**coords_dict)
 
 
 def load_fields_from_hdf5(
     dataset_config: DatasetConfig,
     role: str,
-    coords: CoordsProtocol,
+    coords: Coords,
     field_label_to_rank: dict[str, int],
 ) -> dict[str, dict[str, torch.Tensor]]:
     """
@@ -110,7 +110,7 @@ def load_fields_from_hdf5(
     role:
         Role identifier, e.g. "train" or "val".
     coords:
-        The CoordsProtocol instance these fields are bound to.
+        The Coords instance these fields are bound to.
     field_label_to_rank:
         Mapping of field label to tensor rank.
 

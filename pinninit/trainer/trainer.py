@@ -12,7 +12,7 @@ from .trainer_state import TrainerState
 if TYPE_CHECKING:
     from typing import Any
 
-    from ..data_structure.coords_dataclass import CoordsProtocol
+    from ..data_structure.coords_dataclass import Coords
     from ..nn.neural_network import NeuralNetwork
     from ..optimizer.optimizer import Optimizer
     from ..trainer_modules.trainer_module import TrainerModule
@@ -59,7 +59,7 @@ class Trainer:
         self.optimizer.attach_trainer(self)
 
         # Batch coords used for the current step
-        self._current_train_batches: dict[str, CoordsProtocol] = {}
+        self._current_train_batches: dict[str, Coords] = {}
 
         # Best model info
         self.best_model_epoch: int | None = None
@@ -286,7 +286,7 @@ class Trainer:
         return self._loss_containers
 
     @property
-    def current_train_batches(self) -> dict[str, CoordsProtocol]:
+    def current_train_batches(self) -> dict[str, Coords]:
         """Batch coords used by each active loss container in the current step."""
         return self._current_train_batches
 

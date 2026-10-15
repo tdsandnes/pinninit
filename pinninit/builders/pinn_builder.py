@@ -71,7 +71,7 @@ def build_pinn(
                 f"LossTermConfig '{loss_term_config.label}' references unknown "
                 f"Coordinates '{loss_term_config.coordinates_label}'."
             )
-        Coords, domain = coords_classes[loss_term_config.coordinates_label]
+        coords_class, domain = coords_classes[loss_term_config.coordinates_label]
 
         dataset_config = (
             datasets_by_label.get(loss_term_config.dataset_label)
@@ -92,7 +92,7 @@ def build_pinn(
         train_eval_context, val_eval_context = build_evaluation_contexts(
             loss_term_config=loss_term_config,
             dataset_config=dataset_config,
-            Coords=Coords,
+            coords_class=coords_class,
             fields_config=config.fields,
             const_configs=config.constants,
             equations=equations,

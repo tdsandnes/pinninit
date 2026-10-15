@@ -8,7 +8,7 @@ import torch
 from .trainer_module import TrainerModule
 
 if TYPE_CHECKING:
-    from ..data_structure.coords_dataclass import CoordsProtocol
+    from ..data_structure.coords_dataclass import Coords
     from ..loss.loss_term_container import LossTermContainer
     from ..trainer.trainer import Trainer
     from ..trainer.trainer_logger import TrainerLogger
@@ -151,7 +151,7 @@ class ResidualBasedAttentionA24(TrainerModule):
         self,
         trainer: Trainer,
         container: LossTermContainer,
-        batch_coords: CoordsProtocol,
+        batch_coords: Coords,
     ) -> None:
         eval_context = container.train_eval_context
         # Per-point residual magnitudes on the current batch

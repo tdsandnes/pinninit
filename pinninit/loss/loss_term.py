@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import torch
 
 if TYPE_CHECKING:
-    from ..data_structure.coords_dataclass import CoordsProtocol
+    from ..data_structure.coords_dataclass import Coords
     from .evaluation_context import EvaluationContext
 
 
@@ -31,7 +31,7 @@ class LossTerm(ABC):
     def compute_residual(
         self,
         eval_context: EvaluationContext,
-        eval_coords: CoordsProtocol,
+        eval_coords: Coords,
     ) -> torch.Tensor:
         """Subclasses must implement this method to compute residual."""
         pass
@@ -39,7 +39,7 @@ class LossTerm(ABC):
     def compute_loss_and_residuals(
         self,
         eval_context: EvaluationContext,
-        eval_coords: CoordsProtocol,
+        eval_coords: Coords,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         residuals = self.compute_residual(eval_context, eval_coords)
 
@@ -58,7 +58,7 @@ class DataLoss(LossTerm):
     def compute_residual(
         self,
         eval_context: EvaluationContext,
-        eval_coords: CoordsProtocol,
+        eval_coords: Coords,
     ) -> torch.Tensor:
         if eval_context.input_data is None:
             raise ValueError(
@@ -81,7 +81,7 @@ class PhysicsLoss(LossTerm):
     def compute_residual(
         self,
         eval_context: EvaluationContext,
-        eval_coords: CoordsProtocol,
+        eval_coords: Coords,
     ) -> torch.Tensor:
         return eval_context.output_data.get_field_component_tensor(
             self.field_label, eval_coords

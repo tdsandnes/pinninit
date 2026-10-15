@@ -19,7 +19,7 @@ from pinninit.geometry.coordinate_system import CartesianCoords
 if TYPE_CHECKING:
     from matplotlib.typing import MarkerType
 
-    from pinninit.data_structure.coords_dataclass import CoordsProtocol
+    from pinninit.data_structure.coords_dataclass import Coords
 
     TensorDict = dict[str, torch.Tensor]
 
@@ -28,9 +28,9 @@ def load_data(
     filename: str,
     dataset_label: str,
     role_label: str,
-    Coords: type[CoordsProtocol],
+    coords_class: type[Coords],
     device: torch.device,
-) -> tuple[CoordsProtocol, TensorDict]:
+) -> tuple[Coords, TensorDict]:
     with h5py.File(filename, "r") as f:
         ds_grp: h5py.Group = f[dataset_label][role_label]
 
@@ -46,7 +46,7 @@ def load_data(
             device=device,
         )
 
-    coords = Coords(x=x)
+    coords = coords_class(x=x)
     fields_dict: TensorDict = {"f": f_true}
 
     return coords, fields_dict
@@ -55,7 +55,7 @@ def load_data(
 # Scatter plotting
 def plot_training_scatter(
     pinn: pinninit.PINN,
-    coords: CoordsProtocol | None,
+    coords: Coords | None,
     label: str,
     marker: MarkerType,
     color: str,
@@ -89,11 +89,11 @@ def plot_training_scatter(
 def plot_model_output(
     output_filepath: str | Path,
     pinn: pinninit.PINN,
-    test_coords: CoordsProtocol,
+    test_coords: Coords,
     test_fields: TensorDict,
     test_model_output: torch.Tensor,
-    data_loss_coords: CoordsProtocol | None = None,
-    phys_loss_coords: CoordsProtocol | None = None,
+    data_loss_coords: Coords | None = None,
+    phys_loss_coords: Coords | None = None,
 ) -> None:
     # Test data
     x = test_coords.get_coord("x").detach().cpu().numpy().squeeze()
@@ -150,14 +150,14 @@ if __name__ == "__main__":
 
     # Coords class matching the training configuration
     coord_system = CartesianCoords(dim_geometric=1, coord_axes={"x"}, device=device)
-    Coords = make_coords_dataclass({"x"}, coord_system, device)
+    coords_class = make_coords_dataclass({"x"}, coord_system, device)
 
     # Load test data
     test_coords, test_fields = load_data(
         TEST_DATA_FILE,
         "test",
         "test",
-        Coords,
+        coords_class,
         device,
     )
 
@@ -166,7 +166,7 @@ if __name__ == "__main__":
         TRAIN_DATA_FILE,
         "data_loss",
         "train",
-        Coords,
+        coords_class,
         device,
     )
 
@@ -174,7 +174,7 @@ if __name__ == "__main__":
         TRAIN_DATA_FILE,
         "phys_loss",
         "train",
-        Coords,
+        coords_class,
         device,
     )
 

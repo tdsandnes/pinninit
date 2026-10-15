@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from ..differential_equations.operators import Operators
-    from .coords_dataclass import CoordsProtocol
+    from .coords_dataclass import Coords
     from .data_container import DataContainer
 
 
@@ -49,7 +49,7 @@ class Equation:
     def evaluate(
         self,
         data_container: DataContainer,
-        eval_coords: CoordsProtocol,
+        eval_coords: Coords,
         operators: Operators,
     ) -> dict[str, torch.Tensor]:
         # Gather inputs from data container
@@ -96,7 +96,7 @@ class Equation:
         return output_field_dict
 
     def _gather_inputs(
-        self, data_container: DataContainer, eval_coords: CoordsProtocol
+        self, data_container: DataContainer, eval_coords: Coords
     ) -> dict[str, torch.Tensor]:
         value: torch.Tensor | None = None
         inputs: dict[str, torch.Tensor] = {}

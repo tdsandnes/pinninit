@@ -26,8 +26,7 @@ def compute_flat_train_grads(
         residuals = trainer.cached_train_residuals(container.label)
         if residuals is None or not residuals.requires_grad:
             raise RuntimeError(
-                f"No graph-carrying cached residuals for loss term "
-                f"'{container.label}'."
+                f"No graph-carrying cached residuals for loss term '{container.label}'."
             )
         batch = trainer.current_train_batches.get(container.label)
         loss = loss_fn(residuals, container.train_eval_context, batch).sum()

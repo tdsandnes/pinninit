@@ -12,14 +12,14 @@ from ..data_structure.field_dataclass import make_field_dataclass
 if TYPE_CHECKING:
     import numpy as np
 
-    from ..data_structure.coords_dataclass import CoordsProtocol
-    from ..data_structure.field_dataclass import FieldProtocol
+    from ..data_structure.coords_dataclass import Coords
+    from ..data_structure.field_dataclass import Field
     from ..geometry.coordinate_system import CoordSystem
 
 
 def save_datasets_to_hdf5(
     file_path: str | Path,
-    datasets: dict[str, dict[str, tuple[CoordsProtocol, dict[str, FieldProtocol]]]],
+    datasets: dict[str, dict[str, tuple[Coords, dict[str, Field]]]],
 ) -> None:
     """
     Write datasets to HDF5 in the layout expected by load_coords_from_hdf5
@@ -86,10 +86,10 @@ class DataSetWriter:
         device: torch.device | None = None,
     ) -> None:
         self.device = device or torch.device("cpu")
-        self.Coords = make_coords_dataclass(coord_labels, coord_system, self.device)
-        self.datasets: dict[
-            str, dict[str, tuple[CoordsProtocol, dict[str, FieldProtocol]]]
-        ] = {}
+        self.coords_class = make_coords_dataclass(
+            coord_labels, coord_system, self.device
+        )
+        self.datasets: dict[str, dict[str, tuple[Coords, dict[str, Field]]]] = {}
 
     def add(
         self,
@@ -103,7 +103,7 @@ class DataSetWriter:
         if role in self.datasets.get(label, {}):
             raise ValueError(f"{label}/{role} already exists")
 
-        coords_obj = self.Coords(
+        coords_obj = self.coords_class(
             **{
                 k: torch.as_tensor(
                     v, dtype=torch.get_default_dtype(), device=self.device
@@ -112,9 +112,11 @@ class DataSetWriter:
             }
         )
 
-        Field = make_field_dataclass(rank=0, coords=coords_obj, device=self.device)
+        ScalarField = make_field_dataclass(
+            rank=0, coords=coords_obj, device=self.device
+        )
         field_objs = {
-            f_label: Field(
+            f_label: ScalarField(
                 label=f_label,
                 value=torch.as_tensor(
                     arr, dtype=torch.get_default_dtype(), device=self.device

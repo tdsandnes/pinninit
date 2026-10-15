@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from ..differential_equations.operators import Operators
 
 if TYPE_CHECKING:
-    from .coords_dataclass import CoordsProtocol
+    from .coords_dataclass import Coords
     from .data_container import DataContainer
     from .equation import Equation
 
@@ -79,7 +79,7 @@ class EquationEvaluator:
 
         return sorted_equations
 
-    def evaluate(self, coords: CoordsProtocol) -> None:
+    def evaluate(self, coords: Coords) -> None:
         """Evaluate all equations in dependency order."""
         # Ensure all primary fields are compatible with evaluation coordinates.
         self.data_container.validate_eval_coords_primary_fields(coords)

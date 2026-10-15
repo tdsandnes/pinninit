@@ -16,7 +16,7 @@ from .layers import LAYER_TYPE_REGISTRY
 
 if TYPE_CHECKING:
     from ..config.config import NNConfig
-    from ..data_structure.coords_dataclass import CoordsProtocol
+    from ..data_structure.coords_dataclass import Coords
 
 
 class NNTypeLabels(str, Enum):
@@ -31,7 +31,7 @@ class NeuralNetwork(nn.Module, ABC):
     output_field_labels: tuple[str, ...]
 
     @abstractmethod
-    def evaluate(self, coords: CoordsProtocol) -> torch.Tensor:
+    def evaluate(self, coords: Coords) -> torch.Tensor:
         pass
 
     def named_parameter_groups(self) -> dict[str, list[nn.Parameter]]:
@@ -73,7 +73,7 @@ class FeedforwardNN(NeuralNetwork):
         if nn_config.weight_norm:
             self.layers = nn.ModuleList([weight_norm(layer) for layer in self.layers])
 
-    def evaluate(self, coords: CoordsProtocol) -> torch.Tensor:
+    def evaluate(self, coords: Coords) -> torch.Tensor:
         if self.input_transformation is not None:
             tensor = self.input_transformation.transform(coords)
         else:
@@ -168,7 +168,7 @@ class ModifiedMLP(NeuralNetwork):
             + list(self.encoder_v.parameters())
         }
 
-    def evaluate(self, coords: CoordsProtocol) -> torch.Tensor:
+    def evaluate(self, coords: Coords) -> torch.Tensor:
         if self.input_transformation is not None:
             tensor = self.input_transformation.transform(coords)
         else:

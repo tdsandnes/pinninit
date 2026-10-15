@@ -10,7 +10,7 @@ import pytest
 import torch
 
 from pinninit.data_structure.coords_dataclass import (
-    CoordsProtocol,
+    Coords,
     make_coords_dataclass,
 )
 from pinninit.data_structure.data_container import DataContainer
@@ -48,13 +48,13 @@ def xy_2d(device: torch.device) -> tuple[torch.Tensor, torch.Tensor]:
 
 def make_coords_cartesian_2d(
     coord_system: CoordSystem, x: torch.Tensor, y: torch.Tensor
-) -> CoordsProtocol:
-    Coords = make_coords_dataclass(
+) -> Coords:
+    coords_class = make_coords_dataclass(
         coord_labels={"x", "y"},
         coord_system=coord_system,
         device=x.device,
     )
-    return Coords(x=x, y=y)
+    return coords_class(x=x, y=y)
 
 
 def build_container(
@@ -236,7 +236,7 @@ class TestEquationGatherInputs:
         class MockField:
             label = "x"
 
-            def tensor(self, coords: CoordsProtocol) -> torch.Tensor:
+            def tensor(self, coords: Coords) -> torch.Tensor:
                 return torch.zeros(10)
 
         class MockContainer:
@@ -263,7 +263,7 @@ class TestEquationGatherInputs:
         with pytest.raises(ValueError, match="Duplicate labels"):
             equation.evaluate(
                 cast(DataContainer, data),
-                cast(CoordsProtocol, data.coords),
+                cast(Coords, data.coords),
                 cast(Operators, MockOperators()),
             )
 

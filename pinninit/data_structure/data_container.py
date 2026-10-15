@@ -4,16 +4,16 @@ from collections.abc import Callable
 
 import torch
 
-from .coords_dataclass import CoordsProtocol
+from .coords_dataclass import Coords
 from .equation import Equation
 from .equation_evaluator import EquationEvaluator
-from .field_dataclass import FieldProtocol, make_field_dataclass
+from .field_dataclass import Field, make_field_dataclass
 
 
 class DataContainer:
     def __init__(
         self,
-        coords: CoordsProtocol,
+        coords: Coords,
         primary_field_label_to_rank: dict[str, int],
         derived_field_label_to_rank: dict[str, int] | None = None,
         const_labels: set[str] | None = None,
@@ -31,12 +31,12 @@ class DataContainer:
         self.derived_field_labels = set(derived_field_label_to_rank)
 
         # Init dict of empty fields
-        self._field_rank_to_classes: dict[int, type[FieldProtocol]] = {}
-        self.primary_fields: dict[str, FieldProtocol] = {
+        self._field_rank_to_classes: dict[int, type[Field]] = {}
+        self.primary_fields: dict[str, Field] = {
             label: self._empty_field_of_rank(label, rank)
             for label, rank in primary_field_label_to_rank.items()
         }
-        self.derived_fields: dict[str, FieldProtocol] = {
+        self.derived_fields: dict[str, Field] = {
             label: self._empty_field_of_rank(label, rank)
             for label, rank in derived_field_label_to_rank.items()
         }
@@ -47,32 +47,32 @@ class DataContainer:
         )
 
         # Keep track of the active set of coords used when updating fields or consts
-        self.primary_fields_active_coords: dict[str, CoordsProtocol | None] = (
-            dict.fromkeys(self.primary_field_labels, None)
+        self.primary_fields_active_coords: dict[str, Coords | None] = dict.fromkeys(
+            self.primary_field_labels, None
         )
-        self.derived_fields_active_coords: dict[str, CoordsProtocol | None] = (
-            dict.fromkeys(self.derived_field_labels, None)
+        self.derived_fields_active_coords: dict[str, Coords | None] = dict.fromkeys(
+            self.derived_field_labels, None
         )
-        self.consts_active_coords: dict[str, CoordsProtocol | None] = dict.fromkeys(
+        self.consts_active_coords: dict[str, Coords | None] = dict.fromkeys(
             const_labels or set(), None
         )
 
         # Cache for accessing fields
-        self._fields_cache: dict[str, FieldProtocol] | None = None
-        self._fields_active_coords_cache: dict[str, CoordsProtocol | None] | None = None
+        self._fields_cache: dict[str, Field] | None = None
+        self._fields_active_coords_cache: dict[str, Coords | None] | None = None
 
     @property
     def field_labels(self) -> set[str]:
         return self.primary_field_labels | self.derived_field_labels
 
     @property
-    def fields(self) -> dict[str, FieldProtocol]:
+    def fields(self) -> dict[str, Field]:
         if self._fields_cache is None:
             self._fields_cache = {**self.primary_fields, **self.derived_fields}
         return self._fields_cache
 
     @property
-    def fields_active_coords(self) -> dict[str, CoordsProtocol | None]:
+    def fields_active_coords(self) -> dict[str, Coords | None]:
         if self._fields_active_coords_cache is None:
             self._fields_active_coords_cache = {
                 **self.primary_fields_active_coords,
@@ -80,7 +80,7 @@ class DataContainer:
             }
         return self._fields_active_coords_cache
 
-    def get_field(self, label: str) -> FieldProtocol:
+    def get_field(self, label: str) -> Field:
         if label not in self.field_labels:
             raise KeyError(f"Field '{label}' not found.")
 
@@ -89,7 +89,7 @@ class DataContainer:
     def get_field_tensor(
         self,
         label: str,
-        coords: CoordsProtocol | None = None,
+        coords: Coords | None = None,
         enforce_ancestry: bool = True,
     ) -> torch.Tensor:
         coords = coords or self.coords
@@ -101,7 +101,7 @@ class DataContainer:
         self,
         field_label: str,
         component_label: str,
-        coords: CoordsProtocol | None = None,
+        coords: Coords | None = None,
         enforce_ancestry: bool = True,
     ) -> torch.Tensor:
         coords = coords or self.coords
@@ -112,7 +112,7 @@ class DataContainer:
     def get_field_component_tensor(
         self,
         label: str,
-        coords: CoordsProtocol | None = None,
+        coords: Coords | None = None,
         enforce_ancestry: bool = True,
     ) -> torch.Tensor:
         coords = coords or self.coords
@@ -123,7 +123,7 @@ class DataContainer:
     def get_const(
         self,
         label: str,
-        coords: CoordsProtocol | None = None,
+        coords: Coords | None = None,
         enforce_ancestry: bool = True,
     ) -> torch.Tensor:
         coords = coords or self.coords
@@ -142,9 +142,9 @@ class DataContainer:
     def _set_field(
         self,
         label: str,
-        coords: CoordsProtocol | None,
+        coords: Coords | None,
         allow_derived: bool,
-        update: Callable[[FieldProtocol, CoordsProtocol], None],
+        update: Callable[[Field, Coords], None],
     ) -> None:
         # Guard against setting derived field outside of equation evaluator
         if label in self.derived_field_labels and not allow_derived:
@@ -171,7 +171,7 @@ class DataContainer:
         self,
         label: str,
         tensor: torch.Tensor,
-        coords: CoordsProtocol | None = None,
+        coords: Coords | None = None,
         detach_stale_values: bool = True,
         allow_derived: bool = False,
     ) -> None:
@@ -188,7 +188,7 @@ class DataContainer:
         self,
         label: str,
         component_tensor: torch.Tensor,
-        coords: CoordsProtocol | None = None,
+        coords: Coords | None = None,
         detach_stale_values: bool = True,
         allow_derived: bool = False,
     ) -> None:
@@ -205,7 +205,7 @@ class DataContainer:
         self,
         label: str,
         component_dict: dict[str, torch.Tensor],
-        coords: CoordsProtocol | None = None,
+        coords: Coords | None = None,
         detach_stale_values: bool = True,
         allow_derived: bool = False,
     ) -> None:
@@ -219,7 +219,7 @@ class DataContainer:
         )
 
     def set_const(
-        self, label: str, value: torch.Tensor, coords: CoordsProtocol | None = None
+        self, label: str, value: torch.Tensor, coords: Coords | None = None
     ) -> None:
         # Check that input is a scalar
         if value.ndim != 0:
@@ -237,11 +237,11 @@ class DataContainer:
         self._validate_eval_coords(label, self.coords, coords, enforce_ancestry=True)
         self.consts_active_coords[label] = coords
 
-    def evaluate_derived_fields(self, coords: CoordsProtocol | None = None) -> None:
+    def evaluate_derived_fields(self, coords: Coords | None = None) -> None:
         coords = coords or self.coords
         self.equation_evaluator.evaluate(coords)
 
-    def validate_eval_coords_primary_fields(self, coords: CoordsProtocol) -> None:
+    def validate_eval_coords_primary_fields(self, coords: Coords) -> None:
         for label in self.primary_field_labels:
             active_coords = self.primary_fields_active_coords[label]
 
@@ -254,23 +254,23 @@ class DataContainer:
                     "descendant of them."
                 )
 
-    def _empty_field_of_rank(self, label: str, rank: int) -> FieldProtocol:
+    def _empty_field_of_rank(self, label: str, rank: int) -> Field:
         # Create or retrieve Field dataclass for this rank
-        Field = self._field_rank_to_classes.get(rank)
-        if Field is None:
-            Field = make_field_dataclass(
+        field_class = self._field_rank_to_classes.get(rank)
+        if field_class is None:
+            field_class = make_field_dataclass(
                 rank=rank, coords=self.coords, device=self.device
             )
-            self._field_rank_to_classes[rank] = Field
+            self._field_rank_to_classes[rank] = field_class
 
         # Return an empty Field instance with the correct label
-        return Field(label=label)
+        return field_class(label=label)
 
     def _validate_eval_coords(
         self,
         label: str,
-        active_coords: CoordsProtocol | None,
-        coords: CoordsProtocol,
+        active_coords: Coords | None,
+        coords: Coords,
         enforce_ancestry: bool,
     ) -> None:
         if active_coords is None:
@@ -286,7 +286,7 @@ class DataContainer:
                 "or a descendant of them."
             )
 
-    def _get_active_coords(self, label: str) -> CoordsProtocol | None:
+    def _get_active_coords(self, label: str) -> Coords | None:
         # Check for label in fields and consts
         if label in self.field_labels:
             return self.fields_active_coords[label]

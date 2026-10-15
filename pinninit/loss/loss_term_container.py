@@ -8,7 +8,7 @@ import torch
 from ..data_structure.batching import BatchCycler, iter_batches
 
 if TYPE_CHECKING:
-    from ..data_structure.coords_dataclass import CoordsProtocol
+    from ..data_structure.coords_dataclass import Coords
     from ..geometry.domain import Domain
     from ..nn.neural_network import NeuralNetwork
     from .evaluation_context import EvaluationContext
@@ -64,7 +64,7 @@ class LossTermContainer:
     def _apply_model(
         self,
         model: NeuralNetwork,
-        coords: CoordsProtocol,
+        coords: Coords,
         eval_context: EvaluationContext,
     ) -> None:
         """Run model at coords and write results into eval_context.output_data."""
@@ -90,7 +90,7 @@ class LossTermContainer:
         self,
         model: NeuralNetwork,
         eval_context: EvaluationContext,
-        eval_coords: CoordsProtocol,
+        eval_coords: Coords,
         detach: bool,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         self._apply_model(model, eval_coords, eval_context)
@@ -123,7 +123,7 @@ class LossTermContainer:
 
         return total / n_total
 
-    def next_train_batch(self) -> CoordsProtocol:
+    def next_train_batch(self) -> Coords:
         """Return the next batch of training coords, cycling the dataloader."""
         return self._train_batches.next()
 
@@ -132,14 +132,14 @@ class LossTermContainer:
         self._train_batches.reset()
 
     def compute_train_batch_loss_and_residuals(
-        self, model: NeuralNetwork, batch_coords: CoordsProtocol, detach: bool = False
+        self, model: NeuralNetwork, batch_coords: Coords, detach: bool = False
     ) -> tuple[torch.Tensor, torch.Tensor]:
         return self.compute_loss_and_residuals(
             model, self.train_eval_context, batch_coords, detach=detach
         )
 
     def compute_val_batch_loss_and_residuals(
-        self, model: NeuralNetwork, batch_coords: CoordsProtocol, detach: bool = True
+        self, model: NeuralNetwork, batch_coords: Coords, detach: bool = True
     ) -> tuple[torch.Tensor, torch.Tensor]:
         return self.compute_loss_and_residuals(
             model, self.val_eval_context, batch_coords, detach=detach

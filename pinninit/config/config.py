@@ -66,7 +66,7 @@ class CoordSystemConfig:
 
 @dataclass(frozen=True, slots=True)
 class CoordinatesConfig:
-    """One coord system and one domain for one CoordsProtocol instance."""
+    """One coord system and one domain for one Coords instance."""
 
     label: str
     coord_system_label: str
@@ -320,8 +320,7 @@ class OptimizerConfig:
     def __post_init__(self) -> None:
         if self.learning_rate <= 0:
             raise ValueError(
-                f"OptimizerConfig: learning_rate must be > 0, got "
-                f"{self.learning_rate}."
+                f"OptimizerConfig: learning_rate must be > 0, got {self.learning_rate}."
             )
 
 

@@ -26,9 +26,9 @@ from .data_container_builder import (
 )
 
 if TYPE_CHECKING:
-    from ..data_structure.coords_dataclass import CoordsProtocol
+    from ..data_structure.coords_dataclass import Coords
     from ..data_structure.data_container import DataContainer
-    from ..data_structure.field_dataclass import FieldProtocol
+    from ..data_structure.field_dataclass import Field
 
 # Loss function used for validation loss
 _VAL_LOSS_FN = LossFunctionLabels.MSE
@@ -37,7 +37,7 @@ _VAL_LOSS_FN = LossFunctionLabels.MSE
 def build_evaluation_contexts(
     loss_term_config: LossTermConfig,
     dataset_config: DatasetConfig | None,
-    Coords: type[CoordsProtocol],
+    coords_class: type[Coords],
     fields_config: FieldsConfig,
     const_configs: list[ConstConfig],
     equations: list[Equation],
@@ -61,7 +61,7 @@ def build_evaluation_contexts(
         Config for this loss term (field_label, loss_function, etc.).
     dataset_config:
         Config for the HDF5 dataset to load.
-    Coords:
+    coords_class:
         The Coords class for this set of coordinates.
     fields_config:
         Fields config — determines which fields are input/output/derivable.
@@ -85,7 +85,7 @@ def build_evaluation_contexts(
     tuple[EvaluationContext, EvaluationContext]
         (train_eval_context, val_eval_context)
     """
-    coord_labels = get_coords_class_default(Coords, "coord_labels")
+    coord_labels = get_coords_class_default(coords_class, "coord_labels")
 
     # Determine which fields to load from file (only input fields are in the HDF5)
     input_field_label_to_rank = fields_config.input_field_label_to_rank
@@ -101,7 +101,7 @@ def build_evaluation_contexts(
         dataset_config=dataset_config,
         role=dataset_config.train_label,
         coord_labels=coord_labels,
-        Coords=Coords,
+        coords_class=coords_class,
     )
     # Physics losses use collocation points only; no input fields to load
     is_physics = loss_term_config.loss_type == LossTermLabels.PHYSICS
@@ -121,7 +121,7 @@ def build_evaluation_contexts(
         dataset_config=dataset_config,
         role=dataset_config.val_label,
         coord_labels=coord_labels,
-        Coords=Coords,
+        coords_class=coords_class,
     )
     val_input_fields = (
         {}
@@ -166,7 +166,7 @@ def build_evaluation_contexts(
 
 
 def _build_one_eval_context(
-    coords: CoordsProtocol,
+    coords: Coords,
     loaded_input_fields: dict[str, dict[str, torch.Tensor]],
     fields_config: FieldsConfig,
     const_configs: list[ConstConfig],
@@ -216,8 +216,8 @@ def _build_one_eval_context(
     )
 
     # Every loss term carries a per-point weight field
-    Field = make_field_dataclass(rank=0, coords=coords, device=coords.device)
-    point_weights = Field(
+    ScalarField = make_field_dataclass(rank=0, coords=coords, device=coords.device)
+    point_weights = ScalarField(
         label="point_weights",
         value=torch.ones(coords.n_points, device=coords.device),
     )
@@ -242,8 +242,8 @@ def _build_one_eval_context(
 def _build_point_weight_modifier(
     equation: Equation,
     output_dc: DataContainer,
-    coords: CoordsProtocol,
-) -> FieldProtocol:
+    coords: Coords,
+) -> Field:
     if len(equation.output_labels) != 1:
         raise ValueError(
             f"Point-weight equation '{equation.label}' must have exactly one "
@@ -254,5 +254,5 @@ def _build_point_weight_modifier(
     result = equation.evaluate(output_dc, coords, operators)
     modifier_tensor = result[equation.output_labels[0]].detach()
 
-    Field = make_field_dataclass(rank=0, coords=coords, device=coords.device)
-    return Field(label="point_weight_modifier", value=modifier_tensor)
+    ScalarField = make_field_dataclass(rank=0, coords=coords, device=coords.device)
+    return ScalarField(label="point_weight_modifier", value=modifier_tensor)
