@@ -21,8 +21,7 @@ from .helpers import N_POINTS, make_coords
 
 @pytest.fixture(autouse=True)
 def torch_state() -> Iterator[None]:
-    """Start each test from the same random seed, and undo any change to the
-    default dtype (PINN.from_yaml sets it globally)."""
+    """Start each test from the same random seed."""
     dtype = torch.get_default_dtype()
     torch.manual_seed(0)
     yield

@@ -38,7 +38,7 @@ class TestConstruction:
         assert coords.internal_labels == ("t", "x", "y")
         assert coords.geometric.shape == (N_POINTS, 2)
 
-    def test_curvilinear_internal_coords_are_cartesian(
+    def test_internal_coords_are_cartesian(
         self, coords_cylindrical: Coords, coords_spherical: Coords
     ) -> None:
         assert coords_cylindrical.geometric_labels == ("r", "theta")
