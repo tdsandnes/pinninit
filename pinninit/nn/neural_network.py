@@ -16,7 +16,7 @@ from .layers import LAYER_TYPE_REGISTRY
 
 if TYPE_CHECKING:
     from ..config.config import NNConfig
-    from ..data_structure.coords_dataclass import Coords
+    from ..data_structure.coords import Coords
 
 
 class NNTypeLabels(str, Enum):

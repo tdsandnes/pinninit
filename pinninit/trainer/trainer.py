@@ -12,7 +12,7 @@ from .trainer_state import TrainerState
 if TYPE_CHECKING:
     from typing import Any
 
-    from ..data_structure.coords_dataclass import Coords
+    from ..data_structure.coords import Coords
     from ..nn.neural_network import NeuralNetwork
     from ..optimizer.optimizer import Optimizer
     from ..trainer_modules.trainer_module import TrainerModule

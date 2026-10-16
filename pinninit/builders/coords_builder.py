@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 
 from ..config.config import CoordinatesConfig, CoordSystemConfig
-from ..data_structure.coords_dataclass import Coords, make_coords_dataclass
+from ..data_structure.coords import Coords, make_coords_dataclass
 from ..geometry.coordinate_system import CoordSystem
 from ..geometry.domain import Domain
 

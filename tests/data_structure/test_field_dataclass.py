@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 import torch
 
-from pinninit.data_structure.coords_dataclass import Coords
-from pinninit.data_structure.field_dataclass import (
+from pinninit.data_structure.coords import Coords
+from pinninit.data_structure.field import (
     Field,
     generate_tensor_component_labels,
     make_field_dataclass,

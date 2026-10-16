@@ -5,9 +5,9 @@ from collections import Counter
 import torch
 
 from ..differential_equations.operators import Operators
-from .coords_dataclass import Coords
+from .coords import Coords
 from .equation import Equation, sort_equations
-from .field_dataclass import Field, make_field_dataclass
+from .field import Field, make_field_dataclass
 
 
 class DataContainer:

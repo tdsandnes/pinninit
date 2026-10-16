@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from pinninit.data_structure.coords_dataclass import Coords, make_coords_dataclass
+from pinninit.data_structure.coords import Coords, make_coords_dataclass
 from pinninit.geometry.coordinate_system import CoordSystem
 
 N_POINTS = 10

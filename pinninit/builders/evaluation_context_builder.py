@@ -12,7 +12,7 @@ from ..config.config import (
 )
 from ..data_structure.batching import make_dataloader
 from ..data_structure.equation import Equation
-from ..data_structure.field_dataclass import make_field_dataclass
+from ..data_structure.field import make_field_dataclass
 from ..differential_equations.operators import Operators
 from ..io.load_dataset_from_hdf5 import load_coords_from_hdf5, load_fields_from_hdf5
 from ..loss.evaluation_context import EvaluationContext
@@ -25,9 +25,9 @@ from .data_container_builder import (
 )
 
 if TYPE_CHECKING:
-    from ..data_structure.coords_dataclass import Coords
+    from ..data_structure.coords import Coords
     from ..data_structure.data_container import DataContainer
-    from ..data_structure.field_dataclass import Field
+    from ..data_structure.field import Field
 
 # Loss function used for validation loss
 _VAL_LOSS_FN = LossFunctionLabels.MSE

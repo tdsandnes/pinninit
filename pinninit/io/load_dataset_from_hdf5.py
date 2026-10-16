@@ -6,12 +6,12 @@ import h5py
 import torch
 
 from ..config.config import DatasetConfig
-from ..data_structure.field_dataclass import (
+from ..data_structure.field import (
     generate_tensor_component_labels,
 )
 
 if TYPE_CHECKING:
-    from ..data_structure.coords_dataclass import Coords
+    from ..data_structure.coords import Coords
 
 
 def load_coords_from_hdf5(

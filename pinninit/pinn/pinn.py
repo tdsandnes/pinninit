@@ -11,7 +11,7 @@ from ..config.pinn_config import PINNConfig
 if TYPE_CHECKING:
     import torch.nn as nn
 
-    from ..data_structure.coords_dataclass import Coords
+    from ..data_structure.coords import Coords
     from ..loss.loss_term_container import LossTermContainer
     from ..nn.neural_network import NeuralNetwork
     from ..optimizer.optimizer import Optimizer

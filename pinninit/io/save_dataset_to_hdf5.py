@@ -6,14 +6,14 @@ from typing import TYPE_CHECKING
 import h5py
 import torch
 
-from ..data_structure.coords_dataclass import make_coords_dataclass
-from ..data_structure.field_dataclass import make_field_dataclass
+from ..data_structure.coords import make_coords_dataclass
+from ..data_structure.field import make_field_dataclass
 
 if TYPE_CHECKING:
     import numpy as np
 
-    from ..data_structure.coords_dataclass import Coords
-    from ..data_structure.field_dataclass import Field
+    from ..data_structure.coords import Coords
+    from ..data_structure.field import Field
     from ..geometry.coordinate_system import CoordSystem
 
 

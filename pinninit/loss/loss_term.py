@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import torch
 
 if TYPE_CHECKING:
-    from ..data_structure.coords_dataclass import Coords
+    from ..data_structure.coords import Coords
     from .evaluation_context import EvaluationContext
 
 

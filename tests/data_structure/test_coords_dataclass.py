@@ -7,7 +7,7 @@ from dataclasses import FrozenInstanceError
 import pytest
 import torch
 
-from pinninit.data_structure.coords_dataclass import Coords, make_coords_dataclass
+from pinninit.data_structure.coords import Coords, make_coords_dataclass
 from pinninit.geometry.coordinate_system import CartesianCoords, CoordSystem
 from pinninit.geometry.domain import Domain
 

@@ -8,7 +8,7 @@ import torch
 from ..data_structure.batching import BatchCycler, iter_batches
 
 if TYPE_CHECKING:
-    from ..data_structure.coords_dataclass import Coords
+    from ..data_structure.coords import Coords
     from ..geometry.domain import Domain
     from ..nn.neural_network import NeuralNetwork
     from .evaluation_context import EvaluationContext

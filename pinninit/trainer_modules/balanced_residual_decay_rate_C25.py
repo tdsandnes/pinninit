@@ -5,14 +5,14 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from ..data_structure.field_dataclass import make_field_dataclass
+from ..data_structure.field import make_field_dataclass
 from .trainer_module import TrainerModule
 
 if TYPE_CHECKING:
     from typing import Any
 
-    from ..data_structure.coords_dataclass import Coords
-    from ..data_structure.field_dataclass import Field
+    from ..data_structure.coords import Coords
+    from ..data_structure.field import Field
     from ..loss.loss_term_container import LossTermContainer
     from ..trainer.trainer import Trainer
     from ..trainer.trainer_logger import TrainerLogger

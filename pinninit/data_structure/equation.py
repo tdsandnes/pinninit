@@ -7,13 +7,13 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from .field_dataclass import tensor_shape
+from .field import tensor_shape
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from ..differential_equations.operators import Operators
-    from .coords_dataclass import Coords
+    from .coords import Coords
     from .data_container import DataContainer
 
 

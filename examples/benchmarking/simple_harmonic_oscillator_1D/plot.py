@@ -13,13 +13,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from typing import TYPE_CHECKING
 
 import pinninit
-from pinninit.data_structure.coords_dataclass import make_coords_dataclass
+from pinninit.data_structure.coords import make_coords_dataclass
 from pinninit.geometry.coordinate_system import CartesianCoords
 
 if TYPE_CHECKING:
     from matplotlib.typing import MarkerType
 
-    from pinninit.data_structure.coords_dataclass import Coords
+    from pinninit.data_structure.coords import Coords
 
     TensorDict = dict[str, torch.Tensor]
 

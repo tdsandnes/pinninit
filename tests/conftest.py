@@ -7,7 +7,7 @@ from collections.abc import Iterator
 import pytest
 import torch
 
-from pinninit.data_structure.coords_dataclass import Coords
+from pinninit.data_structure.coords import Coords
 from pinninit.data_structure.data_container import DataContainer
 from pinninit.geometry.coordinate_system import (
     CartesianCoords,

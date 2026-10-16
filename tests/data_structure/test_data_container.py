@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from pinninit.data_structure.coords_dataclass import Coords
+from pinninit.data_structure.coords import Coords
 from pinninit.data_structure.data_container import DataContainer
 from pinninit.data_structure.equation import Equation
 from pinninit.differential_equations.operators import Operators

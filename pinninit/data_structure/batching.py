@@ -4,7 +4,7 @@ from typing import cast
 import torch
 from torch.utils.data import DataLoader, Dataset, Sampler
 
-from .coords_dataclass import Coords
+from .coords import Coords
 
 
 class BatchDataset(Dataset[int]):

@@ -8,7 +8,7 @@ import torch
 from .trainer_module import TrainerModule
 
 if TYPE_CHECKING:
-    from ..data_structure.coords_dataclass import Coords
+    from ..data_structure.coords import Coords
     from ..loss.loss_term_container import LossTermContainer
     from ..trainer.trainer import Trainer
     from ..trainer.trainer_logger import TrainerLogger

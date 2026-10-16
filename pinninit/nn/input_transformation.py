@@ -8,7 +8,7 @@ import torch
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from ..data_structure.coords_dataclass import Coords
+    from ..data_structure.coords import Coords
 
 
 class InputTransformationLabels(str, Enum):

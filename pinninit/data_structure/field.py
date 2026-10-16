@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 
-from .coords_dataclass import Coords, check_labels_not_reserved
+from .coords import Coords, check_labels_not_reserved
 
 
 class Field:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 
 from ..config.config import ConstConfig, FieldsConfig
-from ..data_structure.coords_dataclass import Coords
+from ..data_structure.coords import Coords
 from ..data_structure.data_container import DataContainer
 from ..data_structure.equation import Equation
 

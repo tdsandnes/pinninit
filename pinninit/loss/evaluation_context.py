@@ -10,9 +10,9 @@ if TYPE_CHECKING:
 
     from torch.utils.data import DataLoader
 
-    from ..data_structure.coords_dataclass import Coords
+    from ..data_structure.coords import Coords
     from ..data_structure.data_container import DataContainer
-    from ..data_structure.field_dataclass import Field
+    from ..data_structure.field import Field
 
 
 @dataclass(frozen=False, slots=True)
