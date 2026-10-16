@@ -28,7 +28,8 @@ def compute_flat_train_grads(
             raise RuntimeError(
                 f"No graph-carrying cached residuals for loss term '{container.label}'."
             )
-        batch = trainer.current_train_batches.get(container.label)
+        # The batch the cached residuals were computed on
+        batch = trainer.current_train_batches[container.label]
         loss = loss_fn(residuals, container.train_eval_context, batch).sum()
         grads = torch.autograd.grad(loss, params, retain_graph=True, allow_unused=True)
         all_grads.append(

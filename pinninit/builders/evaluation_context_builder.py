@@ -198,14 +198,6 @@ def _build_one_eval_context(
 
     batches = Batches(coords, n_batches, shuffle)
 
-    # Every loss term carries a per-point weight field
-    ScalarField = make_field_dataclass(0, type(coords))
-    point_weights = ScalarField(
-        label="point_weights",
-        coords=coords,
-        value=torch.ones(coords.n_points, device=coords.device),
-    )
-
     # Optional coord-based multiplier on the point weights
     point_weight_modifier = None
     if point_weight_equation is not None:
@@ -218,7 +210,6 @@ def _build_one_eval_context(
         loss_function=loss_fn,
         batches=batches,
         input_data=input_dc,
-        raw_point_weights=point_weights,
         point_weight_modifier=point_weight_modifier,
     )
 

@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from .loss_function import mse_loss
+
 if TYPE_CHECKING:
     from ..data_structure.coords import Coords
     from ..geometry.domain import Domain
@@ -52,9 +54,22 @@ class LossTermContainer:
         self.staggering = staggering
         self.adaptive_point_weights = adaptive_point_weights
 
-        # Check that training and validation points are in the specified domain
-        train_eval_context.coords.validate_in_domain(domain)
-        val_eval_context.coords.validate_in_domain(domain)
+        # Point weights only have an effect with a weighted loss function
+        uses_point_weights = (
+            adaptive_point_weights
+            or train_eval_context.point_weight_modifier is not None
+        )
+        if uses_point_weights and train_eval_context.loss_function is mse_loss:
+            raise ValueError(
+                f"Loss term '{label}' has point weights, but its 'mse' loss "
+                "function ignores them. Use a weighted loss function."
+            )
+
+        # Check that the loss term can be computed, and that training and
+        # validation points are in the specified domain
+        for eval_context in (train_eval_context, val_eval_context):
+            loss_term.check(eval_context)
+            eval_context.coords.validate_in_domain(domain)
 
     def _apply_model(
         self,
@@ -98,23 +113,24 @@ class LossTermContainer:
     def _compute_full_loss(
         self, model: NeuralNetwork, eval_context: EvaluationContext
     ) -> torch.Tensor:
-        """Loss over an eval context's full point set, evaluated one batch at
-        a time so only one batch's autograd graph is alive at a time.
+        """Loss over all points of an eval context, detached.
+
+        The residuals are computed one batch at a time, so only one batch's
+        autograd graph is alive at a time, and the loss is then computed from
+        the residuals at all points, so it is exact for any loss function.
         """
-        total: torch.Tensor | None = None
-        n_total = 0
+        residuals = []
         for batch_coords in eval_context.batches.in_order():
-            batch_loss, _ = self.compute_loss_and_residuals(
-                model, eval_context, batch_coords, detach=True
-            )
-            n = batch_coords.n_points
-            total = batch_loss * n if total is None else total + batch_loss * n
-            n_total += n
+            self._apply_model(model, batch_coords, eval_context)
+            residual = self.loss_term.compute_residual(eval_context, batch_coords)
+            residuals.append(residual.detach())
 
-        if total is None:
-            raise RuntimeError(f"Batches for '{self.label}' are empty.")
-
-        return total / n_total
+        loss = eval_context.loss_function(
+            residuals=torch.cat(residuals),
+            eval_context=eval_context,
+            eval_coords=eval_context.coords,
+        )
+        return loss.sum()
 
     def next_train_batch(self) -> Coords:
         """Return the next batch of training coords."""
@@ -131,17 +147,12 @@ class LossTermContainer:
             model, self.train_eval_context, batch_coords, detach=detach
         )
 
-    def compute_val_batch_loss_and_residuals(
-        self, model: NeuralNetwork, batch_coords: Coords, detach: bool = True
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        return self.compute_loss_and_residuals(
-            model, self.val_eval_context, batch_coords, detach=detach
-        )
-
     def compute_full_train_loss(self, model: NeuralNetwork) -> torch.Tensor:
-        """Full unweighted training loss over the full set, chunked and detached."""
+        """Training loss over all training points, detached. Uses the training
+        loss function (with point weights), but not the loss term weight."""
         return self._compute_full_loss(model, self.train_eval_context)
 
     def compute_full_val_loss(self, model: NeuralNetwork) -> torch.Tensor:
-        """Full unweighted validation loss over the full set, chunked and detached."""
+        """Validation loss over all validation points, detached. Not multiplied
+        by the loss term weight."""
         return self._compute_full_loss(model, self.val_eval_context)

@@ -7,6 +7,7 @@ from collections.abc import Iterator
 import pytest
 import torch
 
+from pinninit.data_structure.batching import Batches
 from pinninit.data_structure.coords import Coords
 from pinninit.data_structure.data_container import DataContainer
 from pinninit.geometry.coordinate_system import (
@@ -15,6 +16,8 @@ from pinninit.geometry.coordinate_system import (
     CylindricalCoords,
     SphericalCoords,
 )
+from pinninit.loss.evaluation_context import EvaluationContext
+from pinninit.loss.loss_function import weighted_mse_loss
 
 from .helpers import N_POINTS, make_coords
 
@@ -95,4 +98,16 @@ def data(coords_2d: Coords) -> DataContainer:
         primary_field_label_to_rank={"u": 0, "v": 1},
         derived_field_label_to_rank={"w": 0, "q": 1},
         const_labels={"c"},
+    )
+
+
+# Evaluation contexts
+@pytest.fixture
+def eval_context(data: DataContainer, coords_2d: Coords) -> EvaluationContext:
+    """Evaluation context for the data container on coords_2d, with a weighted
+    loss function and 3 batches."""
+    return EvaluationContext(
+        output_data=data,
+        loss_function=weighted_mse_loss,
+        batches=Batches(coords_2d, n_batches=3),
     )

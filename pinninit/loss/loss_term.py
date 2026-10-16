@@ -24,8 +24,16 @@ class LossTerm(ABC):
     def __init__(
         self,
         field_label: str,
-    ):
+    ) -> None:
         self.field_label = field_label
+
+    def check(self, eval_context: EvaluationContext) -> None:
+        """Check the loss term can be computed in eval_context."""
+        if self.field_label not in eval_context.output_data.field_labels:
+            raise ValueError(
+                f"Loss term field '{self.field_label}' is not an output or "
+                "derived field."
+            )
 
     @abstractmethod
     def compute_residual(
@@ -54,6 +62,17 @@ class LossTerm(ABC):
 
 class DataLoss(LossTerm):
     """Data loss term"""
+
+    def check(self, eval_context: EvaluationContext) -> None:
+        super().check(eval_context)
+        if (
+            eval_context.input_data is None
+            or self.field_label not in eval_context.input_data.field_labels
+        ):
+            raise ValueError(
+                f"DataLoss on field '{self.field_label}' needs input data for "
+                "that field."
+            )
 
     def compute_residual(
         self,
