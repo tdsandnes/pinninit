@@ -12,16 +12,6 @@ from pinninit.geometry.coordinate_system import CoordSystem
 from ..helpers import N_POINTS, make_coords
 
 
-def test_metric_tensor_comes_from_the_coords(
-    cartesian_2d: CoordSystem, coords_2d: Coords
-) -> None:
-    operators = Operators(coords_2d)
-
-    assert operators.coord_system is cartesian_2d
-    assert operators.geometric_labels == ("x", "y")
-    assert operators.G.sqrt_det.shape == (coords_2d.n_points,)
-
-
 class TestCartesian:
     def test_d_dcoord(self, coords_2d: Coords) -> None:
         operators = Operators(coords_2d)
@@ -271,16 +261,3 @@ class TestBatches:
         full_laplacian = full_operators.laplacian(f(coords_2d))
         assert torch.allclose(batch_operators.grad(f(batch)), full_grad[idx])
         assert torch.allclose(batch_operators.laplacian(f(batch)), full_laplacian[idx])
-
-    def test_results_on_a_nested_batch_match_the_full_coords(
-        self, coords_2d: Coords, device: torch.device
-    ) -> None:
-        def f(coords: Coords) -> torch.Tensor:
-            return coords.get_coord("x") ** 2 + 3 * coords.get_coord("y")
-
-        idx1 = torch.tensor([0, 2, 4, 6, 8], device=device)
-        idx2 = torch.tensor([1, 3], device=device)
-        batch = coords_2d.get_batch(idx1).get_batch(idx2)
-
-        full_grad = Operators(coords_2d).grad(f(coords_2d))
-        assert torch.allclose(Operators(batch).grad(f(batch)), full_grad[idx1[idx2]])

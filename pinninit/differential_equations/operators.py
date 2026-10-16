@@ -9,21 +9,21 @@ if TYPE_CHECKING:
 
 
 class Operators:
-    def __init__(self, coords: Coords):
-        # Extract from coords
+    """
+    Differential operators at a set of coords, in their coordinate system.
+
+    Vector fields are given and returned in the physical basis,
+    except by the methods named contravariant_*.
+    """
+
+    def __init__(self, coords: Coords) -> None:
         self.coords = coords
         self.coord_system = coords.coord_system
         self.geometric_labels = coords.geometric_labels
-        self.dim_geometric = self.coord_system.dim_geometric
-        self.device = self.coords.device
-
-        # Set metric tensor
-        geometric_coords_dict = {
-            label: self.coords.get_coord(label) for label in self.geometric_labels
+        self.geometric_coords = {
+            label: coords.get_coord(label) for label in self.geometric_labels
         }
-        self.G = self.coord_system.metric_tensor(
-            self.coords.n_points, geometric_coords_dict
-        )
+        self.G = self.coord_system.metric_tensor(coords.n_points, self.geometric_coords)
 
     def d_dcoord(
         self,
@@ -38,6 +38,9 @@ class Operators:
         f : torch.Tensor
             Function to be taken derivative of.
             Shape: (n_points,), (n_points, dim), (n_points, dim, dim), ...
+        coord_label : str
+            The coordinate to differentiate with respect to, geometric or not
+            (e.g. time).
 
         Returns
         -------
@@ -164,11 +167,8 @@ class Operators:
             Shape (n_points, dim_geometric)
         """
         # Transform v2 to Cartesian
-        geometric_coords = {
-            label: self.coords.get_coord(label) for label in self.geometric_labels
-        }
         v2_cartesian = self.coord_system.transform_geometric_to_cartesian(
-            v2, geometric_coords
+            v2, self.geometric_coords
         )
 
         # Apply operation
@@ -181,7 +181,9 @@ class Operators:
         )
 
         # Transform back
-        return self.coord_system.transform_cartesian_to_geometric(out, geometric_coords)
+        return self.coord_system.transform_cartesian_to_geometric(
+            out, self.geometric_coords
+        )
 
     def contravariant_div(
         self,
@@ -245,7 +247,7 @@ class Operators:
         Parameters
         ----------
         f : torch.Tensor
-            Function to be taken gradient of. Shape: (n_points,)
+            Function to take the Laplacian of. Shape: (n_points,)
 
         Returns
         -------
@@ -264,7 +266,7 @@ class Operators:
         Since v is given to the function in the physical bases, this operation
         can be viewed as:
 
-        lap(v2_i * e_i) = lap(v2_i) * e_i + v2_i * lap(e_i)
+        lap(v_i * e_i) = lap(v_i) * e_i + v_i * lap(e_i)
 
         To make this easier, we first transform v to Cartesian (so that the
         lap(e_i) terms are 0) and then transform back.
@@ -282,11 +284,8 @@ class Operators:
             field (n_points, dim_geometric)
         """
         # Transform v to Cartesian
-        geometric_coords = {
-            label: self.coords.get_coord(label) for label in self.geometric_labels
-        }
         v_cartesian = self.coord_system.transform_geometric_to_cartesian(
-            v, geometric_coords
+            v, self.geometric_coords
         )
 
         # Apply operation
@@ -296,7 +295,9 @@ class Operators:
         )
 
         # Transform back
-        return self.coord_system.transform_cartesian_to_geometric(lap, geometric_coords)
+        return self.coord_system.transform_cartesian_to_geometric(
+            lap, self.geometric_coords
+        )
 
     def _check_differentiable(self, f: torch.Tensor) -> None:
         if not f.requires_grad:
