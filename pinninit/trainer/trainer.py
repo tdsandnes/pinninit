@@ -200,7 +200,7 @@ class Trainer:
             return 1
         return max(
             (
-                len(container.train_eval_context.dataloader)
+                len(container.train_eval_context.batches)
                 for container in self.loss_containers.values()
             ),
             default=1,
@@ -381,6 +381,12 @@ class Trainer:
                 for label, container in self._loss_containers.items()
                 if container.adaptive_point_weights
             },
+            # Checkpoints are saved at the end of an epoch, when every
+            # container starts a new pass over its batches
+            "batches": {
+                label: container.train_eval_context.batches.state_dict()
+                for label, container in self._loss_containers.items()
+            },
             "best_model_epoch": self.best_model_epoch,
             "best_geometric_mean_val_loss": self.best_geometric_mean_val_loss,
             "best_model_state": self.best_model_state,
@@ -436,6 +442,12 @@ class Trainer:
         for label, weights in state["point_weights"].items():
             self._loss_containers[label].train_eval_context.update_point_weights(
                 weights.to(device)
+            )
+
+        # Shuffling of the training batches
+        for label, batches_state in state["batches"].items():
+            self._loss_containers[label].train_eval_context.batches.load_state_dict(
+                batches_state
             )
 
         # Trainer state (after modules have re-registered stop barriers)

@@ -8,8 +8,7 @@ import torch
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from torch.utils.data import DataLoader
-
+    from ..data_structure.batching import Batches
     from ..data_structure.coords import Coords
     from ..data_structure.data_container import DataContainer
     from ..data_structure.field import Field
@@ -23,7 +22,7 @@ class EvaluationContext:
 
     output_data: DataContainer
     loss_function: Callable[..., torch.Tensor]
-    dataloader: DataLoader[Coords]
+    batches: Batches
     input_data: DataContainer | None = None
     raw_point_weights: Field | None = None
     point_weight_modifier: Field | None = None
@@ -74,8 +73,7 @@ class EvaluationContext:
                 f"Expected weights shape ({coords.n_points},), got {new_weights.shape}"
             )
 
-        # Update Field
-        self.raw_point_weights.update_from_tensor(new_weights.detach(), coords)
+        self.raw_point_weights.update_from_tensor(new_weights.detach().clone(), coords)
 
     def get_raw_point_weights(self, coords: Coords | None = None) -> torch.Tensor:
         """

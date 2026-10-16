@@ -446,7 +446,6 @@ def _parse_trainer(raw: dict[str, Any]) -> TrainerConfig:
         print_freq=int(raw.get("print_freq", 1)),
         n_batches=int(raw.get("n_batches", 1)),
         shuffle=bool(raw.get("shuffle", True)),
-        num_workers=int(raw.get("num_workers", 0)),
     )
 
 

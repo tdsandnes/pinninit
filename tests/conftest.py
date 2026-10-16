@@ -7,14 +7,18 @@ from collections.abc import Iterator
 import pytest
 import torch
 
+from pinninit.data_structure.batching import Batches
 from pinninit.data_structure.coords import Coords
 from pinninit.data_structure.data_container import DataContainer
+from pinninit.data_structure.field import make_field_dataclass
 from pinninit.geometry.coordinate_system import (
     CartesianCoords,
     CoordSystem,
     CylindricalCoords,
     SphericalCoords,
 )
+from pinninit.loss.evaluation_context import EvaluationContext
+from pinninit.loss.loss_function import weighted_mse_loss
 
 from .helpers import N_POINTS, make_coords
 
@@ -99,4 +103,21 @@ def data(coords_2d: Coords) -> DataContainer:
         primary_field_label_to_rank={"u": 0, "v": 1},
         derived_field_label_to_rank={"w": 0, "q": 1},
         const_labels={"c"},
+    )
+
+
+# Evaluation contexts
+@pytest.fixture
+def eval_context(coords_2d: Coords, data: DataContainer) -> EvaluationContext:
+    """Evaluation context on coords_2d, with point weights starting at one."""
+    ScalarField = make_field_dataclass(0, type(coords_2d))
+    return EvaluationContext(
+        output_data=data,
+        loss_function=weighted_mse_loss,
+        batches=Batches(coords_2d, n_batches=3),
+        raw_point_weights=ScalarField(
+            label="point_weights",
+            coords=coords_2d,
+            value=torch.ones(N_POINTS, device=coords_2d.device),
+        ),
     )

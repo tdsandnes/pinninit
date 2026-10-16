@@ -99,7 +99,6 @@ def build_pinn(
             point_weight_equation=point_weight_equation,
             n_batches=config.trainer.n_batches,
             shuffle=config.trainer.shuffle,
-            num_workers=config.trainer.num_workers,
         )
 
         loss_containers[loss_term_config.label] = build_loss_term_container(

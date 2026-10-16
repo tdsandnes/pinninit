@@ -365,7 +365,6 @@ class TrainerConfig:
     print_freq: int = 1
     n_batches: int = 1
     shuffle: bool = True
-    num_workers: int = 0
 
     def __post_init__(self) -> None:
         labels = [module.label for module in self.trainer_modules]

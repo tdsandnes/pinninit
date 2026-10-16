@@ -5,8 +5,6 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from ..data_structure.batching import BatchCycler, iter_batches
-
 if TYPE_CHECKING:
     from ..data_structure.coords import Coords
     from ..geometry.domain import Domain
@@ -54,9 +52,6 @@ class LossTermContainer:
         self.staggering = staggering
         self.adaptive_point_weights = adaptive_point_weights
 
-        # Cycle through training and validation batches across steps
-        self._train_batches = BatchCycler(train_eval_context.dataloader)
-
         # Check that training and validation points are in the specified domain
         train_eval_context.coords.validate_in_domain(domain)
         val_eval_context.coords.validate_in_domain(domain)
@@ -103,13 +98,12 @@ class LossTermContainer:
     def _compute_full_loss(
         self, model: NeuralNetwork, eval_context: EvaluationContext
     ) -> torch.Tensor:
-        """Loss over an eval context's full point set, evaluated
-        in dataloader-sized chunks so only one chunk's autograd graph is alive
-        at a time.
+        """Loss over an eval context's full point set, evaluated one batch at
+        a time so only one batch's autograd graph is alive at a time.
         """
         total: torch.Tensor | None = None
         n_total = 0
-        for batch_coords in iter_batches(eval_context.dataloader):
+        for batch_coords in eval_context.batches.in_order():
             batch_loss, _ = self.compute_loss_and_residuals(
                 model, eval_context, batch_coords, detach=True
             )
@@ -118,17 +112,17 @@ class LossTermContainer:
             n_total += n
 
         if total is None:
-            raise RuntimeError(f"Dataloader for '{self.label}' is empty.")
+            raise RuntimeError(f"Batches for '{self.label}' are empty.")
 
         return total / n_total
 
     def next_train_batch(self) -> Coords:
-        """Return the next batch of training coords, cycling the dataloader."""
-        return self._train_batches.next()
+        """Return the next batch of training coords."""
+        return self.train_eval_context.batches.next()
 
     def reset_train_batches(self) -> None:
-        """Restart batch cycling from the beginning of the dataloader."""
-        self._train_batches.reset()
+        """Start a new pass over the training batches at the next batch."""
+        self.train_eval_context.batches.reset()
 
     def compute_train_batch_loss_and_residuals(
         self, model: NeuralNetwork, batch_coords: Coords, detach: bool = False

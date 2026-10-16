@@ -10,7 +10,7 @@ from ..config.config import (
     FieldsConfig,
     LossTermConfig,
 )
-from ..data_structure.batching import make_dataloader
+from ..data_structure.batching import Batches
 from ..data_structure.equation import Equation
 from ..data_structure.field import make_field_dataclass
 from ..differential_equations.operators import Operators
@@ -43,7 +43,6 @@ def build_evaluation_contexts(
     point_weight_equation: Equation | None = None,
     n_batches: int = 1,
     shuffle: bool = True,
-    num_workers: int = 0,
 ) -> tuple[EvaluationContext, EvaluationContext]:
     """
     Build train and validation EvaluationContexts for a single LossTermConfig.
@@ -52,7 +51,7 @@ def build_evaluation_contexts(
       1. Loads train and val coordinates and input fields from HDF5
       2. Builds input and output DataContainers for each role
       3. Wires up the shared loss function
-      4. Wraps the train context in a DataLoader for mini-batching
+      4. Splits the coords into batches
 
     Parameters
     ----------
@@ -75,9 +74,7 @@ def build_evaluation_contexts(
     n_batches:
         Number of batches, used to sync all loss terms.
     shuffle:
-        Whether to shuffle the DataLoader.
-    num_workers:
-        Number of DataLoader worker processes.
+        Whether to reshuffle the batches on each pass.
 
     Returns
     -------
@@ -140,7 +137,6 @@ def build_evaluation_contexts(
         point_weight_equation=point_weight_equation,
         n_batches=n_batches,
         shuffle=shuffle,
-        num_workers=num_workers,
     )
 
     # Build val contexts
@@ -154,7 +150,6 @@ def build_evaluation_contexts(
         point_weight_equation=None,  # Validation loss fn is not weighted
         n_batches=n_batches,
         shuffle=shuffle,
-        num_workers=num_workers,
     )
 
     return train_eval_context, val_eval_context
@@ -170,7 +165,6 @@ def _build_one_eval_context(
     point_weight_equation: Equation | None = None,
     n_batches: int = 1,
     shuffle: bool = True,
-    num_workers: int = 0,
 ) -> EvaluationContext:
     """Build a single EvaluationContext for one data role."""
     # Get loss function
@@ -202,13 +196,7 @@ def _build_one_eval_context(
     )
     populate_consts(output_dc, const_configs)
 
-    # Make dataloader
-    dataloader = make_dataloader(
-        coords=coords,
-        n_batches=n_batches,
-        shuffle=shuffle,
-        num_workers=num_workers,
-    )
+    batches = Batches(coords, n_batches, shuffle)
 
     # Every loss term carries a per-point weight field
     ScalarField = make_field_dataclass(0, type(coords))
@@ -228,7 +216,7 @@ def _build_one_eval_context(
     return EvaluationContext(
         output_data=output_dc,
         loss_function=loss_fn,
-        dataloader=dataloader,
+        batches=batches,
         input_data=input_dc,
         raw_point_weights=point_weights,
         point_weight_modifier=point_weight_modifier,
