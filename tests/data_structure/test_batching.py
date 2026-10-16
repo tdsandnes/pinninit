@@ -111,7 +111,9 @@ class TestBatches:
         assert one_pass(other_seed_batches) != first_pass
 
     def test_state_dict_restores_the_shuffling(self, coords_2d: Coords) -> None:
+        # Saved after one pass, so the state differs from a new Batches' state
         batches = Batches(coords_2d, n_batches=3)
+        one_pass(batches)
         state = batches.state_dict()
         expected = one_pass(batches)
 

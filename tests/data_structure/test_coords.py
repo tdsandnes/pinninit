@@ -1,4 +1,4 @@
-"""Unit tests for data_structure/coords_dataclass.py."""
+"""Unit tests for data_structure/coords.py."""
 
 from __future__ import annotations
 
