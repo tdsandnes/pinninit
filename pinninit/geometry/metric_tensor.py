@@ -84,12 +84,15 @@ class MetricTensor(ABC):
 class IdentityMetricTensor(MetricTensor):
     """Identity metric tensor representation."""
 
-    def __init__(self, n_points: int, device: torch.device):
+    def __init__(
+        self, n_points: int, device: torch.device, dtype: torch.dtype | None = None
+    ) -> None:
         super().__init__(n_points, device)
+        self.dtype = dtype
 
     @property
     def sqrt_det(self) -> torch.Tensor:
-        return torch.ones(self.n_points, device=self.device)
+        return torch.ones(self.n_points, dtype=self.dtype, device=self.device)
 
     def inv_metric_times_vec(self, v: torch.Tensor) -> torch.Tensor:
         return v

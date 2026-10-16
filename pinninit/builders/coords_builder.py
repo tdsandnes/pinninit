@@ -44,7 +44,6 @@ def build_coords_class(
 def build_domain(
     coords_config: CoordinatesConfig,
     coord_system: CoordSystem,
-    device: torch.device,
 ) -> Domain:
     """
     Build a Domain object from the domain section of a CoordinatesConfig.
@@ -55,8 +54,6 @@ def build_domain(
         Config containing the DomainConfig to build from.
     coord_system:
         The already-built CoordSystem this domain belongs to.
-    device:
-        PyTorch device.
 
     Returns
     -------
@@ -71,7 +68,6 @@ def build_domain(
         coord_system=coord_system,
         geometric_bounds=geometric_bounds,
         periodic_coords=periodic_coords,
-        device=device,
     )
 
 
@@ -98,6 +94,6 @@ def build_coords_classes(
         coord_system = coord_systems[cs_label]
         cs_config = coord_system_configs_by_label[cs_label]
         coords_class = build_coords_class(cs_config, coord_system, device)
-        domain = build_domain(coords_config, coord_system, device)
+        domain = build_domain(coords_config, coord_system)
         result[coords_config.label] = (coords_class, domain)
     return result

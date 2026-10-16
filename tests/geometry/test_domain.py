@@ -13,13 +13,10 @@ from pinninit.geometry.domain import Domain
 
 class TestGeometricBounds:
     def test_bounds_default_to_the_coord_system_bounds(
-        self, cylindrical_2d: CoordSystem, device: torch.device
+        self, cylindrical_2d: CoordSystem
     ) -> None:
         domain = Domain(
             coord_system=cylindrical_2d,
-            geometric_bounds=None,
-            periodic_coords=None,
-            device=device,
         )
 
         assert domain.geometric_lb["r"].item() == 0.0
@@ -27,14 +24,10 @@ class TestGeometricBounds:
         assert domain.geometric_lb["theta"].item() == 0.0
         assert domain.geometric_ub["theta"].item() == pytest.approx(2 * math.pi)
 
-    def test_given_bounds_are_used(
-        self, cartesian_2d: CoordSystem, device: torch.device
-    ) -> None:
+    def test_given_bounds_are_used(self, cartesian_2d: CoordSystem) -> None:
         domain = Domain(
             coord_system=cartesian_2d,
             geometric_bounds={"x": (0.0, 1.0), "y": (-2.0, 2.0)},
-            periodic_coords=None,
-            device=device,
         )
 
         assert domain.geometric_lb["x"].item() == 0.0
@@ -43,14 +36,12 @@ class TestGeometricBounds:
         assert domain.geometric_ub["y"].item() == 2.0
 
     def test_missing_bounds_fall_back_to_the_coord_system_bounds(
-        self, cartesian_2d: CoordSystem, device: torch.device
+        self, cartesian_2d: CoordSystem
     ) -> None:
         # x has no lower bound and y has no bounds at all
         domain = Domain(
             coord_system=cartesian_2d,
             geometric_bounds={"x": (None, 1.0)},
-            periodic_coords=None,
-            device=device,
         )
 
         assert domain.geometric_lb["x"].item() == -math.inf
@@ -59,60 +50,50 @@ class TestGeometricBounds:
         assert domain.geometric_ub["y"].item() == math.inf
 
     def test_equal_lower_and_upper_bounds_are_allowed(
-        self, cartesian_2d: CoordSystem, device: torch.device
+        self, cartesian_2d: CoordSystem
     ) -> None:
         domain = Domain(
             coord_system=cartesian_2d,
             geometric_bounds={"x": (1.0, 1.0)},
-            periodic_coords=None,
-            device=device,
         )
 
         assert domain.geometric_lb["x"].item() == domain.geometric_ub["x"].item()
 
     def test_bound_below_the_coord_system_bound_raises(
-        self, cylindrical_2d: CoordSystem, device: torch.device
+        self, cylindrical_2d: CoordSystem
     ) -> None:
         with pytest.raises(ValueError, match="Lower bound"):
             Domain(
                 coord_system=cylindrical_2d,
                 geometric_bounds={"r": (-1.0, 2.0)},
-                periodic_coords=None,
-                device=device,
             )
 
     def test_bound_above_the_coord_system_bound_raises(
-        self, cylindrical_2d: CoordSystem, device: torch.device
+        self, cylindrical_2d: CoordSystem
     ) -> None:
         with pytest.raises(ValueError, match="Upper bound"):
             Domain(
                 coord_system=cylindrical_2d,
                 geometric_bounds={"theta": (0.0, 10.0)},
-                periodic_coords=None,
-                device=device,
             )
 
     def test_lower_bound_above_upper_bound_raises(
-        self, cartesian_2d: CoordSystem, device: torch.device
+        self, cartesian_2d: CoordSystem
     ) -> None:
         with pytest.raises(ValueError, match="Lower bound must be <= upper bound"):
             Domain(
                 coord_system=cartesian_2d,
                 geometric_bounds={"x": (2.0, 1.0)},
-                periodic_coords=None,
-                device=device,
             )
 
 
 class TestNonGeometricBounds:
     def test_time_bounds_are_included_in_the_internal_bounds(
-        self, cartesian_2d: CoordSystem, device: torch.device
+        self, cartesian_2d: CoordSystem
     ) -> None:
         domain = Domain(
             coord_system=cartesian_2d,
             geometric_bounds={"x": (0.0, 1.0), "t": (0.0, 5.0)},
-            periodic_coords=None,
-            device=device,
         )
 
         assert domain.non_geometric_lb["t"].item() == 0.0
@@ -120,21 +101,17 @@ class TestNonGeometricBounds:
         assert domain.internal_lb["t"].item() == 0.0
         assert domain.internal_ub["t"].item() == 5.0
 
-    def test_time_without_both_bounds_raises(
-        self, cartesian_2d: CoordSystem, device: torch.device
-    ) -> None:
+    def test_time_without_both_bounds_raises(self, cartesian_2d: CoordSystem) -> None:
         with pytest.raises(ValueError, match="requires explicit min and max"):
             Domain(
                 coord_system=cartesian_2d,
                 geometric_bounds={"t": (0.0, None)},
-                periodic_coords=None,
-                device=device,
             )
 
 
 class TestInternalBounds:
     def test_internal_bounds_come_from_the_coord_system(
-        self, cylindrical_3d: CoordSystem, device: torch.device
+        self, cylindrical_3d: CoordSystem
     ) -> None:
         domain = Domain(
             coord_system=cylindrical_3d,
@@ -143,8 +120,6 @@ class TestInternalBounds:
                 "theta": (0.0, 2 * math.pi),
                 "z": (-1.0, 1.0),
             },
-            periodic_coords=None,
-            device=device,
         )
 
         lb = {label: value.item() for label, value in domain.internal_lb.items()}
@@ -160,8 +135,6 @@ class TestContainsGeometric:
         domain = Domain(
             coord_system=cartesian_2d,
             geometric_bounds={"x": (0.0, 1.0), "y": (0.0, 1.0)},
-            periodic_coords=None,
-            device=device,
         )
         points = torch.tensor(
             [
@@ -180,47 +153,38 @@ class TestContainsGeometric:
 
 
 class TestPeriodicCoords:
-    def test_no_periodic_coords(
-        self, cartesian_2d: CoordSystem, device: torch.device
-    ) -> None:
+    def test_no_periodic_coords(self, cartesian_2d: CoordSystem) -> None:
         domain = Domain(
             coord_system=cartesian_2d,
             geometric_bounds={"x": (0.0, 1.0)},
-            periodic_coords=None,
-            device=device,
         )
         assert domain.periodic_coords == {}
 
     def test_period_is_the_length_of_the_domain(
-        self, cartesian_3d: CoordSystem, device: torch.device
+        self, cartesian_3d: CoordSystem
     ) -> None:
         domain = Domain(
             coord_system=cartesian_3d,
             geometric_bounds={"x": (0.0, 2.0), "y": (-1.0, 3.0), "z": (0.0, 1.0)},
             periodic_coords={"x", "y"},
-            device=device,
         )
 
         assert domain.periodic_coords == {"x": 2.0, "y": 4.0}
 
     def test_periodic_coords_need_a_cartesian_coord_system(
-        self, cylindrical_2d: CoordSystem, device: torch.device
+        self, cylindrical_2d: CoordSystem
     ) -> None:
         with pytest.raises(ValueError, match="only supported for Cartesian"):
             Domain(
                 coord_system=cylindrical_2d,
                 geometric_bounds={"r": (0.0, 1.0)},
                 periodic_coords={"r"},
-                device=device,
             )
 
-    def test_unknown_periodic_coord_raises(
-        self, cartesian_2d: CoordSystem, device: torch.device
-    ) -> None:
+    def test_unknown_periodic_coord_raises(self, cartesian_2d: CoordSystem) -> None:
         with pytest.raises(ValueError, match="not a geometric axis"):
             Domain(
                 coord_system=cartesian_2d,
                 geometric_bounds={"x": (0.0, 1.0)},
                 periodic_coords={"z"},
-                device=device,
             )

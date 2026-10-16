@@ -36,31 +36,27 @@ def device() -> torch.device:
 # Coordinate systems
 @pytest.fixture
 def cartesian_2d(device: torch.device) -> CoordSystem:
-    return CartesianCoords(dim_geometric=2, coord_axes={"x", "y"}, device=device)
+    return CartesianCoords(coord_axes={"x", "y"}, device=device)
 
 
 @pytest.fixture
 def cartesian_3d(device: torch.device) -> CoordSystem:
-    return CartesianCoords(dim_geometric=3, coord_axes={"x", "y", "z"}, device=device)
+    return CartesianCoords(coord_axes={"x", "y", "z"}, device=device)
 
 
 @pytest.fixture
 def cylindrical_2d(device: torch.device) -> CoordSystem:
-    return CylindricalCoords(dim_geometric=2, coord_axes={"r", "theta"}, device=device)
+    return CylindricalCoords(coord_axes={"r", "theta"}, device=device)
 
 
 @pytest.fixture
 def cylindrical_3d(device: torch.device) -> CoordSystem:
-    return CylindricalCoords(
-        dim_geometric=3, coord_axes={"r", "theta", "z"}, device=device
-    )
+    return CylindricalCoords(coord_axes={"r", "theta", "z"}, device=device)
 
 
 @pytest.fixture
 def spherical_3d(device: torch.device) -> CoordSystem:
-    return SphericalCoords(
-        dim_geometric=3, coord_axes={"r", "theta", "phi"}, device=device
-    )
+    return SphericalCoords(coord_axes={"r", "theta", "phi"}, device=device)
 
 
 # Coords

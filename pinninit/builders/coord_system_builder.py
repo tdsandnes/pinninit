@@ -30,15 +30,10 @@ def build_coord_system(
     """
     coord_system_cls = COORD_SYSTEM_REGISTRY[config.coord_system]
 
-    coord_axes = set(config.geometric_axis_labels)
-    fixed_axes = config.fixed_axes if config.fixed_axes else None
-    dim_geometric = len(coord_axes)
-
     return coord_system_cls(
-        dim_geometric=dim_geometric,
-        coord_axes=coord_axes,
+        coord_axes=set(config.geometric_axis_labels),
         device=device,
-        fixed_axes=fixed_axes,
+        fixed_axes=config.fixed_axes,
     )
 
 

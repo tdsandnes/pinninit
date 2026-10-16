@@ -73,9 +73,7 @@ if __name__ == "__main__":
     alpha_col = 10
 
     # Init dataset writer
-    coord_system = CartesianCoords(
-        dim_geometric=1, coord_axes={"x"}, device=torch.device("cpu")
-    )
+    coord_system = CartesianCoords(coord_axes={"x"}, device=torch.device("cpu"))
     datasets = pinninit.DataSetWriter(coord_system, {"x"})
 
     # Define roles and rng for seeds

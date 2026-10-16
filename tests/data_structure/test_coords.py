@@ -106,7 +106,7 @@ class TestConstruction:
 
     def test_coord_system_on_another_device_raises(self, device: torch.device) -> None:
         coord_system = CartesianCoords(
-            dim_geometric=2, coord_axes={"x", "y"}, device=torch.device("meta")
+            coord_axes={"x", "y"}, device=torch.device("meta")
         )
         with pytest.raises(ValueError, match="coord_system is on meta"):
             make_coords_dataclass({"x", "y"}, coord_system, device)
@@ -222,36 +222,29 @@ class TestBatches:
 
 class TestDomainValidation:
     def test_points_inside_domain_pass(
-        self, coords_2d: Coords, cartesian_2d: CoordSystem, device: torch.device
+        self, coords_2d: Coords, cartesian_2d: CoordSystem
     ) -> None:
         domain = Domain(
             coord_system=cartesian_2d,
             geometric_bounds={"x": (0.0, 1.0), "y": (0.0, 1.0)},
-            periodic_coords=None,
-            device=device,
         )
         coords_2d.validate_in_domain(domain)
 
     def test_points_outside_domain_raise(
-        self, coords_2d: Coords, cartesian_2d: CoordSystem, device: torch.device
+        self, coords_2d: Coords, cartesian_2d: CoordSystem
     ) -> None:
         domain = Domain(
             coord_system=cartesian_2d,
             geometric_bounds={"x": (0.2, 0.8), "y": (0.0, 1.0)},
-            periodic_coords=None,
-            device=device,
         )
         with pytest.raises(ValueError, match="outside of domain"):
             coords_2d.validate_in_domain(domain)
 
     def test_domain_with_other_coord_system_raises(
-        self, coords_2d: Coords, spherical_3d: CoordSystem, device: torch.device
+        self, coords_2d: Coords, spherical_3d: CoordSystem
     ) -> None:
         domain = Domain(
             coord_system=spherical_3d,
-            geometric_bounds=None,
-            periodic_coords=None,
-            device=device,
         )
         with pytest.raises(ValueError, match="does not match"):
             coords_2d.validate_in_domain(domain)

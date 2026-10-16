@@ -41,24 +41,38 @@ class CoordSystemMetadata:
 
 
 class CoordSystem(ABC):
-    """Base class for coordinate systems."""
+    """
+    Base class for coordinate systems.
+
+    Parameters
+    ----------
+    coord_axes:
+        Labels of the axes the coordinates vary along, e.g. {"r", "theta"}.
+        Their number is the number of geometric dimensions.
+    device:
+        Device of the tensors the coord system makes.
+    fixed_axes:
+        Values of axes held fixed, e.g. {"r": 1.0} for the surface of a
+        cylinder.
+    """
 
     # Placeholder for subclass class attributes
     metadata: CoordSystemMetadata
 
     def __init__(
         self,
-        dim_geometric: int,  # Number of geometric dimensions
-        coord_axes: set[str],  # Labels of coordinate axes to use (not including fixed)
-        device: torch.device,  # device
-        fixed_axes: dict[str, float] | None = None,  # {Labels: vlaue} of fixed axes
-    ):
+        coord_axes: set[str],
+        device: torch.device,
+        fixed_axes: dict[str, float] | None = None,
+    ) -> None:
+        fixed_axes = fixed_axes or {}
+
         # Validate input
-        self._validate_selected_dimensions(dim_geometric)
+        self._validate_selected_dimensions(len(coord_axes))
         self._validate_selected_axes(coord_axes, fixed_axes)
 
         # Store values
-        self.dim_geometric = dim_geometric
+        self.dim_geometric = len(coord_axes)
         self.device = device
 
         # Sort axes based on their order in self.metadata.axes_labels
@@ -74,15 +88,11 @@ class CoordSystem(ABC):
             label: self.metadata.axes_bounds[label]
             for label in self.axes_labels_selected
         }
-        self.fixed_axes = (
-            {
-                label: fixed_axes[label]
-                for label in self.metadata.axes_labels
-                if label in fixed_axes
-            }
-            if fixed_axes is not None
-            else None
-        )
+        self.fixed_axes = {
+            label: fixed_axes[label]
+            for label in self.metadata.axes_labels
+            if label in fixed_axes
+        }
 
     @abstractmethod
     def metric_tensor(
@@ -144,7 +154,7 @@ class CoordSystem(ABC):
         if axis_label in self.axes_labels_selected:
             return geometric_coords[axis_label]
 
-        if self.fixed_axes is not None and axis_label in self.fixed_axes:
+        if axis_label in self.fixed_axes:
             value = self.fixed_axes[axis_label]
         elif default is not None:
             value = default
@@ -159,17 +169,17 @@ class CoordSystem(ABC):
         return next(iter(geometric_coords.values())).dtype
 
     def _validate_selected_dimensions(self, dim_geometric: int) -> None:
-        # Check value of dim_geometric
+        # The number of geometric dimensions is the number of coord axes
         if dim_geometric < 1:
-            raise ValueError(f"dim_geometric must be >= 1, got {dim_geometric}")
+            raise ValueError("coord_axes must not be empty")
         if dim_geometric > self.metadata.max_dim_geometric:
             raise ValueError(
-                f"{self.metadata.name} only implemented for dim_geometric <="
-                f"{self.metadata.max_dim_geometric}, got dim_geometric={dim_geometric}"
+                f"{self.metadata.name} only implemented for up to "
+                f"{self.metadata.max_dim_geometric} coord axes, got {dim_geometric}"
             )
 
     def _validate_selected_axes(
-        self, coord_axes: set[str], fixed_axes: dict[str, float] | None = None
+        self, coord_axes: set[str], fixed_axes: dict[str, float]
     ) -> None:
         # In cases where two coord systems behave the same, we raise an error
         # to enforce consistent coordinate system labelling i.e. (r, z) cylindrical
@@ -190,9 +200,7 @@ class CoordSystem(ABC):
 
         # If a coordinate system has any required axes, make sure these have been given
         for axis_label in self.metadata.required_axes:
-            if (axis_label not in coord_axes) and (
-                fixed_axes is None or axis_label not in fixed_axes
-            ):
+            if axis_label not in coord_axes and axis_label not in fixed_axes:
                 raise ValueError(f"Missing required axis: {axis_label}")
 
         # Both coord_axes and fixed_axes must be in the coordinate system's axes_labels
@@ -203,19 +211,18 @@ class CoordSystem(ABC):
                 f"Invalid axes for {self.metadata.name}: {invalid_coord_axes}"
             )
 
-        if fixed_axes is not None:
-            invalid_fixed_axes = set(fixed_axes) - valid_axes
-            if invalid_fixed_axes:
-                raise ValueError(
-                    f"Invalid fixed axes for {self.metadata.name}: {invalid_fixed_axes}"
-                )
+        invalid_fixed_axes = set(fixed_axes) - valid_axes
+        if invalid_fixed_axes:
+            raise ValueError(
+                f"Invalid fixed axes for {self.metadata.name}: {invalid_fixed_axes}"
+            )
 
-            # coord_axes and fixed_axes cannot share labels
-            overlap = coord_axes & set(fixed_axes)
-            if overlap:
-                raise ValueError(
-                    f"Axes {overlap} cannot appear in both coord_axes and fixed_axes"
-                )
+        # coord_axes and fixed_axes cannot share labels
+        overlap = coord_axes & set(fixed_axes)
+        if overlap:
+            raise ValueError(
+                f"Axes {overlap} cannot appear in both coord_axes and fixed_axes"
+            )
 
 
 class CartesianCoords(CoordSystem):
@@ -245,10 +252,12 @@ class CartesianCoords(CoordSystem):
     def metric_tensor(
         self,
         n_points: int,
-        geometric_coords: dict[str, torch.Tensor] | None = None,
+        geometric_coords: dict[str, torch.Tensor],
     ) -> MetricTensor:
         # For Cartesian, metric is identity matrix
-        return IdentityMetricTensor(n_points, self.device)
+        return IdentityMetricTensor(
+            n_points, self.device, dtype=self._dtype(geometric_coords)
+        )
 
     @property
     def internal_geometric_labels(self) -> tuple[str, ...]:
@@ -312,7 +321,7 @@ class CylindricalCoords(CoordSystem):
         # Get coordinates needed in metric tensor
         r = self._get_coord("r", geometric_coords)
 
-        # Construct metric corrsponding to max_dim_geometric
+        # Construct metric corresponding to max_dim_geometric
         diag = torch.ones(
             (n_points, self.metadata.max_dim_geometric),
             dtype=self._dtype(geometric_coords),
@@ -441,7 +450,13 @@ class CylindricalCoords(CoordSystem):
 
 
 class SphericalCoords(CoordSystem):
-    """Spherical polar coordinate system: r, theta, phi."""
+    """
+    Spherical polar coordinate system: r, theta, phi.
+
+    Without phi, (r, theta) are polar coordinates in the x-z plane, with
+    theta measured from the z axis. They do not describe an axisymmetric 3D
+    problem, so e.g. the Laplacian of 1/r is not zero.
+    """
 
     # Metadata as class attributes
     metadata = CoordSystemMetadata(
@@ -468,7 +483,7 @@ class SphericalCoords(CoordSystem):
         r = self._get_coord("r", geometric_coords)
         theta = self._get_coord("theta", geometric_coords)
 
-        # Construct metric corrsponding to max_dim_geometric
+        # Construct metric corresponding to max_dim_geometric
         diag = torch.ones(
             (n_points, self.metadata.max_dim_geometric),
             dtype=self._dtype(geometric_coords),

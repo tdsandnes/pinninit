@@ -192,9 +192,7 @@ if __name__ == "__main__":
     full_t_values = np.array(cfg.snapshot_times)
     x_bounds = (cfg.x_min, cfg.x_max)
 
-    coord_system = CartesianCoords(
-        dim_geometric=1, coord_axes={"x"}, device=torch.device("cpu")
-    )
+    coord_system = CartesianCoords(coord_axes={"x"}, device=torch.device("cpu"))
     datasets_train_val = pinninit.DataSetWriter(coord_system, {"x", "t"})
 
     Nx_data_train, Nt_data_train = 20, 20

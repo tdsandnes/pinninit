@@ -34,42 +34,35 @@ def internal_bounds(
 
 class TestConstruction:
     def test_axes_are_sorted_into_standard_order(self, device: torch.device) -> None:
-        cartesian = CartesianCoords(
-            dim_geometric=2, coord_axes={"y", "x"}, device=device
-        )
-        spherical = SphericalCoords(
-            dim_geometric=3, coord_axes={"phi", "theta", "r"}, device=device
-        )
+        cartesian = CartesianCoords(coord_axes={"y", "x"}, device=device)
+        spherical = SphericalCoords(coord_axes={"phi", "theta", "r"}, device=device)
 
         assert cartesian.axes_labels_selected == ("x", "y")
         assert spherical.axes_labels_selected == ("r", "theta", "phi")
 
-    def test_dim_geometric_out_of_range_raises(self, device: torch.device) -> None:
-        with pytest.raises(ValueError, match="dim_geometric"):
-            CartesianCoords(dim_geometric=0, coord_axes={"x"}, device=device)
-        with pytest.raises(ValueError, match="dim_geometric"):
-            CartesianCoords(dim_geometric=4, coord_axes={"x", "y", "z"}, device=device)
+    def test_no_axes_raises(self, device: torch.device) -> None:
+        with pytest.raises(ValueError, match="must not be empty"):
+            CartesianCoords(coord_axes=set(), device=device)
 
     def test_unknown_axis_raises(self, device: torch.device) -> None:
         with pytest.raises(ValueError, match="Invalid axes"):
-            CartesianCoords(dim_geometric=1, coord_axes={"r"}, device=device)
+            CartesianCoords(coord_axes={"r"}, device=device)
 
     def test_axes_with_a_simpler_equivalent_raise(self, device: torch.device) -> None:
         # e.g. cylindrical (r, z) is the same as Cartesian (x, y)
         with pytest.raises(ValueError, match="consistent coordinate system"):
-            CartesianCoords(dim_geometric=1, coord_axes={"z"}, device=device)
+            CartesianCoords(coord_axes={"z"}, device=device)
         with pytest.raises(ValueError, match="consistent coordinate system"):
-            CylindricalCoords(dim_geometric=2, coord_axes={"r", "z"}, device=device)
+            CylindricalCoords(coord_axes={"r", "z"}, device=device)
         with pytest.raises(ValueError, match="consistent coordinate system"):
-            SphericalCoords(dim_geometric=2, coord_axes={"r", "phi"}, device=device)
+            SphericalCoords(coord_axes={"r", "phi"}, device=device)
 
     def test_missing_required_axis_raises(self, device: torch.device) -> None:
         with pytest.raises(ValueError, match="Missing required axis"):
-            CylindricalCoords(dim_geometric=2, coord_axes={"theta", "z"}, device=device)
+            CylindricalCoords(coord_axes={"theta", "z"}, device=device)
 
     def test_required_axis_can_be_fixed(self, device: torch.device) -> None:
         coord_system = CylindricalCoords(
-            dim_geometric=2,
             coord_axes={"theta", "z"},
             device=device,
             fixed_axes={"r": 1.0},
@@ -79,15 +72,11 @@ class TestConstruction:
 
     def test_axis_both_fixed_and_selected_raises(self, device: torch.device) -> None:
         with pytest.raises(ValueError, match="cannot appear in both"):
-            CartesianCoords(
-                dim_geometric=1, coord_axes={"x"}, device=device, fixed_axes={"x": 0.0}
-            )
+            CartesianCoords(coord_axes={"x"}, device=device, fixed_axes={"x": 0.0})
 
     def test_unknown_fixed_axis_raises(self, device: torch.device) -> None:
         with pytest.raises(ValueError, match="Invalid fixed axes"):
-            CartesianCoords(
-                dim_geometric=1, coord_axes={"x"}, device=device, fixed_axes={"r": 0.0}
-            )
+            CartesianCoords(coord_axes={"x"}, device=device, fixed_axes={"r": 0.0})
 
     def test_registry_has_every_coord_system(self) -> None:
         for label in CoordSystemLabels:
@@ -103,9 +92,7 @@ class TestInternalCoords:
         spherical_3d: CoordSystem,
         device: torch.device,
     ) -> None:
-        spherical_2d = SphericalCoords(
-            dim_geometric=2, coord_axes={"r", "theta"}, device=device
-        )
+        spherical_2d = SphericalCoords(coord_axes={"r", "theta"}, device=device)
 
         assert cartesian_2d.internal_geometric_labels == ("x", "y")
         assert cylindrical_2d.internal_geometric_labels == ("x", "y")
@@ -161,9 +148,7 @@ class TestInternalCoords:
     def test_spherical_mapping_without_phi_is_in_the_x_z_plane(
         self, device: torch.device
     ) -> None:
-        coord_system = SphericalCoords(
-            dim_geometric=2, coord_axes={"r", "theta"}, device=device
-        )
+        coord_system = SphericalCoords(coord_axes={"r", "theta"}, device=device)
         r = torch.tensor([1.0, 2.0], device=device)
         theta = torch.tensor([PI / 4, PI / 3], device=device)
 
@@ -204,7 +189,6 @@ class TestMetricTensor:
 
     def test_cylindrical_with_fixed_r(self, device: torch.device) -> None:
         coord_system = CylindricalCoords(
-            dim_geometric=2,
             coord_axes={"theta", "z"},
             device=device,
             fixed_axes={"r": 3.0},
@@ -309,9 +293,7 @@ class TestInternalBounds:
         assert ub == pytest.approx({"x": 1.0, "y": 1.0, "z": 5.0}, abs=1e-5)
 
     def test_spherical_without_phi(self, device: torch.device) -> None:
-        coord_system = SphericalCoords(
-            dim_geometric=2, coord_axes={"r", "theta"}, device=device
-        )
+        coord_system = SphericalCoords(coord_axes={"r", "theta"}, device=device)
         lb, ub = internal_bounds(
             coord_system, {"r": 0.0, "theta": 0.0}, {"r": 2.0, "theta": PI}
         )
@@ -338,7 +320,7 @@ class TestInternalBounds:
 
     def test_fixed_r_is_used(self, device: torch.device) -> None:
         coord_system = SphericalCoords(
-            dim_geometric=2, coord_axes={"theta"}, device=device, fixed_axes={"r": 2.0}
+            coord_axes={"theta"}, device=device, fixed_axes={"r": 2.0}
         )
         lb, ub = internal_bounds(coord_system, {"theta": 0.0}, {"theta": PI / 2})
         assert lb == pytest.approx({"x": 0.0, "z": 0.0}, abs=1e-5)

@@ -149,7 +149,7 @@ if __name__ == "__main__":
     print(f"Using device: {device}")
 
     # Coords class matching the training configuration
-    coord_system = CartesianCoords(dim_geometric=1, coord_axes={"x"}, device=device)
+    coord_system = CartesianCoords(coord_axes={"x"}, device=device)
     coords_class = make_coords_dataclass({"x"}, coord_system, device)
 
     # Load test data

@@ -3,21 +3,35 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from .coordinate_system import COORD_SYSTEM_REGISTRY, CoordSystem, CoordSystemLabels
+from .coordinate_system import CartesianCoords, CoordSystem
 
 
 class Domain:
+    """
+    The bounds of a set of coordinates, in their coord system.
+
+    Parameters
+    ----------
+    coord_system:
+        The coord system of the coordinates.
+    geometric_bounds:
+        (min, max) of each axis. Geometric axes without bounds, or with a
+        bound of None, use the bounds of the coord system (e.g. r >= 0).
+        Non-geometric axes (e.g. time) need both bounds.
+    periodic_coords:
+        Geometric axes that are periodic, with the length of the domain as
+        the period. Only supported in Cartesian coordinates.
+    """
+
     def __init__(
         self,
         coord_system: CoordSystem,
-        geometric_bounds: dict[str, tuple[float | None, float | None]] | None,
-        periodic_coords: set[str] | None,
-        device: torch.device,
-    ):
+        geometric_bounds: dict[str, tuple[float | None, float | None]] | None = None,
+        periodic_coords: set[str] | None = None,
+    ) -> None:
         self.coord_system = coord_system
         self.geometric_labels = coord_system.axes_labels_selected
-        self.metadata_selected_bounds = coord_system.axes_bounds_selected
-        self.device = device
+        self.device = coord_system.device
 
         self._set_geometric_bounds(geometric_bounds)
         self._set_non_geometric_bounds(geometric_bounds)
@@ -32,10 +46,7 @@ class Domain:
         self.geometric_ub: dict[str, torch.Tensor] = {}
 
         for axis in self.geometric_labels:
-            if axis not in self.metadata_selected_bounds:
-                raise ValueError(f"No metadata bounds defined for axis '{axis}'")
-
-            meta_lb, meta_ub = self.metadata_selected_bounds[axis]
+            meta_lb, meta_ub = self.coord_system.axes_bounds_selected[axis]
 
             # Use user-provided bounds if available, else fall back to metadata
             if geometric_bounds is None or axis not in geometric_bounds:
@@ -111,25 +122,12 @@ class Domain:
         self,
         periodic_coords: set[str] | None,
     ) -> None:
-        """
-        Validate and store periodic coordinate labels.
-
-        Only supported for Cartesian coordinate systems. For each periodic axis,
-        the period is inferred as (ub - lb) from the domain bounds set by _set_bounds.
-
-        Parameters
-        ----------
-        periodic_coords : set[str] | None
-            Set of geometric axis labels to treat as periodic. None means no
-            periodicity.f
-        """
+        """Store the period of each periodic axis: the length of the domain."""
         if periodic_coords is None:
             self.periodic_coords: dict[str, float] = {}
             return
 
-        if not isinstance(
-            self.coord_system, COORD_SYSTEM_REGISTRY[CoordSystemLabels.CARTESIAN]
-        ):
+        if not isinstance(self.coord_system, CartesianCoords):
             raise ValueError(
                 "Periodic boundary conditions are currently only supported for "
                 f"Cartesian coordinate systems, got "
