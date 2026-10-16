@@ -11,7 +11,8 @@ def trig_bounds(
     """
     Exact bounds of sin(theta) or cos(theta) on an interval.
     """
-    pi = torch.tensor(torch.pi)
+    # On the bounds' device and dtype, so all candidates can be stacked
+    pi = torch.tensor(torch.pi, dtype=theta_lb.dtype, device=theta_lb.device)
     if function == "cos":
         candidates = [
             torch.cos(theta_lb),

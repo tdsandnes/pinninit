@@ -217,6 +217,13 @@ class CoordSystem(ABC):
                 f"Invalid fixed axes for {self.metadata.name}: {invalid_fixed_axes}"
             )
 
+        for axis_label, value in fixed_axes.items():
+            lb, ub = self.metadata.axes_bounds[axis_label]
+            if not lb <= value <= ub:
+                raise ValueError(
+                    f"Fixed axis '{axis_label}' must be in [{lb}, {ub}], got {value}"
+                )
+
         # coord_axes and fixed_axes cannot share labels
         overlap = coord_axes & set(fixed_axes)
         if overlap:

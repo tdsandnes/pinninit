@@ -78,6 +78,12 @@ class TestConstruction:
         with pytest.raises(ValueError, match="Invalid fixed axes"):
             CartesianCoords(coord_axes={"x"}, device=device, fixed_axes={"r": 0.0})
 
+    def test_fixed_axis_outside_its_bounds_raises(self, device: torch.device) -> None:
+        with pytest.raises(ValueError, match="must be in"):
+            CylindricalCoords(
+                coord_axes={"theta"}, device=device, fixed_axes={"r": -1.0}
+            )
+
     def test_registry_has_every_coord_system(self) -> None:
         for label in CoordSystemLabels:
             assert issubclass(COORD_SYSTEM_REGISTRY[label], CoordSystem)

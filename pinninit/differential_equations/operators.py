@@ -166,6 +166,9 @@ class Operators:
             The vector computed from (v1 dot grad)(v2).
             Shape (n_points, dim_geometric)
         """
+        self._check_vector(v1)
+        self._check_vector(v2)
+
         # Transform v2 to Cartesian
         v2_cartesian = self.coord_system.transform_geometric_to_cartesian(
             v2, self.geometric_coords
@@ -204,6 +207,8 @@ class Operators:
             The divergence of the vector field v.
             Shape (n_points,)
         """
+        self._check_vector(contra_v)
+
         # Term to take derivatives of
         inner_term = self.G.sqrt_det_times_vec(contra_v)
 
@@ -235,6 +240,7 @@ class Operators:
             The divergence of the vector field v.
             Shape (n_points,)
         """
+        self._check_vector(v)
         return self.contravariant_div(self.G.inv_scale_factors_times_vec(v))
 
     def laplacian(
@@ -283,6 +289,8 @@ class Operators:
             Laplacian of the vector field and same basis as input vector
             field (n_points, dim_geometric)
         """
+        self._check_vector(v)
+
         # Transform v to Cartesian
         v_cartesian = self.coord_system.transform_geometric_to_cartesian(
             v, self.geometric_coords
@@ -298,6 +306,14 @@ class Operators:
         return self.coord_system.transform_cartesian_to_geometric(
             lap, self.geometric_coords
         )
+
+    def _check_vector(self, v: torch.Tensor) -> None:
+        expected_shape = (self.coords.n_points, len(self.geometric_labels))
+        if v.shape != expected_shape:
+            raise ValueError(
+                f"Expected a vector field of shape {expected_shape}, "
+                f"got {tuple(v.shape)}"
+            )
 
     def _check_differentiable(self, f: torch.Tensor) -> None:
         if not f.requires_grad:

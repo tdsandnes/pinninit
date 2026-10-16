@@ -147,3 +147,9 @@ class Domain:
             for label in self.geometric_labels
             if label in periodic_coords
         }
+        for label, period in self.periodic_coords.items():
+            if not (np.isfinite(period) and period > 0):
+                raise ValueError(
+                    f"Periodic coord '{label}' needs finite bounds with lower < "
+                    f"upper, got a period of {period}"
+                )

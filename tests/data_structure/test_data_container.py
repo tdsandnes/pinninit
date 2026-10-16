@@ -214,6 +214,31 @@ class TestDerivedFieldEvaluation:
                 equations=[Equation("u", make_u, {"u": 0})],
             )
 
+    def test_equation_output_rank_must_match_the_field(self, coords_2d: Coords) -> None:
+        def make_q(x: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return x
+
+        with pytest.raises(ValueError, match="with rank 0, but the field has rank 1"):
+            DataContainer(
+                coords=coords_2d,
+                primary_field_label_to_rank={},
+                derived_field_label_to_rank={"q": 1},
+                equations=[Equation("q", make_q, {"q": 0})],
+            )
+
+    def test_unknown_equation_input_raises(self, coords_2d: Coords) -> None:
+        # Raised when the container is made, not when the equation is evaluated
+        def make_w(missing: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return missing
+
+        with pytest.raises(ValueError, match=r"takes \['missing'\]"):
+            DataContainer(
+                coords=coords_2d,
+                primary_field_label_to_rank={},
+                derived_field_label_to_rank={"w": 0},
+                equations=[Equation("w", make_w, {"w": 0})],
+            )
+
     def test_field_output_by_two_equations_raises(self, coords_2d: Coords) -> None:
         def make_a(x: torch.Tensor, operators: Operators) -> torch.Tensor:
             return x

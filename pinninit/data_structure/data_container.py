@@ -63,12 +63,7 @@ class DataContainer:
         # after the equations it depends on
         self.equations = sort_equations(equations or [])
         for equation in self.equations:
-            not_derived = set(equation.output_labels) - self.derived_field_labels
-            if not_derived:
-                raise ValueError(
-                    f"Equation '{equation.label}' outputs {sorted(not_derived)}, "
-                    "which are not derived fields."
-                )
+            self._check_equation(equation)
 
     @property
     def field_labels(self) -> set[str]:
@@ -157,6 +152,32 @@ class DataContainer:
             outputs = equation.evaluate(self, coords, operators)
             for label, tensor in outputs.items():
                 self.set_field_from_tensor(label, tensor, coords, allow_derived=True)
+
+    def _check_equation(self, equation: Equation) -> None:
+        """Check an equation computes derived fields of this container, from
+        its coords, fields and consts."""
+        not_derived = set(equation.output_labels) - self.derived_field_labels
+        if not_derived:
+            raise ValueError(
+                f"Equation '{equation.label}' outputs {sorted(not_derived)}, "
+                "which are not derived fields."
+            )
+
+        for label, rank in equation.output_label_to_rank.items():
+            field_rank = self.field_classes[label].rank
+            if rank != field_rank:
+                raise ValueError(
+                    f"Equation '{equation.label}' outputs '{label}' with rank "
+                    f"{rank}, but the field has rank {field_rank}."
+                )
+
+        known_labels = {*self.coord_labels, *self.field_labels, *self.consts}
+        unknown = sorted(set(equation.input_labels) - known_labels)
+        if unknown:
+            raise ValueError(
+                f"Equation '{equation.label}' takes {unknown}, which are not "
+                "coords, fields or consts."
+            )
 
     def _new_field(
         self, label: str, coords: Coords | None, allow_derived: bool

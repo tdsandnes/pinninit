@@ -181,6 +181,19 @@ class TestPeriodicCoords:
                 periodic_coords={"r"},
             )
 
+    @pytest.mark.parametrize("x_bounds", [(None, None), (1.0, 1.0)])
+    def test_periodic_coord_needs_a_finite_nonzero_period(
+        self,
+        cartesian_2d: CoordSystem,
+        x_bounds: tuple[float | None, float | None],
+    ) -> None:
+        with pytest.raises(ValueError, match="needs finite bounds"):
+            Domain(
+                coord_system=cartesian_2d,
+                geometric_bounds={"x": x_bounds},
+                periodic_coords={"x"},
+            )
+
     def test_unknown_periodic_coord_raises(self, cartesian_2d: CoordSystem) -> None:
         with pytest.raises(ValueError, match="not a geometric axis"):
             Domain(

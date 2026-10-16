@@ -128,3 +128,11 @@ class TestBatches:
     def test_n_batches_must_be_positive(self, coords_2d: Coords) -> None:
         with pytest.raises(ValueError, match="must be positive"):
             Batches(coords_2d, n_batches=0)
+
+    def test_coords_with_no_points_raise(
+        self, coords_2d: Coords, device: torch.device
+    ) -> None:
+        no_points = torch.zeros(0, device=device)
+        empty = type(coords_2d)(x=no_points, y=no_points)
+        with pytest.raises(ValueError, match="at least one point"):
+            Batches(empty, n_batches=1)

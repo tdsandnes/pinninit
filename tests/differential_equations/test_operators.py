@@ -58,6 +58,18 @@ class TestCartesian:
         with pytest.raises(ValueError, match="expects a scalar field"):
             operators.grad(coords_2d.geometric)
 
+    def test_vector_of_the_wrong_shape_raises(self, coords_2d: Coords) -> None:
+        operators = Operators(coords_2d)
+        x = coords_2d.get_coord("x")
+        v = torch.stack([x, x, x], dim=1)  # 3 components in 2D
+
+        with pytest.raises(ValueError, match="Expected a vector field of shape"):
+            operators.div(v)
+        with pytest.raises(ValueError, match="Expected a vector field of shape"):
+            operators.v_dot_grad(v, v)
+        with pytest.raises(ValueError, match="Expected a vector field of shape"):
+            operators.vector_laplacian(v)
+
     def test_tensor_not_computed_from_the_coords_raises(
         self, coords_2d: Coords, device: torch.device
     ) -> None:

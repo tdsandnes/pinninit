@@ -17,6 +17,8 @@ class Batches:
     def __init__(self, coords: Coords, n_batches: int, shuffle: bool = True) -> None:
         if n_batches <= 0:
             raise ValueError(f"n_batches must be positive, got {n_batches}")
+        if coords.n_points == 0:
+            raise ValueError("Coords must have at least one point to be batched")
         self.coords = coords
         # Coords with fewer points than n_batches cannot fill that many batches
         self.n_batches = min(n_batches, coords.n_points)
