@@ -73,7 +73,7 @@ class EvaluationContext:
                 f"Expected weights shape ({coords.n_points},), got {new_weights.shape}"
             )
 
-        self.raw_point_weights.update_from_tensor(new_weights.detach().clone(), coords)
+        self.raw_point_weights.update_from_tensor(new_weights.detach(), coords)
 
     def get_raw_point_weights(self, coords: Coords | None = None) -> torch.Tensor:
         """

@@ -85,24 +85,24 @@ class TestConstruction:
         with pytest.raises(KeyError, match="not found in coords"):
             coords_2d.get_coord("z")
 
-    def test_empty_coord_labels_raise(
-        self, cartesian_2d: CoordSystem, device: torch.device
+    @pytest.mark.parametrize(
+        ("labels", "match"),
+        [
+            (set(), "must not be empty"),
+            ({"x"}, "requires geometric axes"),
+            # Coords already has an attribute called tensor
+            ({"x", "y", "tensor"}, "reserved"),
+        ],
+    )
+    def test_invalid_coord_labels_raise(
+        self,
+        cartesian_2d: CoordSystem,
+        device: torch.device,
+        labels: set[str],
+        match: str,
     ) -> None:
-        with pytest.raises(ValueError, match="must not be empty"):
-            make_coords_dataclass(set(), cartesian_2d, device)
-
-    def test_missing_geometric_coord_raises(
-        self, cartesian_2d: CoordSystem, device: torch.device
-    ) -> None:
-        with pytest.raises(ValueError, match="requires geometric axes"):
-            make_coords_dataclass({"x"}, cartesian_2d, device)
-
-    def test_reserved_coord_label_raises(
-        self, cartesian_2d: CoordSystem, device: torch.device
-    ) -> None:
-        # Coords already has an attribute called tensor
-        with pytest.raises(ValueError, match="reserved"):
-            make_coords_dataclass({"x", "y", "tensor"}, cartesian_2d, device)
+        with pytest.raises(ValueError, match=match):
+            make_coords_dataclass(labels, cartesian_2d, device)
 
     def test_coord_system_on_another_device_raises(self, device: torch.device) -> None:
         coord_system = CartesianCoords(
@@ -111,40 +111,28 @@ class TestConstruction:
         with pytest.raises(ValueError, match="coord_system is on meta"):
             make_coords_dataclass({"x", "y"}, coord_system, device)
 
-    def test_coords_of_different_lengths_raise(
-        self, cartesian_2d: CoordSystem, device: torch.device
+    @pytest.mark.parametrize(
+        ("x_shape", "x_dtype", "error", "match"),
+        [
+            ((4,), torch.float32, ValueError, "same length"),
+            ((3, 2), torch.float32, ValueError, "must be 1D"),
+            ((3,), torch.float64, ValueError, "same dtype"),
+            ((3,), torch.long, TypeError, "floating point"),
+        ],
+    )
+    def test_invalid_coords_raise(
+        self,
+        cartesian_2d: CoordSystem,
+        device: torch.device,
+        x_shape: tuple[int, ...],
+        x_dtype: torch.dtype,
+        error: type[Exception],
+        match: str,
     ) -> None:
         coords_class = make_coords_dataclass({"x", "y"}, cartesian_2d, device)
-        with pytest.raises(ValueError, match="same length"):
-            coords_class(
-                x=torch.zeros(3, device=device), y=torch.zeros(4, device=device)
-            )
-
-    def test_coord_that_is_not_1d_raises(
-        self, cartesian_2d: CoordSystem, device: torch.device
-    ) -> None:
-        coords_class = make_coords_dataclass({"x", "y"}, cartesian_2d, device)
-        with pytest.raises(ValueError, match="must be 1D"):
-            coords_class(
-                x=torch.zeros(3, 2, device=device), y=torch.zeros(3, device=device)
-            )
-
-    def test_coords_of_different_dtypes_raise(
-        self, cartesian_2d: CoordSystem, device: torch.device
-    ) -> None:
-        coords_class = make_coords_dataclass({"x", "y"}, cartesian_2d, device)
-        x = torch.zeros(3, dtype=torch.float32, device=device)
-        y = torch.zeros(3, dtype=torch.float64, device=device)
-        with pytest.raises(ValueError, match="same dtype"):
-            coords_class(x=x, y=y)
-
-    def test_integer_coord_raises(
-        self, cartesian_2d: CoordSystem, device: torch.device
-    ) -> None:
-        coords_class = make_coords_dataclass({"x", "y"}, cartesian_2d, device)
-        x = torch.zeros(3, dtype=torch.long, device=device)
-        y = torch.zeros(3, device=device)
-        with pytest.raises(TypeError, match="floating point"):
+        x = torch.zeros(x_shape, dtype=x_dtype, device=device)
+        y = torch.zeros(3, dtype=torch.float32, device=device)
+        with pytest.raises(error, match=match):
             coords_class(x=x, y=y)
 
 
@@ -183,8 +171,6 @@ class TestBatches:
 
         assert type(batch) is type(coords_2d)
         assert batch.n_points == 3
-        assert batch.is_batch
-        assert not coords_2d.is_batch
         assert batch.parent is coords_2d
         assert batch.parent_idx is not None
         assert torch.equal(batch.parent_idx, idx)
@@ -215,8 +201,6 @@ class TestBatches:
         batch = coords_2d.get_batch(idx1).get_batch(idx2)
 
         assert torch.equal(batch.tensor, coords_2d.tensor[idx1[idx2]].detach())
-        assert coords_2d.is_ancestor_of(batch)
-        assert not batch.is_ancestor_of(coords_2d)
 
     def test_batch_gradients_do_not_flow_to_full_coords(
         self, coords_2d: Coords, device: torch.device

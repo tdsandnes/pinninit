@@ -19,24 +19,29 @@ from ..helpers import N_POINTS, make_coords
 def make_field(rank: int, coords: Coords) -> Field:
     """A field whose component i has the value i at every point."""
     field_class = make_field_dataclass(rank, type(coords))
-    component_labels = generate_tensor_component_labels(coords.geometric_labels, rank)
     components = {
         label: torch.full((coords.n_points,), float(i), device=coords.device)
-        for i, label in enumerate(component_labels)
+        for i, label in enumerate(field_class.component_labels)
     }
     return field_class(label="f", coords=coords, **components)
 
 
 class TestComponentLabels:
-    def test_scalar_has_one_value_component(self) -> None:
-        assert generate_tensor_component_labels(("x", "y"), 0) == ("value",)
-
-    def test_vector_components_are_the_geometric_labels(self) -> None:
-        assert generate_tensor_component_labels(("r", "theta"), 1) == ("r", "theta")
-
-    def test_rank_2_components_are_pairs_of_geometric_labels(self) -> None:
-        labels = generate_tensor_component_labels(("x", "y"), 2)
-        assert labels == ("x_x", "x_y", "y_x", "y_y")
+    @pytest.mark.parametrize(
+        ("geometric_labels", "rank", "expected"),
+        [
+            (("x", "y"), 0, ("value",)),
+            (("r", "theta"), 1, ("r", "theta")),
+            (("x", "y"), 2, ("x_x", "x_y", "y_x", "y_y")),
+        ],
+    )
+    def test_component_labels(
+        self,
+        geometric_labels: tuple[str, ...],
+        rank: int,
+        expected: tuple[str, ...],
+    ) -> None:
+        assert generate_tensor_component_labels(geometric_labels, rank) == expected
 
     def test_negative_rank_raises(self) -> None:
         with pytest.raises(ValueError, match="rank must be >= 0"):

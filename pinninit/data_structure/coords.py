@@ -45,10 +45,6 @@ class Coords:
         self._set_tensors()
 
     @property
-    def is_batch(self) -> bool:
-        return self.parent is not None
-
-    @property
     def dtype(self) -> torch.dtype:
         return self.tensor.dtype
 
@@ -65,7 +61,7 @@ class Coords:
         with respect to them.
         """
         if idx.dtype != torch.long:
-            raise TypeError("idx must be integer tensor")
+            raise TypeError("idx must be an integer tensor of dtype torch.long")
         if idx.ndim != 1:
             raise ValueError("idx must be 1D")
         idx = idx.to(self.device)

@@ -51,28 +51,21 @@ class TestConstruction:
 
 
 class TestFields:
-    def test_set_field_from_tensor(self, data: DataContainer) -> None:
-        values = 2.0 * data.coords.get_coord("x")
-
-        data.set_field_from_tensor("u", values)
-
-        assert torch.equal(data.get_field_tensor("u"), values)
-
-    def test_set_field_from_component_tensor(self, data: DataContainer) -> None:
+    def test_set_and_get_fields(self, data: DataContainer) -> None:
+        # The conversions between tensor layouts are tested in test_field.py
         x, y = data.coords.get_coord("x"), data.coords.get_coord("y")
-        values = torch.stack([x, y], dim=1)
+        v = torch.stack([x, y], dim=1)
 
-        data.set_field_from_component_tensor("v", values)
+        data.set_field_from_tensor("u", 2.0 * x)
+        data.set_field_from_component_tensor("v", v)
 
-        assert torch.equal(data.get_field_component_tensor("v"), values)
+        assert torch.equal(data.get_field_tensor("u"), 2.0 * x)
+        assert torch.equal(data.get_field_component_tensor("v"), v)
         assert torch.equal(data.get_field_component("v", "y"), y)
 
-    def test_set_field_from_component_dict(self, data: DataContainer) -> None:
-        x, y = data.coords.get_coord("x"), data.coords.get_coord("y")
+        data.set_field_from_component_dict("v", {"x": y, "y": x})
 
-        data.set_field_from_component_dict("v", {"x": x, "y": y})
-
-        assert torch.equal(data.get_field_tensor("v"), torch.stack([x, y], dim=1))
+        assert torch.equal(data.get_field_tensor("v"), torch.stack([y, x], dim=1))
 
     def test_derived_field_can_only_be_set_with_allow_derived(
         self, data: DataContainer, device: torch.device

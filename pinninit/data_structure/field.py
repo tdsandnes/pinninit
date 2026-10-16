@@ -127,7 +127,8 @@ class Field:
         """Update the field from a component tensor of shape (n_points, n_components).
 
         If coords is a batch, only the batch rows are updated, and the values
-        in all other rows are detached from the autograd graph.
+        in all other rows are detached from the autograd graph. The update is
+        made on a copy, so tensors the field was given are never changed.
         """
         coords = self.coords if coords is None else coords
 
@@ -153,7 +154,7 @@ class Field:
             if indices is None:
                 setattr(self, label, new_tensor[:, i])
             else:
-                component = getattr(self, label).detach()
+                component = getattr(self, label).detach().clone()
                 component[indices] = new_tensor[:, i]
                 setattr(self, label, component)
 
