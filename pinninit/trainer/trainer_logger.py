@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING
 
 import torch
@@ -17,10 +16,11 @@ if TYPE_CHECKING:
 class TrainerLogger:
     def __init__(self, trainer: Trainer, print_freq: int = 1):
         self.trainer = trainer
-        self.print_freq = print_freq  # now means "print every N epochs"
+        self.print_freq = print_freq  # print every print_freq epochs
         self.events: list[dict[str, Any]] = []
 
-        # Per-step recorders (unchanged)
+        # The training losses of the step's first loss evaluation (an optimizer
+        # such as L-BFGS can evaluate the loss several times in one step)
         self.unweighted_train_losses = PointInStepRecorder(PointInStep.FIRST)
 
         # Accumulator for averaging train losses across steps within an epoch
@@ -55,8 +55,8 @@ class TrainerLogger:
         # Full-set validation losses (chunked to keep peak memory bounded)
         full_val_losses = trainer.compute_full_unweighted_val_losses()
 
-        # Mean of per-step minibatch train losses over the epoch
-        # (approximation — exact only when all batches are the same size)
+        # Mean of the per-step batch losses over the epoch (the full-set loss
+        # only if all batches are the same size)
         epoch_train_losses = (
             {
                 label: sum(step[label] for step in self._epoch_train_loss_accum)
@@ -84,7 +84,12 @@ class TrainerLogger:
 
         # Print if on a print checkpoint
         if trainer.epoch % self.print_freq == 0:
-            self._print_epoch(epoch_train_losses, full_val_losses, epoch_weights)
+            self._print_summary(
+                f"Epoch: {trainer.epoch}  (iter {trainer.iter})",
+                "Training loss (epoch mean of batch losses)",
+                epoch_train_losses,
+                full_val_losses,
+            )
 
     def _learnt_consts(self) -> dict[str, float]:
         return {
@@ -137,37 +142,42 @@ class TrainerLogger:
                 return f"BRDR scaling factor s: {s:.6g} \n"
         return ""
 
-    def _print_epoch(
+    def _print_summary(
         self,
+        title: str,
+        train_title: str,
         train_losses: dict[str, float],
         val_losses: dict[str, float],
-        weights: dict[str, float],
     ) -> None:
+        """Print the losses of each loss term (before its loss term weight) and
+        the weights."""
         trainer = self.trainer
-        weighted_sum_train = sum(
-            weights[label] * loss for label, loss in train_losses.items()
-        )
-        train_weight_sum = sum(weights[label] for label in train_losses)
-        weighted_sum_val = sum(
-            weights[label] * loss for label, loss in val_losses.items()
-        )
-        val_weight_sum = sum(weights[label] for label in val_losses)
-        val_geometric_mean = math.exp(
-            sum(math.log(loss) for loss in val_losses.values()) / len(val_losses)
-        )
+        weights = {
+            label: container.loss_term_weight
+            for label, container in trainer.loss_containers.items()
+        }
+
+        def weighted_sum_and_average(losses: dict[str, float]) -> tuple[float, float]:
+            # Over the terms in losses: a term activated at the end of an epoch
+            # has no training loss for that epoch
+            weighted_sum = sum(weights[label] * loss for label, loss in losses.items())
+            return weighted_sum, weighted_sum / sum(weights[label] for label in losses)
+
+        train_sum, train_average = weighted_sum_and_average(train_losses)
+        val_sum, val_average = weighted_sum_and_average(val_losses)
         print(
             "-------------------------------------------------------------------\n"
-            f"Epoch: {trainer.epoch}  (iter {trainer.iter}): \n"
+            f"{title}: \n"
             "-------------------------------------------------------------------\n"
-            f"Training Loss (epoch mean of minibatch estimates): \n"
-            f"- unweighted contributions:   {train_losses} \n"
-            f"- weighted sum:               {weighted_sum_train} \n"
-            f"- weighted average:           {weighted_sum_train / train_weight_sum} \n"
-            f"Validation Loss (full set): \n"
-            f"- unweighted contributions:   {val_losses} \n"
-            f"- weighted sum:               {weighted_sum_val} \n"
-            f"- weighted average:           {weighted_sum_val / val_weight_sum} \n"
-            f"- geometric mean:             {val_geometric_mean} \n"
+            f"{train_title}: \n"
+            f"- per loss term:              {train_losses} \n"
+            f"- weighted sum:               {train_sum} \n"
+            f"- weighted average:           {train_average} \n"
+            f"Validation loss (full set): \n"
+            f"- per loss term:              {val_losses} \n"
+            f"- weighted sum:               {val_sum} \n"
+            f"- weighted average:           {val_average} \n"
+            f"- geometric mean:             {trainer.full_geometric_mean_val_loss} \n"
             f"Loss term weights:            {weights} \n"
             f"{self._learnt_consts_str()}"
             f"{self._point_weights_str()}"
@@ -186,30 +196,15 @@ class TrainerLogger:
         )
 
     def print_losses_and_weights(self, timing_str: str) -> None:
+        """Print the full-set losses and the weights, e.g. before training."""
         trainer = self.trainer
-        loss_term_weights = {
-            label: container.loss_term_weight
-            for label, container in trainer.loss_containers.items()
-        }
         train_losses = {
             label: container.compute_full_train_loss(trainer.model).item()
             for label, container in trainer.loss_containers.items()
         }
-        val_losses = {
-            label: container.compute_full_val_loss(trainer.model).item()
-            for label, container in trainer.loss_containers.items()
-        }
-        print(
-            "-------------------------------------------------------------------\n"
-            f"Epoch: {trainer.epoch}  Iter: {trainer.iter}  ({timing_str}): \n"
-            "-------------------------------------------------------------------\n"
-            f"Training Loss: \n"
-            f"- unweighted contributions:   {train_losses} \n"
-            f"Validation Loss (full set): \n"
-            f"- unweighted contributions:   {val_losses} \n"
-            f"Loss term weights:            {loss_term_weights} \n"
-            f"{self._learnt_consts_str()}"
-            f"{self._point_weights_str()}"
-            f"{self._skip_alphas_str()}"
-            f"{self._brdr_s_str()}"
+        self._print_summary(
+            f"Epoch: {trainer.epoch}  (iter {trainer.iter}, {timing_str})",
+            "Training loss (full set)",
+            train_losses,
+            trainer.compute_full_unweighted_val_losses(),
         )

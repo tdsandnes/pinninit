@@ -48,7 +48,6 @@ class Trainer:
 
         # Epoch tracking
         self.epoch = 0
-        self.is_epoch_end = False
         self._steps_in_epoch = 0
 
         # TrainerState handles current state of training
@@ -71,9 +70,8 @@ class Trainer:
         # Restored state from checkpoint (if any)
         self._restored_state: dict[str, Any] | None = None
 
-        # Cached quantities
+        # Quantities cached until the model parameters change
         self._full_val_losses_cache: dict[str, float] | None = None
-        self._train_losses_cache: dict[str, torch.Tensor] | None = None
         self._train_residuals_cache: dict[str, torch.Tensor] | None = None
         self._total_train_loss_cache: float | None = None
 
@@ -82,17 +80,14 @@ class Trainer:
 
     def step(self) -> None:
         # Model params changed last step so cached quantities are stale
-        self._full_val_losses_cache = None
-        self._train_losses_cache = None
-        self._train_residuals_cache = None
-        self._total_train_loss_cache = None
+        self._clear_caches()
 
-        # Mark whether this step completes an epoch (full pass over the training data)
+        # Whether this step completes an epoch (full pass over the training data)
         self._steps_in_epoch += 1
-        self.is_epoch_end = self._steps_in_epoch >= self._steps_per_epoch()
+        is_epoch_end = self._steps_in_epoch >= self._steps_per_epoch()
 
         # Update trainer state for current step
-        self.state.on_step_start(self, self.logger)
+        self.state.on_step_start(self)
 
         # Execute all trainer modules at start of step
         for module in self.trainer_modules:
@@ -126,7 +121,7 @@ class Trainer:
                 module.on_step_end(self, self.logger)
 
         # Execute epoch-end hooks when a full pass over the data completes
-        if self.is_epoch_end:
+        if is_epoch_end:
             # Roll the counter first, so hooks see the number of completed
             # epochs and iter == epoch * steps_per_epoch at epoch boundaries
             self.epoch += 1
@@ -152,7 +147,7 @@ class Trainer:
                 module.on_state_change(self, self.logger)
 
         # Update trainer state for next step
-        self.state.on_step_end(self, self.logger)
+        self.state.on_step_end()
 
     def train(self) -> None:
         # Execute all trainer modules at start of training
@@ -161,7 +156,8 @@ class Trainer:
 
         # Restore state from checkpoint if available
         if self._restored_state is not None:
-            self._apply_restored_state()
+            self._apply_restored_state(self._restored_state)
+            self._restored_state = None
 
         # Print initial state to terminal
         self.logger.print_losses_and_weights("initial state")
@@ -219,42 +215,34 @@ class Trainer:
                 for label, container in self.loss_containers.items()
             }
 
+    def _clear_caches(self) -> None:
+        self._full_val_losses_cache = None
+        self._train_residuals_cache = None
+        self._total_train_loss_cache = None
+
     def compute_train_loss(self) -> torch.Tensor:
-        batches = self._current_train_batches
-
-        # New containers may have been activated since batches were drawn
-        for label, container in self.loss_containers.items():
-            if label not in batches:
-                batches[label] = container.next_train_batch()
-
+        """Weighted sum of the loss terms on this step's training batches."""
         # Compute per-term losses and cache this step's residuals
-        unweighted_losses = {}
-        self._train_losses_cache = {}
+        losses = {}
         self._train_residuals_cache = {}
         for label, container in self.loss_containers.items():
             loss, residuals = container.compute_train_batch_loss_and_residuals(
-                self.model, batches[label], detach=False
+                self.model, self._current_train_batches[label], detach=False
             )
-            unweighted_losses[label] = loss
-            self._train_losses_cache[label] = loss
+            losses[label] = loss
             self._train_residuals_cache[label] = residuals
 
         # Record for the epoch-mean train loss log
-        self.logger.record_train_losses(unweighted_losses)
+        self.logger.record_train_losses(losses)
 
-        # Weighted sum
-        weighted_losses = [
-            container.loss_term_weight * unweighted_losses[label]
-            for label, container in self.loss_containers.items()
-        ]
-        total = torch.stack(weighted_losses).sum()
+        total = torch.stack(
+            [
+                container.loss_term_weight * losses[label]
+                for label, container in self.loss_containers.items()
+            ]
+        ).sum()
         self._total_train_loss_cache = float(total.detach())
         return total
-
-    def cached_train_losses(self, label: str) -> torch.Tensor | None:
-        if self._train_losses_cache is None:
-            return None
-        return self._train_losses_cache.get(label)
 
     def cached_train_residuals(self, label: str) -> torch.Tensor | None:
         """Residuals cached during this step's training-loss computation."""
@@ -276,9 +264,12 @@ class Trainer:
 
     @property
     def full_geometric_mean_val_loss(self) -> float:
-        """Geometric mean of val loss over the full val set."""
-        losses = self.compute_full_unweighted_val_losses()
-        return math.exp(sum(math.log(loss) for loss in losses.values()) / len(losses))
+        """Geometric mean of the full-set val losses of the active containers."""
+        losses = self.compute_full_unweighted_val_losses().values()
+        # The geometric mean is 0 if any loss is 0 (where log fails)
+        if min(losses) == 0:
+            return 0.0
+        return math.exp(sum(math.log(loss) for loss in losses) / len(losses))
 
     @property
     def all_loss_containers(self) -> dict[str, LossTermContainer]:
@@ -290,9 +281,7 @@ class Trainer:
         """Batch coords used by each active loss container in the current step."""
         return self._current_train_batches
 
-    def update_best_model(
-        self,
-    ) -> None:
+    def update_best_model(self) -> None:
         """Updates best model state if validation loss is lower than previous best."""
         current = self.full_geometric_mean_val_loss
 
@@ -318,45 +307,31 @@ class Trainer:
                 if container.adaptive_point_weights
             }
 
-    def load_best_model(
-        self,
-    ) -> None:
-        """Loads the best model state."""
+    def load_best_model(self) -> None:
+        """Loads the best model state, with its loss term and point weights."""
         if (
-            self.best_model_state is not None
-            and self.best_loss_term_weights is not None
+            self.best_model_state is None
+            or self.best_loss_term_weights is None
+            or self.best_point_weights is None
         ):
-            print(
-                f"Loading best model on epoch {self.epoch}: "
-                f"best model epoch = {self.best_model_epoch}, "
-                f"geometric_mean_val_loss = {self.best_geometric_mean_val_loss})"
-            )
-
-            # Log event
-            self.logger.log_event("load_best_model")
-
-            # Load
-            self.model.load_state_dict(self.best_model_state)
-            self._full_val_losses_cache = None
-            self._train_losses_cache = None
-            self._train_residuals_cache = None
-
-            # Restore loss term weights
-            for label, weight in self.best_loss_term_weights.items():
-                self.loss_containers[label].loss_term_weight = weight
-
-            # Restore point weights
-            if self.best_point_weights is not None:
-                for label, weights in self.best_point_weights.items():
-                    if label in self.loss_containers:
-                        self.loss_containers[
-                            label
-                        ].train_eval_context.update_point_weights(weights)
-
-            # Notify modules of updated state
-            self.state.state_updated = True
-        else:
             raise ValueError("No best model state to load.")
+
+        print(
+            f"Loading best model on epoch {self.epoch}: "
+            f"best model epoch = {self.best_model_epoch}, "
+            f"geometric_mean_val_loss = {self.best_geometric_mean_val_loss}"
+        )
+        self.logger.log_event("load_best_model")
+
+        self.model.load_state_dict(self.best_model_state)
+        self._clear_caches()
+        for label, weight in self.best_loss_term_weights.items():
+            self.loss_containers[label].loss_term_weight = weight
+        for label, weights in self.best_point_weights.items():
+            self.loss_containers[label].train_eval_context.update_point_weights(weights)
+
+        # Notify modules of updated state
+        self.state.state_updated = True
 
     def reset_best_model(self) -> None:
         self.best_model_epoch = None
@@ -392,11 +367,7 @@ class Trainer:
             "best_model_state": self.best_model_state,
             "best_loss_term_weights": self.best_loss_term_weights,
             "best_point_weights": self.best_point_weights,
-            "trainer_state": {
-                "coast_until_epoch": self.state.coast_until_epoch,
-                "stop_requested": self.state.stop_requested,
-                "stop_barriers": dict(self.state._stop_barriers),
-            },
+            "trainer_state": self.state.state_dict(),
             "optimizer_state_dict": self.optimizer.optimizer.state_dict(),
             "modules": {
                 f"{i}:{type(module).__name__}": module.state_dict()
@@ -421,18 +392,23 @@ class Trainer:
             }
         self._restored_state = state
 
-    def _apply_restored_state(self) -> None:
-        state = self._restored_state
-        if state is None:
-            return
+    def _apply_restored_state(self, state: dict[str, Any]) -> None:
+        """Restore the rest of a checkpoint, once the trainer modules have
+        started training (e.g. registered their stop barriers)."""
         device = next(self.model.parameters()).device
 
         # Module states
-        module_states = state["modules"]
-        for i, module in enumerate(self.trainer_modules):
-            key = f"{i}:{type(module).__name__}"
-            if key in module_states:
-                module.load_state_dict(module_states[key], self)
+        module_keys = [
+            f"{i}:{type(module).__name__}"
+            for i, module in enumerate(self.trainer_modules)
+        ]
+        if list(state["modules"]) != module_keys:
+            raise ValueError(
+                f"Saved trainer modules {list(state['modules'])} don't match "
+                f"the trainer modules {module_keys}"
+            )
+        for key, module in zip(module_keys, self.trainer_modules, strict=True):
+            module.load_state_dict(state["modules"][key], self)
 
         # Loss term weights
         for label, weight in state["loss_term_weights"].items():
@@ -450,12 +426,8 @@ class Trainer:
                 batches_state
             )
 
-        # Trainer state (after modules have re-registered stop barriers)
-        self.state.coast_until_epoch = state["trainer_state"]["coast_until_epoch"]
-        self.state.stop_requested = state["trainer_state"]["stop_requested"]
-        self.state._stop_barriers.update(state["trainer_state"]["stop_barriers"])
+        # Trainer state
+        self.state.load_state_dict(state["trainer_state"])
 
         # Optimizer state
         self.optimizer.optimizer.load_state_dict(state["optimizer_state_dict"])
-
-        self._restored_state = None
