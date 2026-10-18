@@ -110,6 +110,22 @@ def _build_input_transformation(
     )
     has_periodic = bool(periodic_coords)
 
+    # Scaling maps each coordinate's bounds to [-1, 1]
+    if has_scaling:
+        for label, coord_lb, coord_ub in zip(internal_labels, lb, ub, strict=True):
+            if not (torch.isfinite(coord_lb) and torch.isfinite(coord_ub)):
+                raise ValueError(
+                    f"scale_linear needs finite bounds, but coordinate '{label}' "
+                    f"has bounds [{coord_lb.item()}, {coord_ub.item()}]. Set its min "
+                    "and max in the domain bounds."
+                )
+            if not coord_lb < coord_ub:
+                raise ValueError(
+                    f"scale_linear needs min < max, but coordinate '{label}' has "
+                    f"bounds [{coord_lb.item()}, {coord_ub.item()}] across all "
+                    "domains."
+                )
+
     if has_periodic:
         return PeriodicW23(
             internal_labels=list(internal_labels),
@@ -128,6 +144,14 @@ def _collect_domain_bounds(
     internal_labels: tuple[str, ...],
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Get internal bounds from list of domains."""
+    for domain in domains:
+        if missing := [
+            label for label in internal_labels if label not in domain.internal_lb
+        ]:
+            raise ValueError(
+                f"Coordinates {missing} have no bounds. Set their min and max in "
+                "the domain bounds."
+            )
     lbs = torch.stack(
         [
             torch.stack([domain.internal_lb[label] for label in internal_labels])

@@ -443,14 +443,18 @@ def _parse_point_weight_modifier(
 
 
 def _expand_nn_alias(
-    value: str | list[str],
+    raw: dict[str, Any],
+    key: str,
     aliases: dict[str, Callable[[int], list[str]]],
     enum_type: type[E],
     num_layers: int,
 ) -> list[E]:
+    value = raw[key]
     if isinstance(value, list):
         if len(value) != num_layers:
-            raise ValueError(f"Expected {num_layers} entries, got {len(value)}.")
+            raise ValueError(
+                f"{key} needs {num_layers} entries (one per layer), got {len(value)}."
+            )
 
         return [_parse_enum(v, enum_type) for v in value]
 
@@ -459,7 +463,7 @@ def _expand_nn_alias(
         return [_parse_enum(v, enum_type) for v in expanded]
 
     raise ValueError(
-        f"Unknown value '{value}'. Valid aliases: {sorted(aliases)} "
+        f"Unknown {key} value {value!r}. Valid aliases: {sorted(aliases)} "
         f"or provide a list of {num_layers} values."
     )
 
@@ -500,25 +504,29 @@ def _parse_nn(raw: dict[str, Any]) -> NNConfig:
         nn_type=nn_type,
         hidden_layer_widths=widths,
         layer_types=_expand_nn_alias(
-            raw["layer_types"],
+            raw,
+            "layer_types",
             _LAYER_TYPE_ALIASES,
             LayerTypeLabels,
             num_layers,
         ),
         activation_functions=_expand_nn_alias(
-            raw["activation_functions"],
+            raw,
+            "activation_functions",
             _ACTIVATION_ALIASES,
             ActivationFuncLabels,
             num_layers,
         ),
         init_weights=_expand_nn_alias(
-            raw["init_weights"],
+            raw,
+            "init_weights",
             _INIT_WEIGHTS_ALIASES,
             WeightInitLabels,
             num_layers,
         ),
         init_biases=_expand_nn_alias(
-            raw["init_biases"],
+            raw,
+            "init_biases",
             _INIT_BIASES_ALIASES,
             BiasInitLabels,
             num_layers,

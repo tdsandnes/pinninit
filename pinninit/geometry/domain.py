@@ -103,15 +103,14 @@ class Domain:
 
     def _set_internal_bounds(self) -> None:
         # Derive internal bounds from coord system
-        self.internal_lb, self.internal_ub = (
-            self.coord_system.internal_bounds_from_geometric(
-                self.geometric_lb, self.geometric_ub
-            )
+        internal_lb, internal_ub = self.coord_system.internal_bounds_from_geometric(
+            self.geometric_lb, self.geometric_ub
         )
 
-        # Non-geometric axes pass straight through to the internal bounds
-        self.internal_lb.update(self.non_geometric_lb)
-        self.internal_ub.update(self.non_geometric_ub)
+        # Non-geometric axes pass straight through to the internal bounds. New
+        # dicts, as a coord system can return the geometric bounds themselves.
+        self.internal_lb = {**internal_lb, **self.non_geometric_lb}
+        self.internal_ub = {**internal_ub, **self.non_geometric_ub}
 
     def contains_geometric(self, geometric: torch.Tensor) -> torch.Tensor:
         lb = torch.stack([self.geometric_lb[label] for label in self.geometric_labels])

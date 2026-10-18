@@ -25,8 +25,8 @@ class TrainerModuleLabels(str, Enum):
 
 
 # Mapping from trainer module labels to classes
-### UpdateOptimizer is not yet config-buildable since they require
-### constructed objects (an Optimizer / a sampler) rather than plain values
+### UpdateOptimizer is not yet config-buildable since it requires a
+### constructed Optimizer rather than plain values
 TRAINER_MODULE_REGISTRY: dict[TrainerModuleLabels, type[TrainerModule]] = {
     TrainerModuleLabels.EARLY_STOPPING: EarlyStopping,
     TrainerModuleLabels.LEARNING_RATE_SCHEDULE: LearningRateSchedule,

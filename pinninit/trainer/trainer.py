@@ -590,6 +590,7 @@ class Trainer:
         The file is written whole or not at all: if the process is killed
         while saving, the file saved before is kept."""
         path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = path.with_name(path.name + ".tmp")
         torch.save(
             {
@@ -607,11 +608,7 @@ class Trainer:
         same trainer modules."""
         device = next(self.model.parameters()).device
         checkpoint = torch.load(path, map_location=device, weights_only=True)
-        missing, _unexpected = self.model.load_state_dict(
-            checkpoint["model_state_dict"], strict=False
-        )
-        if missing:
-            raise RuntimeError(f"Checkpoint is missing model parameters: {missing}")
+        self.model.load_state_dict(checkpoint["model_state_dict"])
 
         # Checkpoints saved before parameters were stored have none
         saved_parameters = checkpoint.get("parameters")
@@ -631,8 +628,11 @@ class Trainer:
         self.load_state_dict(checkpoint["trainer_state_dict"])
 
     def state_dict(self) -> dict[str, Any]:
-        """The state to resume training from: the current state, or after
-        training the state at the end of the last epoch."""
+        """The state to resume training from: a loaded state that training
+        hasn't resumed from yet, the state at the end of the last training,
+        or else the current state."""
+        if self._restored_state is not None:
+            return self._restored_state
         if self._end_state is not None:
             return self._end_state
         return {
@@ -691,6 +691,8 @@ class Trainer:
             }
         self.best_module_states = state["best_module_states"]
         self._restored_state = state
+        # Training resumes from the loaded state, not the end of the last one
+        self._end_state = None
 
     def _apply_restored_state(self, state: dict[str, Any]) -> None:
         """Restore the rest of a checkpoint, once the trainer modules have

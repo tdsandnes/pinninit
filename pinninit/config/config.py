@@ -382,7 +382,3 @@ class TrainerConfig:
             raise ValueError(
                 f"checkpoint_freq must be >= 1, got {self.checkpoint_freq}."
             )
-
-    @property
-    def by_label(self) -> dict[str, TrainerModuleConfig]:
-        return {module.label: module for module in self.trainer_modules}
