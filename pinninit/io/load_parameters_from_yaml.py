@@ -6,6 +6,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, TypeVar
 
+import torch
 import yaml
 
 from ..config.config import (
@@ -52,6 +53,9 @@ _Loader.add_implicit_resolver(
     list("-+0123456789"),
 )
 
+# Floating point precision the PINN is built and trained with
+_DTYPES = {"float32": torch.float32, "float64": torch.float64}
+
 # NN aliases
 _LAYER_TYPE_ALIASES: dict[str, Callable[[int], list[str]]] = {
     "siren": lambda n: ["siren_first"] + ["siren"] * (n - 1),
@@ -88,7 +92,7 @@ def load_parameters_from_yaml(path: str | Path) -> dict[str, Any]:
     -------
     dict
         Keys: "parameters" (the file's contents, as read), "model_name",
-        "random_seed", "coord_systems", "coordinates", "datasets", "fields",
+        "dtype", "random_seed", "coord_systems", "coordinates", "datasets", "fields",
         "constants", "equations", "loss", "nn", "trainer".
 
     Raises
@@ -116,12 +120,20 @@ def load_parameters_from_yaml(path: str | Path) -> dict[str, Any]:
             "NN",
             "Trainer",
         ),
-        optional=("model_name", "random_seed", "DataSets", "Constants", "Equations"),
+        optional=(
+            "model_name",
+            "dtype",
+            "random_seed",
+            "DataSets",
+            "Constants",
+            "Equations",
+        ),
     )
 
     return {
         "parameters": raw,
         "model_name": raw.get("model_name"),
+        "dtype": _parse_dtype(raw.get("dtype", "float64")),
         "random_seed": _parse_random_seed(raw.get("random_seed", "random")),
         "coord_systems": _parse_coord_systems(raw["CoordSystems"]),
         "coordinates": _parse_coordinates(raw["Coordinates"]),
@@ -183,6 +195,12 @@ def _parse_optional_enum(
 
 
 # Section parsers
+def _parse_dtype(value: str) -> torch.dtype:
+    if value not in _DTYPES:
+        raise ValueError(f"dtype must be one of {list(_DTYPES)}, got {value!r}.")
+    return _DTYPES[value]
+
+
 def _parse_random_seed(value: int | str) -> int | None:
     if isinstance(value, str) and value.lower() == "random":
         return None

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import torch
+
 from ..io.load_parameters_from_yaml import load_parameters_from_yaml
 from ..trainer_modules.trainer_module_registry import TrainerModuleLabels
 
@@ -27,6 +29,8 @@ class PINNConfig:
     parameters: dict[str, Any]
     # Names the model, e.g. for scripts to check what they load
     model_name: str | None
+    # Floating point precision, set as torch's default dtype
+    dtype: torch.dtype
     random_seed: int | None
     coord_systems: list[CoordSystemConfig]
     coordinates: list[CoordinatesConfig]
@@ -45,6 +49,7 @@ class PINNConfig:
         return cls(
             parameters=raw["parameters"],
             model_name=raw["model_name"],
+            dtype=raw["dtype"],
             random_seed=raw["random_seed"],
             coord_systems=raw["coord_systems"],
             coordinates=raw["coordinates"],

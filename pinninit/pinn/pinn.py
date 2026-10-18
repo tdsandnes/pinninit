@@ -47,15 +47,14 @@ class PINN:
         cls,
         param_file_path: str | Path,
         device: torch.device,
-        dtype: torch.dtype = torch.float64,
     ) -> PINN:
         """Build a PINN from a parameter file. Sets torch's default dtype to
-        dtype and, if the file sets random_seed, seeds torch's random number
-        generator."""
-        # Set default dtype to higher precision
-        torch.set_default_dtype(dtype)
-
+        the file's dtype (float64 unless set) and, if the file sets
+        random_seed, seeds torch's random number generator."""
         config = PINNConfig.from_yaml(param_file_path)
+
+        # Everything is built and trained in this precision
+        torch.set_default_dtype(config.dtype)
 
         # Set torch seed from the parameter file (random_seed: random -> unseeded)
         if config.random_seed is not None:
