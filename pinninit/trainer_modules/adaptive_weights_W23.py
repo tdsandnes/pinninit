@@ -11,7 +11,7 @@ from .trainer_module_utils import (
     active_weight_groups,
     adaptive_weight_groups,
     check_adaptive_weight_params,
-    compute_flat_train_grads,
+    flat_train_grad,
 )
 
 if TYPE_CHECKING:
@@ -25,8 +25,9 @@ class AdaptiveWeightsW23(TrainerModule):
     Adaptive loss weights that balance the gradient norms across loss terms.
     See Wang et al. 2023
 
-    Each weight group shares one update. A loss term activated by staggering
-    starts from its initial weight.
+    Each weight group is one loss term of the paper: its gradient is the
+    gradient of the summed loss of its loss terms, and they share one update.
+    A loss term activated by staggering starts from its initial weight.
     """
 
     # Class attributes
@@ -75,10 +76,8 @@ class AdaptiveWeightsW23(TrainerModule):
         # Compute grad norm of each adaptive group
         group_grad_norms: dict[str, torch.Tensor] = {}
         for label, container_list in active_groups.items():
-            all_grads_flat = compute_flat_train_grads(
-                trainer.model, container_list, trainer, self.loss_function
-            )
-            group_grad_norms[label] = torch.norm(all_grads_flat, p=2)
+            group_grad = flat_train_grad(trainer, container_list, self.loss_function)
+            group_grad_norms[label] = torch.norm(group_grad, p=2)
 
         # Set loss term weights
         sum_of_grad_norms = torch.stack(list(group_grad_norms.values())).sum()

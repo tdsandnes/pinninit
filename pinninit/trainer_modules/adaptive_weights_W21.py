@@ -11,7 +11,7 @@ from .trainer_module_utils import (
     active_weight_groups,
     adaptive_weight_groups,
     check_adaptive_weight_params,
-    compute_flat_train_grads,
+    flat_train_grad,
 )
 
 if TYPE_CHECKING:
@@ -24,9 +24,12 @@ class AdaptiveWeightsW21(TrainerModule):
     """
     Adaptive loss term weights following Wang et al. (2021).
 
-    Each weight group shares one update, relative to the reference weight
-    group, whose loss terms must have constant weights. A loss term activated
-    by staggering starts from its initial weight.
+    Each weight group is one loss term of the paper: its gradient is the
+    gradient of the summed loss of its loss terms, and they share one update.
+    The reference weight group is the paper's residual loss L_r, whose loss
+    terms must have constant weights. Unlike in the paper, these needn't be 1,
+    so the reference gradient is of the weighted sum of its losses. A loss
+    term activated by staggering starts from its initial weight.
     """
 
     # Class attributes
@@ -98,18 +101,20 @@ class AdaptiveWeightsW21(TrainerModule):
         if not reference_group or not active_groups:
             return
 
-        # Compute gradients for the reference group
-        all_ref_grads_flat = compute_flat_train_grads(
-            trainer.model, reference_group, trainer, self.loss_function
+        # Gradient of the weighted reference loss
+        ref_grad = flat_train_grad(
+            trainer, reference_group, self.loss_function, weighted=True
         )
-        ref_max_abs = torch.max(all_ref_grads_flat.abs())
+        ref_max_abs = torch.max(ref_grad.abs())
 
         # Compute and update adaptive groups
         for container_list in active_groups.values():
-            all_grads_flat = compute_flat_train_grads(
-                trainer.model, container_list, trainer, self.loss_function
-            )
-            group_mean_abs = torch.mean(all_grads_flat.abs())
+            group_grad = flat_train_grad(trainer, container_list, self.loss_function)
+            group_mean_abs = torch.mean(group_grad.abs())
+
+            # Skip if we get 0 grads
+            if group_mean_abs == 0:
+                continue
 
             # Wang et al. (2021) Eqn. 40
             lambda_hat = float(ref_max_abs / group_mean_abs)

@@ -8,20 +8,21 @@ from ..loss.loss_function import LOSS_FUNCTION_REGISTRY, LossFunctionLabels
 
 if TYPE_CHECKING:
     from ..loss.loss_term_container import LossTermContainer, WeightMethodLabels
-    from ..nn.neural_network import NeuralNetwork
     from ..trainer.trainer import Trainer
 
 
-def compute_flat_train_grads(
-    model: NeuralNetwork,
-    containers: list[LossTermContainer],
+def flat_train_grad(
     trainer: Trainer,
+    containers: list[LossTermContainer],
     loss_function_label: LossFunctionLabels,
+    weighted: bool = False,
 ) -> torch.Tensor:
-    """Flat gradient of each container's loss (using loss_function_label)."""
+    """Flat gradient, over the model parameters, of the summed training loss of
+    containers on this step's batches, computed from the cached residuals with
+    loss_function_label. If weighted, each loss is multiplied by its loss term
+    weight."""
     loss_fn = LOSS_FUNCTION_REGISTRY[loss_function_label]
-    params = list(model.parameters())
-    all_grads = []
+    losses = []
     for container in containers:
         residuals = trainer.cached_train_residuals(container.label)
         if residuals is None or not residuals.requires_grad:
@@ -31,11 +32,13 @@ def compute_flat_train_grads(
         # The batch the cached residuals were computed on
         batch = trainer.current_train_batches[container.label]
         loss = loss_fn(residuals, container.train_eval_context, batch).sum()
-        grads = torch.autograd.grad(loss, params, retain_graph=True, allow_unused=True)
-        all_grads.append(
-            torch.cat([g.detach().reshape(-1) for g in grads if g is not None])
-        )
-    return torch.cat(all_grads)
+        losses.append(container.loss_term_weight * loss if weighted else loss)
+
+    params = list(trainer.model.parameters())
+    grads = torch.autograd.grad(
+        torch.stack(losses).sum(), params, retain_graph=True, allow_unused=True
+    )
+    return torch.cat([g.detach().reshape(-1) for g in grads if g is not None])
 
 
 def adaptive_weight_groups(
