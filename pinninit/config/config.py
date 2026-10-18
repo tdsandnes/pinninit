@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from ..io.dataset_sampler import DataSetSamplerLabels
 from ..io.dataset_source import DataSetSourceLabels
 
 if TYPE_CHECKING:
@@ -83,7 +82,6 @@ class DatasetConfig:
     train_label: str = "train"
     val_label: str = "val"
     file_path: str | None = None
-    sampling: DataSetSamplerLabels = DataSetSamplerLabels.NONE
 
     def __post_init__(self) -> None:
         if self.source == DataSetSourceLabels.FILE and not self.file_path:
@@ -147,14 +145,6 @@ class FieldsConfig:
     @property
     def derivable_field_label_to_rank(self) -> dict[str, int]:
         return {field.label: field.rank for field in self.derivable_fields}
-
-    @property
-    def all_field_labels(self) -> set[str]:
-        return (
-            set(self.input_field_label_to_rank)
-            | set(self.output_field_label_to_rank)
-            | set(self.derivable_field_label_to_rank)
-        )
 
 
 # Constant Config

@@ -5,6 +5,7 @@ import math
 import os
 import signal
 import time
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,6 +24,24 @@ if TYPE_CHECKING:
     from ..nn.neural_network import NeuralNetwork
     from ..optimizer.optimizer import Optimizer
     from ..trainer_modules.trainer_module import TrainerModule
+
+
+def changed_parameters(old: Any, new: Any, path: str = "") -> list[str]:
+    """The parameters that differ between old and new (nested dicts and lists,
+    e.g. a parameter file's contents), as 'path: old -> new'."""
+    if isinstance(old, dict) and isinstance(new, dict):
+        changes = []
+        for key in [*old, *(key for key in new if key not in old)]:
+            key_path = f"{path}.{key}" if path else str(key)
+            changes += changed_parameters(old.get(key), new.get(key), key_path)
+        return changes
+    if isinstance(old, list) and isinstance(new, list) and len(old) == len(new):
+        return [
+            change
+            for i, (old_item, new_item) in enumerate(zip(old, new, strict=True))
+            for change in changed_parameters(old_item, new_item, f"{path}[{i}]")
+        ]
+    return [] if old == new else [f"{path}: {old!r} -> {new!r}"]
 
 
 def geometric_mean(values: Iterable[float]) -> float:
@@ -48,6 +67,7 @@ class Trainer:
         checkpoint_path: str | Path | None = None,
         checkpoint_freq: int = 100,
         stop_on_sigterm: bool = False,
+        parameters: dict[str, Any] | None = None,
     ) -> None:
         if max_epoch is None and not any(
             module.stops_training for module in trainer_modules
@@ -71,6 +91,11 @@ class Trainer:
         # Whether the last call to train stopped because of SIGTERM, so that
         # e.g. an HPC job can be queued again to resume from the checkpoint
         self.stopped_by_sigterm = False
+
+        # What the trainer was built from (e.g. a parameter file's contents),
+        # saved in checkpoints to warn when one is loaded into a trainer built
+        # from something else
+        self.parameters = parameters
 
         # All loss containers
         self._loss_containers = loss_containers
@@ -571,6 +596,7 @@ class Trainer:
                 "model_state_dict": self.model.state_dict(),
                 "logs": self.logger.state_dict(),
                 "trainer_state_dict": self.state_dict(),
+                "parameters": self.parameters,
             },
             tmp_path,
         )
@@ -586,6 +612,21 @@ class Trainer:
         )
         if missing:
             raise RuntimeError(f"Checkpoint is missing model parameters: {missing}")
+
+        # Checkpoints saved before parameters were stored have none
+        saved_parameters = checkpoint.get("parameters")
+        changes = (
+            changed_parameters(saved_parameters, self.parameters)
+            if saved_parameters is not None and self.parameters is not None
+            else []
+        )
+        if changes:
+            warnings.warn(
+                f"The checkpoint '{path}' was saved with different parameters: "
+                + "; ".join(changes),
+                stacklevel=2,
+            )
+
         self.logger.load_state_dict(checkpoint["logs"])
         self.load_state_dict(checkpoint["trainer_state_dict"])
 

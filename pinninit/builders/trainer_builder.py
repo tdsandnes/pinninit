@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ..config.config import TrainerConfig, TrainerModuleConfig
 from ..trainer.trainer import Trainer
@@ -66,6 +66,7 @@ def build_trainer_modules(
 
 def build_trainer(
     config: TrainerConfig,
+    parameters: dict[str, Any] | None,
     model: NeuralNetwork,
     optimizer: Optimizer,
     loss_containers: dict[str, LossTermContainer],
@@ -78,6 +79,8 @@ def build_trainer(
     ----------
     config:
         Trainer config with loop parameters and trainer module configs.
+    parameters:
+        The parameter file's contents, saved in checkpoints.
     model:
         The neural network to train.
     optimizer:
@@ -112,4 +115,5 @@ def build_trainer(
         checkpoint_path=checkpoint_path,
         checkpoint_freq=config.checkpoint_freq,
         stop_on_sigterm=config.stop_on_sigterm,
+        parameters=parameters,
     )

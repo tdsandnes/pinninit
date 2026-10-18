@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import torch
@@ -16,8 +18,6 @@ from .optimizer_builder import build_optimizer
 from .trainer_builder import build_trainer
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from ..config.pinn_config import PINNConfig
     from ..loss.loss_term_container import LossTermContainer
     from ..nn.neural_network import NeuralNetwork
@@ -42,8 +42,8 @@ def build_pinn(
     device:
         PyTorch device.
     base_dir:
-        Optional base directory for resolving relative file paths (equations,
-        custom trainer modules).
+        Optional base directory for resolving relative file paths (datasets,
+        equations, custom trainer modules, the checkpoint).
 
     Returns
     -------
@@ -59,7 +59,17 @@ def build_pinn(
     equations = build_equations(config.equations, base_dir=base_dir)
 
     # Loss term containers
-    datasets_by_label = {dataset.label: dataset for dataset in config.datasets}
+    # Relative dataset file paths resolve against base_dir
+    datasets_by_label = {
+        dataset.label: (
+            dataclasses.replace(
+                dataset, file_path=str(Path(base_dir) / dataset.file_path)
+            )
+            if base_dir is not None and dataset.file_path is not None
+            else dataset
+        )
+        for dataset in config.datasets
+    }
     loss_containers: dict[str, LossTermContainer] = {}
 
     for loss_term_config in config.loss:
@@ -157,6 +167,7 @@ def build_pinn(
     # Trainer
     trainer = build_trainer(
         config=config.trainer,
+        parameters=config.parameters,
         model=model,
         optimizer=optimizer,
         loss_containers=loss_containers,

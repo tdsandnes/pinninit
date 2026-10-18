@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Iterable
 from enum import Enum
 from pathlib import Path
 from typing import Any, TypeVar
@@ -24,7 +25,6 @@ from ..config.config import (
     TrainerModuleConfig,
 )
 from ..geometry.coordinate_system import CoordSystemLabels
-from ..io.dataset_sampler import DataSetSamplerLabels
 from ..io.dataset_source import DataSetSourceLabels
 from ..loss.loss_function import LossFunctionLabels
 from ..loss.loss_term import LossTermLabels
@@ -39,15 +39,18 @@ from ..optimizer.optimizer_registry import OptimizerLabels
 
 E = TypeVar("E", bound=Enum)
 
-# Required top-level YAML sections
-_REQUIRED_SECTIONS = {
-    "CoordSystems",
-    "Coordinates",
-    "Fields",
-    "LossTerms",
-    "NN",
-    "Trainer",
-}
+
+class _Loader(yaml.SafeLoader):
+    """SafeLoader that also reads numbers with an exponent but no dot or no
+    exponent sign, such as 1e-3 or 1.0e3, as floats (YAML 1.1, which PyYAML
+    follows, reads them as strings)."""
+
+
+_Loader.add_implicit_resolver(
+    "tag:yaml.org,2002:float",
+    re.compile(r"^[-+]?[0-9][0-9_]*(?:\.[0-9_]*)?[eE][-+]?[0-9]+$"),
+    list("-+0123456789"),
+)
 
 # NN aliases
 _LAYER_TYPE_ALIASES: dict[str, Callable[[int], list[str]]] = {
@@ -84,59 +87,90 @@ def load_parameters_from_yaml(path: str | Path) -> dict[str, Any]:
     Returns
     -------
     dict
-        Keys: "random_seed", "coord_systems", "coordinates", "datasets", "fields",
-        "constants", "loss", "nn", "trainer".
+        Keys: "parameters" (the file's contents, as read), "model_name",
+        "random_seed", "coord_systems", "coordinates", "datasets", "fields",
+        "constants", "equations", "loss", "nn", "trainer".
 
     Raises
     ------
     FileNotFoundError
         If path does not exist.
     ValueError
-        If required sections are missing or any value is invalid.
+        If a section or option is missing or unknown, or any value is invalid.
     """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Parameter file not found: {path}")
 
     with path.open("r") as f:
-        raw: dict[str, Any] = yaml.safe_load(f)
+        raw: dict[str, Any] = yaml.load(f, Loader=_Loader)
 
-    if not isinstance(raw, dict):
-        raise ValueError(f"Parameter file must be a YAML mapping, got {type(raw)}.")
-
-    missing = _REQUIRED_SECTIONS - set(raw)
-    if missing:
-        raise ValueError(
-            f"Parameter file is missing required sections: {sorted(missing)}."
-        )
+    _check_keys(
+        raw,
+        "the parameter file",
+        required=(
+            "CoordSystems",
+            "Coordinates",
+            "Fields",
+            "LossTerms",
+            "NN",
+            "Trainer",
+        ),
+        optional=("model_name", "random_seed", "DataSets", "Constants", "Equations"),
+    )
 
     return {
+        "parameters": raw,
+        "model_name": raw.get("model_name"),
         "random_seed": _parse_random_seed(raw.get("random_seed", "random")),
         "coord_systems": _parse_coord_systems(raw["CoordSystems"]),
         "coordinates": _parse_coordinates(raw["Coordinates"]),
-        "datasets": _parse_datasets(raw.get("DataSets", [])),
+        "datasets": _parse_datasets(raw.get("DataSets") or []),
         "fields": _parse_fields(raw["Fields"]),
-        "constants": _parse_constants(raw.get("Constants", [])),
-        "equations": _parse_equations(raw.get("Equations", [])),
+        "constants": _parse_constants(raw.get("Constants") or []),
+        "equations": _parse_equations(raw.get("Equations") or []),
         "loss": _parse_loss(raw["LossTerms"]),
         "nn": _parse_nn(raw["NN"]),
         "trainer": _parse_trainer(raw["Trainer"]),
     }
 
 
+def _require_keys(raw: Any, where: str, required: Iterable[str]) -> None:
+    """Check that raw is a mapping with all the required keys."""
+    if not isinstance(raw, dict):
+        raise ValueError(f"Expected a mapping for {where}, got {raw!r}.")
+    if missing := set(required) - set(raw):
+        raise ValueError(f"Missing keys {sorted(missing)} in {where}.")
+
+
+def _check_keys(
+    raw: Any,
+    where: str,
+    required: Iterable[str] = (),
+    optional: Iterable[str] = (),
+) -> None:
+    """Check that raw is a mapping with all the required keys and no keys
+    other than the required and optional ones (e.g. a misspelt option)."""
+    required = set(required)
+    _require_keys(raw, where, required)
+    valid = required | set(optional)
+    if unknown := set(raw) - valid:
+        raise ValueError(
+            f"Unknown keys {sorted(unknown)} in {where}. Valid keys: {sorted(valid)}."
+        )
+
+
 def _parse_enum(
     value: str,
     enum_type: type[E],
 ) -> E:
-    value = value.lower()
-
-    if value not in enum_type._value2member_map_:
-        valid = [member.value for member in enum_type]
+    valid = [member.value for member in enum_type]
+    if not isinstance(value, str) or value.lower() not in valid:
         raise ValueError(
-            f"Unknown {enum_type.__name__} value '{value}'. Valid options: {valid}."
+            f"Unknown {enum_type.__name__} value {value!r}. Valid options: {valid}."
         )
 
-    return enum_type(value)
+    return enum_type(value.lower())
 
 
 def _parse_optional_enum(
@@ -162,7 +196,15 @@ def _parse_coord_systems(raw: list[dict[str, Any]]) -> list[CoordSystemConfig]:
 
 
 def _parse_coord_system(raw: dict[str, Any]) -> CoordSystemConfig:
+    _check_keys(
+        raw,
+        "a CoordSystems entry",
+        required=("label", "coord_system"),
+        optional=("geometric_axis_labels", "non_geometric_axis_labels", "fixed_axes"),
+    )
     coord_system = _parse_enum(raw["coord_system"], CoordSystemLabels)
+    for ax in raw.get("fixed_axes", []):
+        _check_keys(ax, "a fixed_axes entry", required=("label", "value"))
     fixed_axes: dict[str, float] = {
         ax["label"]: float(ax["value"]) for ax in raw.get("fixed_axes", [])
     }
@@ -180,6 +222,11 @@ def _parse_coordinates(raw: list[dict[str, Any]]) -> list[CoordinatesConfig]:
 
 
 def _parse_one_coord(raw: dict[str, Any]) -> CoordinatesConfig:
+    _check_keys(
+        raw,
+        "a Coordinates entry",
+        required=("label", "coord_system_label", "domain"),
+    )
     return CoordinatesConfig(
         label=raw["label"],
         coord_system_label=raw["coord_system_label"],
@@ -188,16 +235,17 @@ def _parse_one_coord(raw: dict[str, Any]) -> CoordinatesConfig:
 
 
 def _parse_domain(raw: dict[str, Any]) -> DomainConfig:
+    _check_keys(raw, "a domain", optional=("label", "bounds"))
     raw_bounds = raw.get("bounds", {})
     bounds: dict[str, tuple[float | None, float | None]] = {}
     periodic_axes: set[str] = set()
 
     for axis_label, entry in raw_bounds.items():
-        if not isinstance(entry, dict):
-            raise ValueError(
-                f"Invalid bounds format for axis '{axis_label}'. "
-                f"Expected dict with keys 'min', 'max', 'periodic', got {type(entry)}."
-            )
+        _check_keys(
+            entry,
+            f"the bounds of axis '{axis_label}'",
+            optional=("min", "max", "periodic"),
+        )
 
         lb = entry.get("min")
         ub = entry.get("max")
@@ -218,67 +266,73 @@ def _parse_domain(raw: dict[str, Any]) -> DomainConfig:
 
 
 def _parse_datasets(raw: list[dict[str, Any]]) -> list[DatasetConfig]:
-    raw = raw or []
     datasets = []
     for dataset in raw:
-        source_str: str = dataset.get("source", "file").lower()
-        sampling_str: str = dataset.get("sampling", "none").lower()
-        source = _parse_enum(
-            source_str,
-            DataSetSourceLabels,
-        )
-        sampling = _parse_enum(
-            sampling_str,
-            DataSetSamplerLabels,
+        _check_keys(
+            dataset,
+            "a DataSets entry",
+            required=("label",),
+            optional=("source", "file_path"),
         )
         datasets.append(
             DatasetConfig(
                 label=dataset["label"],
-                source=source,
+                source=_parse_enum(dataset.get("source", "file"), DataSetSourceLabels),
                 file_path=dataset.get("file_path"),
-                sampling=sampling,
             )
         )
     return datasets
 
 
 def _parse_fields(raw: dict[str, Any]) -> FieldsConfig:
-    input_fields = [
-        FieldConfig(label=field["label"], rank=int(field["rank"]))
-        for field in raw.get("input_fields", [])
-    ]
-    output_fields = [
-        FieldConfig(label=field["label"], rank=int(field["rank"]))
-        for field in raw.get("output_fields", [])
-    ]
-    derivable_fields = [
-        FieldConfig(label=field["label"], rank=int(field["rank"]))
-        for field in raw.get("derivable_fields", [])
-    ]
+    _check_keys(
+        raw,
+        "Fields",
+        optional=("input_fields", "output_fields", "derivable_fields"),
+    )
     return FieldsConfig(
-        input_fields=input_fields,
-        output_fields=output_fields,
-        derivable_fields=derivable_fields,
+        input_fields=_parse_field_list(raw.get("input_fields", []), "input_fields"),
+        output_fields=_parse_field_list(raw.get("output_fields", []), "output_fields"),
+        derivable_fields=_parse_field_list(
+            raw.get("derivable_fields", []), "derivable_fields"
+        ),
     )
 
 
-def _parse_constants(raw: list[dict[str, Any]] | None) -> list[ConstConfig]:
-    raw = raw or []
+def _parse_field_list(raw: list[dict[str, Any]], where: str) -> list[FieldConfig]:
+    for field in raw:
+        _check_keys(field, f"a {where} entry", required=("label", "rank"))
+    return [FieldConfig(label=field["label"], rank=int(field["rank"])) for field in raw]
+
+
+def _parse_constants(raw: list[dict[str, Any]]) -> list[ConstConfig]:
+    for const in raw:
+        _check_keys(
+            const,
+            "a Constants entry",
+            required=("label", "value"),
+            optional=("learnable",),
+        )
     return [
         ConstConfig(
             label=const["label"],
-            value=const["value"],
+            value=float(const["value"]),
             learnable=bool(const.get("learnable", False)),
         )
         for const in raw
     ]
 
 
-def _parse_equations(raw: list[dict[str, Any]] | None) -> list[EquationConfig]:
-    raw = raw or []
+def _parse_equations(raw: list[dict[str, Any]]) -> list[EquationConfig]:
     equations: list[EquationConfig] = []
 
     for equation in raw:
+        _check_keys(
+            equation,
+            "an Equations entry",
+            required=("label", "function_name", "file_path"),
+            optional=("input_labels", "output_labels", "output_ranks"),
+        )
         output_labels: list[str] = equation.get("output_labels", [])
         output_ranks: list[int] = equation.get(
             "output_ranks",
@@ -303,11 +357,25 @@ def _parse_loss(raw: list[dict[str, Any]]) -> list[LossTermConfig]:
     terms: list[LossTermConfig] = []
 
     for term in raw:
-        loss_type_str: str = term.get("loss_type", "").lower()
-        loss_fn_str: str = term.get("loss_function", "weighted_mse").lower()
-
-        loss_type = _parse_enum(loss_type_str, LossTermLabels)
-        loss_function = _parse_enum(loss_fn_str, LossFunctionLabels)
+        _check_keys(
+            term,
+            "a LossTerms entry",
+            required=("label", "field_label", "coordinates_label", "loss_type"),
+            optional=(
+                "dataset_label",
+                "loss_function",
+                "weight_value",
+                "weight_method_label",
+                "weight_group_label",
+                "staggering",
+                "adaptive_point_weights",
+                "point_weight_modifier",
+            ),
+        )
+        loss_type = _parse_enum(term["loss_type"], LossTermLabels)
+        loss_function = _parse_enum(
+            term.get("loss_function", "weighted_mse"), LossFunctionLabels
+        )
 
         weight_method_str: str | None = term.get("weight_method_label")
         weight_method_label = (
@@ -343,6 +411,12 @@ def _parse_point_weight_modifier(
 ) -> PointWeightModifierConfig | None:
     if raw is None:
         return None
+    _check_keys(
+        raw,
+        "a point_weight_modifier",
+        required=("file_path", "function_name"),
+        optional=("input_labels",),
+    )
     return PointWeightModifierConfig(
         file_path=raw["file_path"],
         function_name=raw["function_name"],
@@ -373,8 +447,27 @@ def _expand_nn_alias(
 
 
 def _parse_nn(raw: dict[str, Any]) -> NNConfig:
-    if "type" not in raw:
-        raise ValueError("NN section must specify 'type' (e.g. type: feedforward).")
+    _check_keys(
+        raw,
+        "NN",
+        required=(
+            "type",
+            "hidden_layer_widths",
+            "layer_types",
+            "activation_functions",
+            "init_weights",
+            "init_biases",
+        ),
+        optional=(
+            "input_transformation",
+            "weight_norm",
+            "encoder_layer_type",
+            "encoder_activation_function",
+            "encoder_init_weights",
+            "encoder_init_biases",
+            "skip_connection",
+        ),
+    )
     nn_type = _parse_enum(raw["type"], NNTypeLabels)
     widths: list[int] = list(raw["hidden_layer_widths"])
     num_layers = len(widths) + 1
@@ -431,9 +524,27 @@ def _parse_nn(raw: dict[str, Any]) -> NNConfig:
 
 
 def _parse_trainer(raw: dict[str, Any]) -> TrainerConfig:
+    _check_keys(
+        raw,
+        "Trainer",
+        required=("Optimizer",),
+        optional=(
+            "TrainerModules",
+            "max_epoch",
+            "warmup_epochs",
+            "print_freq",
+            "n_batches",
+            "shuffle",
+            "log_point_weight_info",
+            "point_weight_snapshot_freq",
+            "checkpoint_path",
+            "checkpoint_freq",
+            "stop_on_sigterm",
+        ),
+    )
     optimizer = _parse_optimizer(raw["Optimizer"])
     modules = [
-        _parse_trainer_module(module) for module in raw.get("TrainerModules", [])
+        _parse_trainer_module(module) for module in raw.get("TrainerModules") or []
     ]
 
     max_epoch = raw.get("max_epoch")
@@ -455,6 +566,8 @@ def _parse_trainer(raw: dict[str, Any]) -> TrainerConfig:
 
 
 def _parse_optimizer(raw: dict[str, Any]) -> OptimizerConfig:
+    # The other keys are passed to the optimizer, which rejects unknown ones
+    _require_keys(raw, "Optimizer", ("optimizer", "learning_rate"))
     known_keys = {"optimizer", "learning_rate", "weight_decay_groups"}
     hyperparameters = {k: v for k, v in raw.items() if k not in known_keys}
     weight_decay_groups = {
@@ -469,6 +582,8 @@ def _parse_optimizer(raw: dict[str, Any]) -> OptimizerConfig:
 
 
 def _parse_trainer_module(raw: dict[str, Any]) -> TrainerModuleConfig:
+    # The other keys are passed to the trainer module, which rejects unknown ones
+    _require_keys(raw, "a TrainerModules entry", ("label",))
     _reserved = {"label", "method_name", "file_path", "class_name"}
     hyperparameters = {key: value for key, value in raw.items() if key not in _reserved}
     return TrainerModuleConfig(
