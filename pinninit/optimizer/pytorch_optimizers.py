@@ -16,6 +16,7 @@ class Adam(Optimizer):
     # Class attributes
     _requires_closure = False
     _requires_full_batch = False
+    _requires_fixed_loss = False
 
     def __init__(
         self, params: Iterable[nn.Parameter], *args: Any, **kwargs: Any
@@ -36,6 +37,7 @@ class LBFGS(Optimizer):
     # Class attributes
     _requires_closure = True
     _requires_full_batch = True
+    _requires_fixed_loss = True
 
     def __init__(
         self, params: Iterable[nn.Parameter], *args: Any, **kwargs: Any

@@ -101,4 +101,6 @@ def build_trainer(
         max_epoch=config.max_epoch,
         warmup_epochs=config.warmup_epochs,
         print_freq=config.print_freq,
+        log_point_weight_info=config.log_point_weight_info,
+        point_weight_snapshot_freq=config.point_weight_snapshot_freq,
     )

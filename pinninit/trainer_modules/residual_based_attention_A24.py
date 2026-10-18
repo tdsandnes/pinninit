@@ -1,14 +1,16 @@
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING
 
 import torch
 
 from .trainer_module import TrainerModule
+from .trainer_module_utils import (
+    adaptive_point_weight_containers,
+    train_residual_magnitudes,
+)
 
 if TYPE_CHECKING:
-    from ..data_structure.coords import Coords
     from ..loss.loss_term_container import LossTermContainer
     from ..trainer.trainer import Trainer
     from ..trainer.trainer_logger import TrainerLogger
@@ -28,10 +30,17 @@ class ResidualBasedAttentionA24(TrainerModule):
     The loss functions compute mean(w * r^2), while the paper defines the
     RBA loss as mean((lambda * r)^2), so the stored point weights are
     w = lambda^2.
+
+    Differences from the paper: lambda starts at lambda_init (the paper uses
+    0), so that the loss is not zero (and a weight-normalised loss is defined)
+    in the first step, and lambda is updated after this step's loss and
+    gradients have been computed, so the new weights are used from the next
+    time each point is trained on.
     """
 
     # Class attributes
     runs_during_coast = True
+    adapts_loss = True
 
     def __init__(
         self,
@@ -39,54 +48,36 @@ class ResidualBasedAttentionA24(TrainerModule):
         eta: float = 0.01,
         lambda_init: float = 1.0,
         min_iter: int = 0,
-        log_point_weight_info: bool = False,
-        snapshot_epoch_freq: int = 0,
     ) -> None:
         if not 0.0 < gamma < 1.0:
             raise ValueError(f"gamma must be in (0, 1), got {gamma}")
         if eta <= 0.0:
             raise ValueError(f"eta must be > 0, got {eta}")
-        if snapshot_epoch_freq < 0:
-            raise ValueError(
-                f"snapshot_epoch_freq must be >= 0, got {snapshot_epoch_freq}"
-            )
+        if lambda_init <= 0.0:
+            raise ValueError(f"lambda_init must be > 0, got {lambda_init}")
+        if min_iter < 0:
+            raise ValueError(f"min_iter must be >= 0, got {min_iter}")
 
         self.gamma = gamma
         self.eta = eta
         self.lambda_init = lambda_init
         self.min_iter = min_iter
-        self.log_point_weight_info = log_point_weight_info
-        self.snapshot_epoch_freq = snapshot_epoch_freq
 
-        # Containers whose training loss uses point weights
-        self.rba_containers: dict[str, LossTermContainer] = {}
+        # Containers whose training loss uses adaptive point weights
+        self.containers: dict[str, LossTermContainer] = {}
 
     def on_train_start(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        self.rba_containers.clear()
+        self.containers = adaptive_point_weight_containers(trainer, type(self).__name__)
 
-        # Register all containers (including staggered ones) with point weights
-        for label, container in trainer.all_loss_containers.items():
-            if not container.adaptive_point_weights:
-                continue
-
-            eval_context = container.train_eval_context
-            self.rba_containers[label] = container
-
-            # Initialise lambda (stored as w = lambda^2)
-            coords = eval_context.coords
-            eval_context.update_point_weights(
+        # Initialise lambda (stored as w = lambda^2)
+        for container in self.containers.values():
+            coords = container.train_eval_context.coords
+            container.train_eval_context.update_point_weights(
                 torch.full(
                     (coords.n_points,), self.lambda_init**2, device=coords.device
                 )
-            )
-
-        if not self.rba_containers:
-            raise ValueError(
-                "ResidualBasedAttention found no loss term containers with "
-                "adaptive point weights. Set 'adaptive_point_weights: true' on at "
-                "least one loss term."
             )
 
     def on_pre_optimizer_step(
@@ -95,91 +86,25 @@ class ResidualBasedAttentionA24(TrainerModule):
         if trainer.iter < self.min_iter:
             return
 
-        for label, container in self.rba_containers.items():
+        for label, container in self.containers.items():
             # Skip containers not yet activated by staggering
-            if label not in trainer.loss_containers:
-                continue
-
-            batch_coords = trainer.current_train_batches.get(label)
-            if batch_coords is None:
-                continue
-
-            self._update_point_weights(trainer, container, batch_coords)
-
-    def on_epoch_end(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
-        if logger is None:
-            return
-
-        active = {
-            label: container
-            for label, container in self.rba_containers.items()
-            if label in trainer.loss_containers  # skip staggered-off terms
-        }
-
-        if self.log_point_weight_info:
-            logger.epoch_point_weight_info_log.append(
-                {
-                    label: {
-                        stat: float(getattr(w, stat)())
-                        for stat in ("mean", "median", "min", "max")
-                    }
-                    for label, container in active.items()
-                    for w in (container.train_eval_context.get_raw_point_weights(),)
-                }
-            )
-
-        if (
-            self.snapshot_epoch_freq > 0
-            and trainer.epoch % self.snapshot_epoch_freq == 0
-        ):
-            logger.point_weight_snapshots.append(
-                {
-                    "epoch": trainer.epoch,
-                    "iter": trainer.iter,
-                    "weights": {
-                        label: container.train_eval_context.get_raw_point_weights()
-                        .clone()
-                        .cpu()
-                        for label, container in active.items()
-                    },
-                }
-            )
+            if label in trainer.loss_containers:
+                self._update_point_weights(trainer, container)
 
     def _update_point_weights(
-        self,
-        trainer: Trainer,
-        container: LossTermContainer,
-        batch_coords: Coords,
+        self, trainer: Trainer, container: LossTermContainer
     ) -> None:
-        eval_context = container.train_eval_context
-        # Per-point residual magnitudes on the current batch
-        residuals = trainer.cached_train_residuals(container.label)
-        if residuals is None:
-            if not trainer.optimizer.requires_closure:
-                warnings.warn(
-                    "RBA is recomputing residuals: the train-residual cache was "
-                    "empty for a non-closure optimizer (expected populated).",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-            _, residuals = container.compute_train_batch_loss_and_residuals(
-                trainer.model, batch_coords=batch_coords, detach=True
-            )
-        residuals = residuals.detach()
-        magnitudes = residuals.abs() if residuals.ndim == 1 else residuals.norm(dim=1)
-
+        magnitudes = train_residual_magnitudes(trainer, container)
         max_magnitude = magnitudes.max()
         if max_magnitude == 0:
             return
 
         # Recover lambda from the stored raw weights w = lambda^2
-        weights = eval_context.get_raw_point_weights(batch_coords)
-        lambdas = weights.clamp_min(0.0).sqrt()
+        eval_context = container.train_eval_context
+        batch_coords = trainer.current_train_batches[container.label]
+        lambdas = eval_context.get_raw_point_weights(batch_coords).sqrt()
 
-        # Anagnostopoulos et al. (2024) Eqn. 3 (max over the current batch)
+        # Anagnostopoulos et al. (2024) Eqn. 12 (max over the current batch)
         lambdas = self.gamma * lambdas + self.eta * magnitudes / max_magnitude
 
-        # Scatter the batch's updated weights back into the full field
-        eval_context.update_point_weights(lambdas**2, coords=batch_coords)
+        trainer.update_point_weights(container, lambdas**2, batch_coords)

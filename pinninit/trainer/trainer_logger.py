@@ -14,9 +14,19 @@ if TYPE_CHECKING:
 
 
 class TrainerLogger:
-    def __init__(self, trainer: Trainer, print_freq: int = 1):
+    def __init__(
+        self,
+        trainer: Trainer,
+        print_freq: int = 1,
+        log_point_weight_info: bool = False,
+        point_weight_snapshot_freq: int = 0,
+    ):
         self.trainer = trainer
         self.print_freq = print_freq  # print every print_freq epochs
+        # Log stats of the adaptive point weights at every epoch end, and the
+        # point weights every point_weight_snapshot_freq epochs (if > 0)
+        self.log_point_weight_info = log_point_weight_info
+        self.point_weight_snapshot_freq = point_weight_snapshot_freq
         self.events: list[dict[str, Any]] = []
 
         # The training losses of the step's first loss evaluation (an optimizer
@@ -47,13 +57,11 @@ class TrainerLogger:
             )
 
     def on_epoch_end(self) -> None:
-        """Called at the end of each epoch. Computes full-set val losses,
-        averages accumulated train losses, updates epoch logs, and prints
-        if the epoch is a print checkpoint."""
+        """Called at the end of each epoch, before the trainer modules act on
+        it. Records the epoch's losses and weights in the epoch logs, and
+        prints them if the epoch is a print checkpoint."""
         trainer = self.trainer
-
-        # Full-set validation losses (chunked to keep peak memory bounded)
-        full_val_losses = trainer.compute_full_unweighted_val_losses()
+        full_val_losses = trainer.epoch_val_losses
 
         # Mean of the per-step batch losses over the epoch (the full-set loss
         # only if all batches are the same size)
@@ -78,6 +86,7 @@ class TrainerLogger:
         self.epoch_val_losses_log.append(full_val_losses)
         self.epoch_loss_term_weights_log.append(epoch_weights)
         self.epoch_learnt_consts_log.append(self._learnt_consts())
+        self._log_point_weights()
 
         # Reset accumulator for next epoch
         self._epoch_train_loss_accum = []
@@ -89,6 +98,41 @@ class TrainerLogger:
                 "Training loss (epoch mean of batch losses)",
                 epoch_train_losses,
                 full_val_losses,
+            )
+
+    def _log_point_weights(self) -> None:
+        """Log the adaptive point weights, if asked to."""
+        trainer = self.trainer
+        point_weights = {
+            label: container.train_eval_context.get_raw_point_weights()
+            for label, container in trainer.loss_containers.items()
+            if container.adaptive_point_weights
+        }
+
+        if self.log_point_weight_info:
+            self.epoch_point_weight_info_log.append(
+                {
+                    label: {
+                        stat: float(getattr(weights, stat)())
+                        for stat in ("mean", "median", "min", "max")
+                    }
+                    for label, weights in point_weights.items()
+                }
+            )
+
+        if (
+            self.point_weight_snapshot_freq > 0
+            and trainer.epoch % self.point_weight_snapshot_freq == 0
+        ):
+            self.point_weight_snapshots.append(
+                {
+                    "epoch": trainer.epoch,
+                    "iter": trainer.iter,
+                    "weights": {
+                        label: weights.clone().cpu()
+                        for label, weights in point_weights.items()
+                    },
+                }
             )
 
     def _learnt_consts(self) -> dict[str, float]:
@@ -134,13 +178,9 @@ class TrainerLogger:
         alphas = [round(float(a.detach()), 4) for a in model.skip_alphas]
         return f"Skip connection alphas:       {alphas} \n"
 
-    def _brdr_s_str(self) -> str:
-        """BRDR scaling factor line, empty if no BRDR module is active."""
-        for module in self.trainer.trainer_modules:
-            s = getattr(module, "scaling_factor_s", None)
-            if s is not None:
-                return f"BRDR scaling factor s: {s:.6g} \n"
-        return ""
+    def _module_summaries_str(self) -> str:
+        """The trainer modules' extra summary lines."""
+        return "".join(module.summary() for module in self.trainer.trainer_modules)
 
     def _print_summary(
         self,
@@ -182,7 +222,7 @@ class TrainerLogger:
             f"{self._learnt_consts_str()}"
             f"{self._point_weights_str()}"
             f"{self._skip_alphas_str()}"
-            f"{self._brdr_s_str()}"
+            f"{self._module_summaries_str()}"
         )
 
     def record_train_losses(self, losses: dict[str, torch.Tensor]) -> None:

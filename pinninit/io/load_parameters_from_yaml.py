@@ -446,6 +446,8 @@ def _parse_trainer(raw: dict[str, Any]) -> TrainerConfig:
         print_freq=int(raw.get("print_freq", 1)),
         n_batches=int(raw.get("n_batches", 1)),
         shuffle=bool(raw.get("shuffle", True)),
+        log_point_weight_info=bool(raw.get("log_point_weight_info", False)),
+        point_weight_snapshot_freq=int(raw.get("point_weight_snapshot_freq", 0)),
     )
 
 

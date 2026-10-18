@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .trainer_module import PlateauTrainerModule
+from .trainer_module_utils import check_coast_epochs
 
 if TYPE_CHECKING:
     from typing import Any
@@ -30,6 +31,13 @@ class LearningRateSchedule(PlateauTrainerModule):
         coast_epochs_after_update: int = 0,
     ) -> None:
         super().__init__(patience, frac_tol, min_epoch)
+        if not 0.0 < decay_factor < 1.0:
+            raise ValueError(f"decay_factor must be in (0, 1), got {decay_factor}")
+        if n_events < 1:
+            raise ValueError(f"n_events must be >= 1, got {n_events}")
+        if warmup_epochs < 0:
+            raise ValueError(f"warmup_epochs must be >= 0, got {warmup_epochs}")
+        check_coast_epochs(coast_epochs_after_update)
         self.decay_factor = decay_factor
         self.n_events = n_events
         self.warmup_epochs = warmup_epochs
@@ -70,10 +78,6 @@ class LearningRateSchedule(PlateauTrainerModule):
         if self.event_count >= self.n_events:
             return
 
-        # Wait until min_epoch to update learning rate
-        if trainer.epoch < self.min_epoch:
-            return
-
         # Linear warmup
         if (
             self.warmup_epochs > 0
@@ -93,6 +97,10 @@ class LearningRateSchedule(PlateauTrainerModule):
                 if logger is not None:
                     logger.log_event("learning_rate_warmup_complete")
 
+            return
+
+        # Wait until min_epoch to decay the learning rate
+        if trainer.epoch < self.min_epoch:
             return
 
         # Return if coasting

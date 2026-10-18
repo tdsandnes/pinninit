@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from .loss_term_staggering import LossTermStaggering
 from .trainer_module import PlateauTrainerModule
+from .trainer_module_utils import check_coast_epochs
 
 if TYPE_CHECKING:
     from typing import Any
@@ -28,6 +29,7 @@ class UpdateOptimizer(PlateauTrainerModule):
         coast_epochs_after_update: int = 0,
     ) -> None:
         super().__init__(patience, frac_tol, min_epoch)
+        check_coast_epochs(coast_epochs_after_update)
         self.coast_epochs_after_update = coast_epochs_after_update
         self.new_optimizer = new_optimizer
         self.updated = False
@@ -70,8 +72,7 @@ class UpdateOptimizer(PlateauTrainerModule):
             trainer.reset_best_model()
 
             # Update optimizer
-            trainer.optimizer = self.new_optimizer
-            trainer.optimizer.attach_trainer(trainer)
+            trainer.replace_optimizer(self.new_optimizer)
             self.updated = True
             print(f"Optimizer updated on epoch {trainer.epoch}.")
 

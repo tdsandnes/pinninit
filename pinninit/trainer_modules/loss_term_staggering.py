@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .trainer_module import PlateauTrainerModule
+from .trainer_module_utils import check_coast_epochs
 
 if TYPE_CHECKING:
     from typing import Any
@@ -27,6 +28,7 @@ class LossTermStaggering(PlateauTrainerModule):
         coast_epochs_after_update: int = 0,
     ) -> None:
         super().__init__(patience, frac_tol, min_epoch)
+        check_coast_epochs(coast_epochs_after_update)
         self.coast_epochs_after_update = coast_epochs_after_update
 
         self.staggering_container_dict: dict[int, list[str]] = {}
@@ -62,6 +64,11 @@ class LossTermStaggering(PlateauTrainerModule):
         # Training can only stop after all loss terms have been activated
         trainer.state.init_stop_barrier(self.stop_barrier_label)
 
+        # With a single stage, every loss term is already active
+        self.completed = len(self.staggering_container_dict) == 1
+        if self.completed:
+            trainer.state.update_stop_barrier(self.stop_barrier_label, True)
+
     def on_epoch_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
@@ -88,7 +95,7 @@ class LossTermStaggering(PlateauTrainerModule):
             # Activate loss containers with value of counter
             containers_to_activate = self.staggering_container_dict[current_stagger]
             for label in containers_to_activate:
-                trainer.loss_containers[label] = trainer.all_loss_containers[label]
+                trainer.activate_loss_container(label)
 
                 # Log loss container activation
                 print(f"Activated loss term {label} on epoch {trainer.epoch}.")
@@ -134,4 +141,4 @@ class LossTermStaggering(PlateauTrainerModule):
         # Re-activate the stagger groups that were active at save time
         for idx in range(1, self.current_stagger_idx + 1):
             for label in self.staggering_container_dict[idx]:
-                trainer.loss_containers[label] = trainer.all_loss_containers[label]
+                trainer.activate_loss_container(label)

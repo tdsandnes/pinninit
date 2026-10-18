@@ -15,6 +15,8 @@ class TrainerState:
         self.stop_requested: bool = False
 
         self._stop_barriers: dict[str, bool] = {}
+        # Stop barrier updates, applied once all trainer modules have run
+        self._stop_barrier_updates: dict[str, bool] = {}
         self._was_prev_step_coast: bool | None = None
         self._is_coasting: bool | None = None
 
@@ -47,10 +49,11 @@ class TrainerState:
         self._stop_barriers[label] = False
 
     def update_stop_barrier(self, label: str, status: bool) -> None:
-        """Updates the status of the stop barrier with the given label."""
+        """Updates the status of the stop barrier with the given label, once all
+        trainer modules have run."""
         if label not in self._stop_barriers:
             raise KeyError(f"Stop barrier '{label}' not found.")
-        self._stop_barriers[label] = status
+        self._stop_barrier_updates[label] = status
 
     def on_step_start(self, trainer: Trainer) -> None:
         self._is_coasting = trainer.epoch < self.coast_until_epoch
@@ -65,6 +68,10 @@ class TrainerState:
                 trainer.logger.log_event("exit_coast")
             for module in trainer.trainer_modules:
                 module.on_state_change(trainer, trainer.logger)
+
+    def apply_stop_barrier_updates(self) -> None:
+        self._stop_barriers.update(self._stop_barrier_updates)
+        self._stop_barrier_updates.clear()
 
     def on_step_end(self) -> None:
         self._was_prev_step_coast = self.is_coasting

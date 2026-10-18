@@ -15,6 +15,7 @@ class Optimizer(ABC):
     # Class attributes
     _requires_closure: ClassVar[bool]
     _requires_full_batch: ClassVar[bool]
+    _requires_fixed_loss: ClassVar[bool]
 
     def __init__(self, torch_optimizer: optim.Optimizer):
         self._torch_optimizer = torch_optimizer
@@ -49,6 +50,13 @@ class Optimizer(ABC):
     @property
     def requires_closure(self) -> bool:
         return self.__class__._requires_closure
+
+    @property
+    def requires_fixed_loss(self) -> bool:
+        """Whether the loss must stay the same from step to step, e.g. because
+        the optimizer builds up curvature information (L-BFGS). Trainer modules
+        that adapt the loss leave it unchanged while such an optimizer is used."""
+        return self.__class__._requires_fixed_loss
 
     @property
     def optimizer(self) -> optim.Optimizer:

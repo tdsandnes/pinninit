@@ -365,6 +365,8 @@ class TrainerConfig:
     print_freq: int = 1
     n_batches: int = 1
     shuffle: bool = True
+    log_point_weight_info: bool = False
+    point_weight_snapshot_freq: int = 0
 
     def __post_init__(self) -> None:
         labels = [module.label for module in self.trainer_modules]
@@ -376,6 +378,13 @@ class TrainerConfig:
             raise ValueError(f"warmup_epochs must be >= 0, got {self.warmup_epochs}.")
         if self.n_batches <= 0:
             raise ValueError(f"n_batches must be > 0, got {self.n_batches}.")
+        if self.print_freq < 1:
+            raise ValueError(f"print_freq must be >= 1, got {self.print_freq}.")
+        if self.point_weight_snapshot_freq < 0:
+            raise ValueError(
+                "point_weight_snapshot_freq must be >= 0, got "
+                f"{self.point_weight_snapshot_freq}."
+            )
 
     @property
     def by_label(self) -> dict[str, TrainerModuleConfig]:
