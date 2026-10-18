@@ -100,5 +100,7 @@ class TrainerState:
             )
         self.coast_until_epoch = state["coast_until_epoch"]
         self.stop_requested = state["stop_requested"]
+        # The state is saved between steps, when no change is pending
+        self.state_updated = False
         self._stop_barriers.update(state["stop_barriers"])
         self._was_prev_step_coast = state["was_prev_step_coast"]

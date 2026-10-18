@@ -27,6 +27,9 @@ class TrainerModule:
     # weights). It isn't called while the optimizer requires a fixed loss, and
     # loading the best model also loads the module's state_dict from then.
     adapts_loss: ClassVar[bool] = False
+    # Whether the module can stop training (with trainer.state.stop_requested),
+    # so that training ends without max_epoch
+    stops_training: ClassVar[bool] = False
 
     def on_train_start(
         self, trainer: Trainer, logger: TrainerLogger | None = None

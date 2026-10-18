@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import copy
 import math
+import os
+import signal
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import torch
@@ -12,6 +16,7 @@ from .trainer_state import TrainerState
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
+    from types import FrameType
     from typing import Any
 
     from ..data_structure.coords import Coords
@@ -40,11 +45,32 @@ class Trainer:
         print_freq: int = 1,
         log_point_weight_info: bool = False,
         point_weight_snapshot_freq: int = 0,
+        checkpoint_path: str | Path | None = None,
+        checkpoint_freq: int = 100,
+        stop_on_sigterm: bool = False,
     ) -> None:
+        if max_epoch is None and not any(
+            module.stops_training for module in trainer_modules
+        ):
+            raise ValueError(
+                "Training would never end: set max_epoch or add a trainer module "
+                "that stops training (e.g. early stopping)."
+            )
         self.model = model
         self.optimizer = optimizer
         self.trainer_modules = trainer_modules
         self.max_epoch = max_epoch
+
+        # Save a checkpoint every checkpoint_freq epochs and when training ends
+        self.checkpoint_path = checkpoint_path
+        self.checkpoint_freq = checkpoint_freq
+        # Stop at the end of the epoch on SIGTERM (e.g. sent by an HPC scheduler
+        # before the time limit)
+        self.stop_on_sigterm = stop_on_sigterm
+        self._sigterm_received = False
+        # Whether the last call to train stopped because of SIGTERM, so that
+        # e.g. an HPC job can be queued again to resume from the checkpoint
+        self.stopped_by_sigterm = False
 
         # All loss containers
         self._loss_containers = loss_containers
@@ -100,6 +126,9 @@ class Trainer:
 
         # Restored state from checkpoint (if any)
         self._restored_state: dict[str, Any] | None = None
+        # After training, the state at the end of the last epoch, from before
+        # the best model was loaded, to resume training from
+        self._end_state: dict[str, Any] | None = None
 
         # Quantities cached until the model parameters change
         self._full_val_losses_cache: dict[str, float] | None = None
@@ -200,37 +229,65 @@ class Trainer:
         self.state.on_step_end()
 
     def train(self) -> None:
+        """Train until max_epoch, until the trainer modules stop training (e.g.
+        early stopping) or, with stop_on_sigterm, until the end of the epoch
+        in which SIGTERM is received.
+
+        Continues from a loaded checkpoint, or from the end of the last call
+        to train."""
         self._train_start_time = time.perf_counter()
+        self._sigterm_received = False
+        self.stopped_by_sigterm = False
+        if self.stop_on_sigterm:
+            previous_sigterm_handler = signal.signal(signal.SIGTERM, self._on_sigterm)
 
         # Execute all trainer modules at start of training
         for module in self.trainer_modules:
             module.on_train_start(self, self.logger)
 
-        # Restore state from checkpoint if available
+        # Restore state from checkpoint, or from the end of the last training
+        if self._restored_state is None:
+            self._restored_state = self._end_state
+        self._end_state = None
         if self._restored_state is not None:
             self._apply_restored_state(self._restored_state)
             self._restored_state = None
+            print(f"Resuming training from epoch {self.epoch} (iter {self.iter})")
 
         # Print initial state to terminal
         self.logger.print_losses_and_weights("initial state")
 
         # Main training loop
-        while not self.state.is_ready_to_stop:
+        while True:
+            if self.max_epoch is not None and self.epoch >= self.max_epoch:
+                self.logger.log_event("max_epoch_reached")
+                break
+            if self.state.is_ready_to_stop:
+                self.logger.log_event("training_stopped_early")
+                break
+            # Stop at the end of an epoch, where the state can be saved
+            if self._sigterm_received and self._steps_in_epoch == 0:
+                self.logger.log_event("stopped_by_sigterm")
+                self.stopped_by_sigterm = True
+                break
+
             # Update iteration count
             self.iter += 1
 
             # Step the trainer
+            epoch = self.epoch
             self.step()
 
-            # Check max epoch
-            if self.max_epoch is not None and self.epoch >= self.max_epoch:
-                self.logger.log_event("max_epoch_reached")
-                break
+            # Save a checkpoint at the end of every checkpoint_freq epochs
+            if (
+                self.checkpoint_path is not None
+                and self.epoch > epoch
+                and self.epoch % self.checkpoint_freq == 0
+            ):
+                self.save(self.checkpoint_path)
 
-        else:
-            # Reached only when the while condition becomes False, i.e. all stop
-            # barriers were met and stop was requested (not via the max_epoch break)
-            self.logger.log_event("training_stopped_early")
+        # Keep the state to resume training from
+        self._end_state = copy.deepcopy(self.state_dict())
 
         # Restore best model
         if self.best_model_state is not None:
@@ -245,6 +302,15 @@ class Trainer:
         self.train_time = self.elapsed_train_time
         self._train_start_time = None
         self.logger.print_train_time()
+
+        if self.checkpoint_path is not None:
+            self.save(self.checkpoint_path)
+        if self.stop_on_sigterm:
+            signal.signal(signal.SIGTERM, previous_sigterm_handler)
+
+    def _on_sigterm(self, signum: int, frame: FrameType | None) -> None:
+        print("SIGTERM received: stopping training at the end of the epoch.")
+        self._sigterm_received = True
 
     @property
     def elapsed_train_time(self) -> float:
@@ -490,7 +556,44 @@ class Trainer:
         # Log event
         self.logger.log_event("reset_best_model")
 
+    def save(self, path: str | Path) -> None:
+        """Save the model, the logs and the state to resume training from.
+
+        After training, the model is the best model, and training resumes from
+        the end of the last epoch.
+
+        The file is written whole or not at all: if the process is killed
+        while saving, the file saved before is kept."""
+        path = Path(path)
+        tmp_path = path.with_name(path.name + ".tmp")
+        torch.save(
+            {
+                "model_state_dict": self.model.state_dict(),
+                "logs": self.logger.state_dict(),
+                "trainer_state_dict": self.state_dict(),
+            },
+            tmp_path,
+        )
+        os.replace(tmp_path, path)
+
+    def load(self, path: str | Path) -> None:
+        """Load what save saved. Calling train then resumes training, with the
+        same trainer modules."""
+        device = next(self.model.parameters()).device
+        checkpoint = torch.load(path, map_location=device, weights_only=True)
+        missing, _unexpected = self.model.load_state_dict(
+            checkpoint["model_state_dict"], strict=False
+        )
+        if missing:
+            raise RuntimeError(f"Checkpoint is missing model parameters: {missing}")
+        self.logger.load_state_dict(checkpoint["logs"])
+        self.load_state_dict(checkpoint["trainer_state_dict"])
+
     def state_dict(self) -> dict[str, Any]:
+        """The state to resume training from: the current state, or after
+        training the state at the end of the last epoch."""
+        if self._end_state is not None:
+            return self._end_state
         return {
             "epoch": self.epoch,
             "train_time": self.elapsed_train_time,
@@ -522,6 +625,11 @@ class Trainer:
                 key: module.state_dict()
                 for key, module in self._modules_by_key().items()
             },
+            "model_state": self.model.state_dict(),
+            "rng_state": torch.get_rng_state(),
+            "cuda_rng_states": (
+                torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+            ),
         }
 
     def load_state_dict(self, state: dict[str, Any]) -> None:
@@ -579,3 +687,11 @@ class Trainer:
 
         # Optimizer state
         self.optimizer.optimizer.load_state_dict(state["optimizer_state_dict"])
+
+        # Model parameters (a saved model can be the best model instead)
+        self.model.load_state_dict(state["model_state"])
+
+        # Random number generators
+        torch.set_rng_state(state["rng_state"].cpu())
+        if state["cuda_rng_states"] is not None and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all([s.cpu() for s in state["cuda_rng_states"]])

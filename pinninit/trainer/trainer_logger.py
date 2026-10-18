@@ -47,6 +47,25 @@ class TrainerLogger:
         self.epoch_point_weight_info_log: list[dict[str, dict[str, float]]] = []
         self.point_weight_snapshots: list[dict[str, Any]] = []
 
+    # The logs, as saved in checkpoints
+    log_names = (
+        "events",
+        "epoch_train_losses_log",
+        "epoch_val_losses_log",
+        "epoch_loss_term_weights_log",
+        "epoch_learnt_consts_log",
+        "epoch_train_time_log",
+        "epoch_point_weight_info_log",
+        "point_weight_snapshots",
+    )
+
+    def state_dict(self) -> dict[str, Any]:
+        return {name: getattr(self, name) for name in self.log_names}
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        for name in self.log_names:
+            setattr(self, name, state[name])
+
     def on_step_start(self) -> None:
         self.unweighted_train_losses.reset()
 

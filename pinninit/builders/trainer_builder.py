@@ -85,13 +85,19 @@ def build_trainer(
     loss_containers:
         Label-keyed loss term containers.
     base_dir:
-        Optional base directory for resolving custom trainer module paths.
+        Optional base directory for resolving custom trainer module paths and
+        the checkpoint path.
 
     Returns
     -------
     Trainer
     """
     trainer_modules = build_trainer_modules(config.trainer_modules, base_dir=base_dir)
+
+    # A relative checkpoint path resolves against base_dir
+    checkpoint_path = None
+    if config.checkpoint_path is not None:
+        checkpoint_path = Path(base_dir or ".") / config.checkpoint_path
 
     return Trainer(
         model=model,
@@ -103,4 +109,7 @@ def build_trainer(
         print_freq=config.print_freq,
         log_point_weight_info=config.log_point_weight_info,
         point_weight_snapshot_freq=config.point_weight_snapshot_freq,
+        checkpoint_path=checkpoint_path,
+        checkpoint_freq=config.checkpoint_freq,
+        stop_on_sigterm=config.stop_on_sigterm,
     )

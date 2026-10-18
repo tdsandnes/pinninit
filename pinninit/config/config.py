@@ -367,6 +367,9 @@ class TrainerConfig:
     shuffle: bool = True
     log_point_weight_info: bool = False
     point_weight_snapshot_freq: int = 0
+    checkpoint_path: str | None = None
+    checkpoint_freq: int = 100
+    stop_on_sigterm: bool = False
 
     def __post_init__(self) -> None:
         labels = [module.label for module in self.trainer_modules]
@@ -384,6 +387,10 @@ class TrainerConfig:
             raise ValueError(
                 "point_weight_snapshot_freq must be >= 0, got "
                 f"{self.point_weight_snapshot_freq}."
+            )
+        if self.checkpoint_freq < 1:
+            raise ValueError(
+                f"checkpoint_freq must be >= 1, got {self.checkpoint_freq}."
             )
 
     @property

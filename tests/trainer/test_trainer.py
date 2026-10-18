@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import signal
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -32,6 +34,7 @@ from pinninit.trainer_modules.trainer_module import TrainerModule
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from pathlib import Path
 
     from pinninit.optimizer.optimizer import Optimizer
     from pinninit.trainer.trainer_logger import TrainerLogger
@@ -136,6 +139,19 @@ class WeightRecorder(TrainerModule):
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
         self.seen.append(weights(trainer))
+
+
+class SigtermSender(TrainerModule):
+    """Sends this process SIGTERM at the end of iteration iter."""
+
+    def __init__(self, iter: int | None) -> None:
+        self.iter = iter
+
+    def on_step_end(
+        self, trainer: Trainer, logger: TrainerLogger | None = None
+    ) -> None:
+        if trainer.iter == self.iter:
+            os.kill(os.getpid(), signal.SIGTERM)
 
 
 class TestTrainerModules:
@@ -245,3 +261,62 @@ class TestTrainerModules:
         for weight, point_weights in weights(trainer).values():
             assert weight == 1.0
             assert torch.equal(point_weights, torch.ones_like(point_weights))
+
+    def test_resuming_training_gives_the_same_training(
+        self, coords_2d: Coords, cartesian_2d: CoordSystem, tmp_path: Path
+    ) -> None:
+        # Training continued from a checkpoint, or from the end of the last
+        # call to train, is the same as training without stopping, although
+        # the best model is loaded when training stops
+        def make(sigterm_iter: int | None = None, **kwargs: Any) -> Trainer:
+            modules: list[TrainerModule] = [
+                ResidualBasedAttentionA24(),
+                AdaptiveWeightsW23(),
+                LossTermStaggering(patience=1, frac_tol=0.5),
+                LearningRateSchedule(
+                    decay_factor=0.5, n_events=2, patience=1, frac_tol=0.5
+                ),
+                SigtermSender(sigterm_iter),
+            ]
+            return make_trainer(
+                coords_2d, cartesian_2d, modules, staggering_b=1, **kwargs
+            )
+
+        uninterrupted = make(max_epoch=8)
+        uninterrupted.train()
+
+        # SIGTERM in the middle of epoch 5 (2 steps per epoch) stops training
+        # at its end, with a checkpoint. The best model is then from epoch 3.
+        checkpoint_path = tmp_path / "checkpoint.pth"
+        stopped = make(
+            sigterm_iter=9,
+            max_epoch=8,
+            checkpoint_path=checkpoint_path,
+            stop_on_sigterm=True,
+        )
+        stopped.train()
+        assert stopped.stopped_by_sigterm
+        assert stopped.epoch == 5
+        assert stopped.best_model_epoch == 3
+        resumed = make(max_epoch=8)
+        resumed.load(checkpoint_path)
+        resumed.train()
+
+        continued = make(max_epoch=5)
+        continued.train()
+        continued.max_epoch = 8
+        continued.train()
+
+        # The same best model, and the same state at the end of training
+        expected = uninterrupted.state_dict()
+        for trainer in (resumed, continued):
+            assert not trainer.stopped_by_sigterm
+            assert trainer.best_model_epoch == uninterrupted.best_model_epoch
+            assert_same_weights(weights(uninterrupted), weights(trainer))
+            state = trainer.state_dict()
+            assert state["iter"] == expected["iter"]
+            assert state["loss_term_weights"] == expected["loss_term_weights"]
+            for key in ("model_state", "point_weights"):
+                assert state[key].keys() == expected[key].keys()
+                for name, value in state[key].items():
+                    assert torch.equal(value, expected[key][name])

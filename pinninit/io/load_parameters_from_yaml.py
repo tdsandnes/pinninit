@@ -448,6 +448,9 @@ def _parse_trainer(raw: dict[str, Any]) -> TrainerConfig:
         shuffle=bool(raw.get("shuffle", True)),
         log_point_weight_info=bool(raw.get("log_point_weight_info", False)),
         point_weight_snapshot_freq=int(raw.get("point_weight_snapshot_freq", 0)),
+        checkpoint_path=raw.get("checkpoint_path"),
+        checkpoint_freq=int(raw.get("checkpoint_freq", 100)),
+        stop_on_sigterm=bool(raw.get("stop_on_sigterm", False)),
     )
 
 

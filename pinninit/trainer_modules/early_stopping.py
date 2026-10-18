@@ -14,6 +14,7 @@ class EarlyStopping(PlateauTrainerModule):
 
     # Class attributes
     runs_during_coast = False
+    stops_training = True
 
     def on_train_start(
         self, trainer: Trainer, logger: TrainerLogger | None = None

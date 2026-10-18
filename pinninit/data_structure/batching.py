@@ -55,7 +55,8 @@ class Batches:
         return {"generator": self.generator.get_state()}
 
     def load_state_dict(self, state: dict[str, torch.Tensor]) -> None:
-        self.generator.set_state(state["generator"])
+        # A checkpoint loaded onto a GPU has its tensors there
+        self.generator.set_state(state["generator"].cpu())
 
     def _split(self, shuffle: bool) -> tuple[torch.Tensor, ...]:
         n_points = self.coords.n_points
