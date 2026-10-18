@@ -20,6 +20,8 @@ if TYPE_CHECKING:
 
 
 class NNTypeLabels(str, Enum):
+    """Enumeration of neural network type labels."""
+
     FEEDFORWARD = "feedforward"
     MODIFIED_MLP = "modified_mlp"
     ### e.g. PIRATENET = "piratenet"
@@ -195,8 +197,8 @@ class ModifiedMLP(NeuralNetwork):
                 state = skip_alpha * after_encoders + (1.0 - skip_alpha) * layer_input
 
         # Output layer: no encoders and no skip
-        state = self.activation_funcs[-1](self.layers[-1](state))
-        return state
+        output: torch.Tensor = self.activation_funcs[-1](self.layers[-1](state))
+        return output
 
 
 # Mapping from NN type labels to classes

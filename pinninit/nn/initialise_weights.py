@@ -1,4 +1,3 @@
-# initialise_weights.py
 from __future__ import annotations
 
 import math

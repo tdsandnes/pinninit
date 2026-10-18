@@ -1,13 +1,9 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
-
-if TYPE_CHECKING:
-    pass
 
 
 class ActivationFuncLabels(str, Enum):

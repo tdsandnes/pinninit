@@ -40,9 +40,6 @@ class Optimizer(ABC):
         else:
             self.optimizer.step()
 
-    def clear(self) -> None:
-        self.optimizer.state.clear()
-
     @property
     def requires_full_batch(self) -> bool:
         return self.__class__._requires_full_batch

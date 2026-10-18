@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import torch
 import torch.nn as nn
 import torch.optim as optim
 
@@ -30,7 +31,7 @@ class Adam(Optimizer):
 
         # Backprop
         self.optimizer.zero_grad()
-        train_loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
+        torch.autograd.backward(train_loss, retain_graph=True)
 
 
 class LBFGS(Optimizer):
@@ -54,6 +55,6 @@ class LBFGS(Optimizer):
 
         # Backprop
         self.optimizer.zero_grad()
-        train_loss.backward(retain_graph=True)  # type: ignore[no-untyped-call]
+        torch.autograd.backward(train_loss, retain_graph=True)
 
         return float(train_loss.detach().item())

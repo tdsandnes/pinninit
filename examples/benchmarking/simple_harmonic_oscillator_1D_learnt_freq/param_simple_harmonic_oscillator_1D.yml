@@ -88,6 +88,9 @@ Trainer:
   Optimizer:
     optimizer: soap
     learning_rate: 0.001
+    betas: [0.99, 0.99]
+    weight_decay: 0.0
+    precondition_frequency: 1
   max_epoch: 20000
   warmup_epochs: 20
   print_freq: 100
