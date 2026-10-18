@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import inspect
+import itertools
 import sys
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,9 @@ from ..config.config import EquationConfig, PointWeightModifierConfig
 from ..data_structure.equation import Equation
 
 POINT_WEIGHT_MODIFIER_LABEL = "point_weight_modifier"
+
+# Numbers the modules loaded from files, so that each has its own name
+_module_count = itertools.count()
 
 
 def build_equation(config: EquationConfig, base_dir: Path | None = None) -> Equation:
@@ -65,14 +69,7 @@ def build_equations(
     -------
     list[Equation]
     """
-    labels_seen: set[str] = set()
-    equations: list[Equation] = []
-    for config in configs:
-        if config.label in labels_seen:
-            raise ValueError(f"Duplicate equation label: '{config.label}'.")
-        labels_seen.add(config.label)
-        equations.append(build_equation(config, base_dir=base_dir))
-    return equations
+    return [build_equation(config, base_dir=base_dir) for config in configs]
 
 
 def build_point_weight_modifier_equation(
@@ -114,17 +111,14 @@ def _load_function(
             f"(Resolved from file_path='{file_path}', base_dir='{base_dir}')"
         )
 
-    # Use a unique module name to avoid collisions if multiple files are loaded
-    module_name = f"_pinninit_eq_{path.stem}_{id(path)}"
-    if module_name not in sys.modules:
-        spec = importlib.util.spec_from_file_location(module_name, path)
-        if spec is None or spec.loader is None:
-            raise ImportError(f"Cannot load module from '{path}'.")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        spec.loader.exec_module(module)
-    else:
-        module = sys.modules[module_name]
+    # Load the file afresh, as a module with its own name
+    module_name = f"_pinninit_eq_{path.stem}_{next(_module_count)}"
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot load module from '{path}'.")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
 
     if not hasattr(module, function_name):
         raise AttributeError(f"Function '{function_name}' not found in '{path}'.")

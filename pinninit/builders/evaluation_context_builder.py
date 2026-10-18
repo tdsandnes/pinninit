@@ -81,8 +81,13 @@ def build_evaluation_contexts(
     tuple[EvaluationContext, EvaluationContext]
         (train_eval_context, val_eval_context)
     """
-    # Determine which fields to load from file (only input fields are in the HDF5)
-    input_field_label_to_rank = fields_config.input_field_label_to_rank
+    # A data loss loads the field it compares to (only input fields are in the
+    # HDF5), so a dataset doesn't need to hold the other input fields
+    input_field_label_to_rank = {
+        label: rank
+        for label, rank in fields_config.input_field_label_to_rank.items()
+        if label == loss_term_config.field_label
+    }
 
     if dataset_config is None:
         raise ValueError(

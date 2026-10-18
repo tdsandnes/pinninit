@@ -73,18 +73,10 @@ def build_pinn(
     loss_containers: dict[str, LossTermContainer] = {}
 
     for loss_term_config in config.loss:
-        if loss_term_config.label in loss_containers:
-            raise ValueError(f"Duplicate loss term label: '{loss_term_config.label}'.")
-
-        if loss_term_config.coordinates_label not in coords_classes:
-            raise ValueError(
-                f"LossTermConfig '{loss_term_config.label}' references unknown "
-                f"Coordinates '{loss_term_config.coordinates_label}'."
-            )
         coords_class, domain = coords_classes[loss_term_config.coordinates_label]
 
         dataset_config = (
-            datasets_by_label.get(loss_term_config.dataset_label)
+            datasets_by_label[loss_term_config.dataset_label]
             if loss_term_config.dataset_label is not None
             else None
         )
@@ -180,7 +172,6 @@ def build_pinn(
         model=model,
         loss_containers=loss_containers,
         learnt_consts=learnt_consts,
-        optimizer=optimizer,
         trainer=trainer,
     )
 

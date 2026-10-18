@@ -83,14 +83,7 @@ def build_coords_classes(
     coord_system_configs_by_label = {cfg.label: cfg for cfg in coord_system_configs}
     result: dict[str, tuple[type[Coords], Domain]] = {}
     for coords_config in coords_configs:
-        if coords_config.label in result:
-            raise ValueError(f"Duplicate Coordinates label: '{coords_config.label}'.")
         cs_label = coords_config.coord_system_label
-        if cs_label not in coord_systems:
-            raise ValueError(
-                f"CoordinatesConfig '{coords_config.label}' references unknown "
-                f"CoordSystem '{cs_label}'."
-            )
         coord_system = coord_systems[cs_label]
         cs_config = coord_system_configs_by_label[cs_label]
         coords_class = build_coords_class(cs_config, coord_system, device)

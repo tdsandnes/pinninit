@@ -27,7 +27,6 @@ class PINN:
         model: NeuralNetwork,
         loss_containers: dict[str, LossTermContainer],
         learnt_consts: dict[str, nn.Parameter],
-        optimizer: Optimizer,
         trainer: Trainer,
     ) -> None:
         self.config = config
@@ -35,8 +34,13 @@ class PINN:
         self.model = model
         self.loss_containers = loss_containers
         self.learnt_consts = learnt_consts
-        self.optimizer = optimizer
         self.trainer = trainer
+
+    @property
+    def optimizer(self) -> Optimizer:
+        """The optimizer training uses now (a trainer module can replace it,
+        e.g. UpdateOptimizer)."""
+        return self.trainer.optimizer
 
     @classmethod
     def from_yaml(
@@ -45,6 +49,9 @@ class PINN:
         device: torch.device,
         dtype: torch.dtype = torch.float64,
     ) -> PINN:
+        """Build a PINN from a parameter file. Sets torch's default dtype to
+        dtype and, if the file sets random_seed, seeds torch's random number
+        generator."""
         # Set default dtype to higher precision
         torch.set_default_dtype(dtype)
 

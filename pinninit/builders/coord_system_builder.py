@@ -44,9 +44,4 @@ def build_coord_systems(
     """
     Build a label-keyed dict of CoordSystem objects from a list of configs.
     """
-    result: dict[str, CoordSystem] = {}
-    for config in configs:
-        if config.label in result:
-            raise ValueError(f"Duplicate CoordSystem label: '{config.label}'.")
-        result[config.label] = build_coord_system(config, device)
-    return result
+    return {config.label: build_coord_system(config, device) for config in configs}

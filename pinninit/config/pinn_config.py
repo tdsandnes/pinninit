@@ -63,8 +63,21 @@ class PINNConfig:
         self._validate_adaptive_point_weights()
 
     def _validate_labels(self) -> None:
-        """The coordinate systems, coordinates and datasets that other sections
-        refer to by label exist."""
+        """The labels in each section are unique, and the coordinate systems,
+        coordinates and datasets that other sections refer to exist."""
+        for section, labels in (
+            ("CoordSystems", [cs.label for cs in self.coord_systems]),
+            ("Coordinates", [coords.label for coords in self.coordinates]),
+            ("DataSets", [dataset.label for dataset in self.datasets]),
+            ("Constants", [const.label for const in self.constants]),
+            ("Equations", [equation.label for equation in self.equations]),
+            ("LossTerms", [loss_term.label for loss_term in self.loss]),
+        ):
+            if duplicates := sorted(
+                {label for label in labels if labels.count(label) > 1}
+            ):
+                raise ValueError(f"Duplicate labels {duplicates} in {section}.")
+
         coord_system_labels = [cs.label for cs in self.coord_systems]
         for coords in self.coordinates:
             if coords.coord_system_label not in coord_system_labels:
