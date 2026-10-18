@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import time
 from typing import TYPE_CHECKING
 
 import torch
@@ -60,6 +61,11 @@ class Trainer:
         # Epoch tracking
         self.epoch = 0
         self._steps_in_epoch = 0
+
+        # Wall clock time spent training (in train), in seconds, including the
+        # runs a checkpoint was resumed from
+        self.train_time = 0.0
+        self._train_start_time: float | None = None
 
         # TrainerState handles current state of training
         self.state = TrainerState()
@@ -194,6 +200,8 @@ class Trainer:
         self.state.on_step_end()
 
     def train(self) -> None:
+        self._train_start_time = time.perf_counter()
+
         # Execute all trainer modules at start of training
         for module in self.trainer_modules:
             module.on_train_start(self, self.logger)
@@ -233,6 +241,18 @@ class Trainer:
         # Execute all trainer modules at end of training
         for module in self.trainer_modules:
             module.on_train_end(self, self.logger)
+
+        self.train_time = self.elapsed_train_time
+        self._train_start_time = None
+        self.logger.print_train_time()
+
+    @property
+    def elapsed_train_time(self) -> float:
+        """Wall clock time spent training so far, in seconds, including the runs
+        a checkpoint was resumed from."""
+        if self._train_start_time is None:
+            return self.train_time
+        return self.train_time + time.perf_counter() - self._train_start_time
 
     def _steps_per_epoch(self) -> int:
         """Steps for every active container to cycle its full training set once."""
@@ -473,6 +493,7 @@ class Trainer:
     def state_dict(self) -> dict[str, Any]:
         return {
             "epoch": self.epoch,
+            "train_time": self.elapsed_train_time,
             "iter": self.iter,
             "loss_term_weights": {
                 label: container.loss_term_weight
@@ -506,6 +527,7 @@ class Trainer:
     def load_state_dict(self, state: dict[str, Any]) -> None:
         device = next(self.model.parameters()).device
         self.epoch = state["epoch"]
+        self.train_time = state["train_time"]
         self.iter = state["iter"]
         self.best_model_epoch = state["best_model_epoch"]
         self.best_geometric_mean_val_loss = state["best_geometric_mean_val_loss"]

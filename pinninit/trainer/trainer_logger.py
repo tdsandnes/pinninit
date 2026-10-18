@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import torch
@@ -41,6 +42,8 @@ class TrainerLogger:
         self.epoch_val_losses_log: list[dict[str, float]] = []
         self.epoch_loss_term_weights_log: list[dict[str, float]] = []
         self.epoch_learnt_consts_log: list[dict[str, float]] = []
+        # Wall clock time spent training at the end of each epoch, in seconds
+        self.epoch_train_time_log: list[float] = []
         self.epoch_point_weight_info_log: list[dict[str, dict[str, float]]] = []
         self.point_weight_snapshots: list[dict[str, Any]] = []
 
@@ -86,6 +89,7 @@ class TrainerLogger:
         self.epoch_val_losses_log.append(full_val_losses)
         self.epoch_loss_term_weights_log.append(epoch_weights)
         self.epoch_learnt_consts_log.append(self._learnt_consts())
+        self.epoch_train_time_log.append(trainer.elapsed_train_time)
         self._log_point_weights()
 
         # Reset accumulator for next epoch
@@ -94,7 +98,8 @@ class TrainerLogger:
         # Print if on a print checkpoint
         if trainer.epoch % self.print_freq == 0:
             self._print_summary(
-                f"Epoch: {trainer.epoch}  (iter {trainer.iter})",
+                f"Epoch: {trainer.epoch}  (iter {trainer.iter}, "
+                f"{_format_time(trainer.elapsed_train_time)} elapsed)",
                 "Training loss (epoch mean of batch losses)",
                 epoch_train_losses,
                 full_val_losses,
@@ -225,6 +230,9 @@ class TrainerLogger:
             f"{self._module_summaries_str()}"
         )
 
+    def print_train_time(self) -> None:
+        print(f"Training took {_format_time(self.trainer.train_time)}")
+
     def record_train_losses(self, losses: dict[str, torch.Tensor]) -> None:
         self.unweighted_train_losses.record(
             {label: loss.detach().cpu().item() for label, loss in losses.items()}
@@ -248,3 +256,8 @@ class TrainerLogger:
             train_losses,
             trainer.compute_full_unweighted_val_losses(),
         )
+
+
+def _format_time(seconds: float) -> str:
+    """Wall clock time as hours:minutes:seconds, e.g. 1:02:03."""
+    return str(timedelta(seconds=round(seconds)))
