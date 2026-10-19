@@ -5,7 +5,7 @@ Waves at two frequencies are driven in at x = 0 and reflect off x = 1, and the
 PINN is trained on b at x = 1 for 20 <= t <= 30 together with the equations for
 the Elsasser variables zp = u + b and zm = u - b.
 
-Needs Dedalus (for simulate.py) and scipy, as well as pinninit.
+Needs Dedalus (for simulate.py), scipy and colorcet, as well as pinninit.
 
 Files:
     - run.sh:                           run the example with `./run.sh`
@@ -16,4 +16,7 @@ Files:
     - param_alfven_waves_1D.yml:        The parameter file for the PINN model trained in this example
     - alfven_waves_1D_equations.py:     The equations used in this example
     - train.py:                         Train and save PINN model
-    - plot.py:                          Load model, print its test errors and plot output
+    - plot_losses.py:                   Plot the training and validation losses
+    - plot_snapshots.py:                Plot the simulation's and the PINN's u and b at a few times
+    - plot_error_grid.py:               Print the test errors and plot the absolute error over (x, t)
+    - paper.mplstyle:                   The plotting style
