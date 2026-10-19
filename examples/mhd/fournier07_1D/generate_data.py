@@ -19,7 +19,6 @@ VAL_FRACTION = 0.25  # Validation points per training point
 
 N_X_DATA = 21  # Data points along x, training and validation together
 N_T_DATA = 21  # Data points along t, training and validation together
-N_BC = 128  # Training points of the boundary conditions at each end
 N_PHYS = 8192  # Training collocation points of each equation
 
 
@@ -40,13 +39,9 @@ def sobol_points(
     x_bounds: tuple[float, float],
     t_bounds: tuple[float, float],
 ) -> dict[str, np.ndarray]:
-    """n Sobol points. With a single x, the points are along t only."""
-    single_x = x_bounds[0] == x_bounds[1]
-    sobol = qmc.Sobol(d=1 if single_x else 2, scramble=True, seed=rng)
+    """n Sobol points."""
+    sobol = qmc.Sobol(d=2, scramble=True, seed=rng)
     unit = sobol.random_base2(int(np.ceil(np.log2(n))))[:n]
-    if single_x:
-        t = qmc.scale(unit, [t_bounds[0]], [t_bounds[1]])[:, 0]
-        return {"x": np.full_like(t, x_bounds[0]), "t": t}
     points = qmc.scale(unit, [x_bounds[0], t_bounds[0]], [x_bounds[1], t_bounds[1]])
     return {"x": points[:, 0], "t": points[:, 1]}
 
@@ -79,16 +74,6 @@ if __name__ == "__main__":
     for role, mask in (("train", is_train), ("val", ~is_train)):
         coords = {"x": x_grid.ravel()[mask], "t": t_grid.ravel()[mask]}
         datasets.add("data_loss", role, coords, {"b": b_data[mask]})
-
-    # Boundary conditions: u and b at both ends, at the same times
-    for role, n in (("train", N_BC), ("val", round(N_BC * VAL_FRACTION))):
-        t = sobol_points(rng, n, (cfg.x_min, cfg.x_min), t_bounds)["t"]
-        coords = {"x": np.repeat([cfg.x_min, cfg.x_max], n), "t": np.tile(t, 2)}
-        fields = {
-            "u": np.repeat([cfg.u_left, cfg.u_right], n),
-            "b": np.repeat([cfg.b_left, cfg.b_right], n),
-        }
-        datasets.add("data_bc_loss", role, coords, fields)
 
     # Physics: the two equations over the whole domain. Validation points are
     # drawn separately

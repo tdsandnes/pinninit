@@ -8,12 +8,13 @@ import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from fournier07_1D_equations import b_eqn, u_eqn
 from sim_config import Config
 
 # Import pinninit
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import pinninit
-from pinninit import CartesianCoords, make_coords_dataclass
+from pinninit import CartesianCoords, Operators, make_coords_dataclass
 
 PARAM_PATH = "param_fournier07_1D.yml"
 MODEL_PATH = "models/fournier07_1D.pth"
@@ -33,9 +34,12 @@ def evaluate_pinn(
     coords = XTCoords(
         x=torch.tensor(x, device=pinn.device), t=torch.tensor(t, device=pinn.device)
     )
-    out = pinn.evaluate_model(coords).cpu().numpy()
+    out = pinn.evaluate_model(coords)
     labels = pinn.model.output_field_labels
-    return {field: out[:, labels.index(field)] for field in ("u", "b")}
+    x_coord, operators = coords.get_coord("x"), Operators(coords)
+    u = u_eqn(out[:, labels.index("nn_u")], x_coord, operators)
+    b = b_eqn(out[:, labels.index("nn_b")], x_coord, operators)
+    return {"u": u.cpu().numpy(), "b": b.cpu().numpy()}
 
 
 if __name__ == "__main__":

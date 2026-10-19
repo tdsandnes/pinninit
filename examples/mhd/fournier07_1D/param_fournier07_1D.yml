@@ -35,9 +35,6 @@ DataSets:
   - label: data_loss
     source: file
     file_path: ./data/train_val.hdf5
-  - label: data_bc_loss
-    source: file
-    file_path: ./data/train_val.hdf5
   - label: phys_momentum_loss
     source: file
     file_path: ./data/train_val.hdf5
@@ -45,18 +42,22 @@ DataSets:
     source: file
     file_path: ./data/train_val.hdf5
 
+# The network outputs nn_u and nn_b, and u = (1 - x^2) * nn_u and
+# b = x + (1 - x^2) * nn_b, so the boundary conditions hold by construction
 Fields:
   input_fields:
     - label: b
       rank: 0
-    - label: u
-      rank: 0
   output_fields:
-    - label: b
+    - label: nn_u
       rank: 0
-    - label: u
+    - label: nn_b
       rank: 0
   derivable_fields:
+    - label: u
+      rank: 0
+    - label: b
+      rank: 0
     - label: momentum_residual
       rank: 0
     - label: induction_residual
@@ -69,6 +70,18 @@ Constants:
     value: 0.001
 
 Equations:
+  - label: u_eqn
+    function_name: u_eqn
+    file_path: ./fournier07_1D_equations.py
+    input_labels: [nn_u, x]
+    output_labels: [u]
+    output_ranks: [0]
+  - label: b_eqn
+    function_name: b_eqn
+    file_path: ./fournier07_1D_equations.py
+    input_labels: [nn_b, x]
+    output_labels: [b]
+    output_ranks: [0]
   - label: momentum_eqn
     function_name: momentum_eqn
     file_path: ./fournier07_1D_equations.py
@@ -93,26 +106,6 @@ LossTerms:
     weight_value: 1.0
     weight_method_label: adaptive_w23
     weight_group_label: data
-  - label: bc_b
-    field_label: b
-    coordinates_label: full_coords
-    dataset_label: data_bc_loss
-    loss_type: data
-    loss_function: weighted_mse
-    adaptive_point_weights: true
-    weight_value: 1.0
-    weight_method_label: adaptive_w23
-    weight_group_label: bc_b
-  - label: bc_u
-    field_label: u
-    coordinates_label: full_coords
-    dataset_label: data_bc_loss
-    loss_type: data
-    loss_function: weighted_mse
-    adaptive_point_weights: true
-    weight_value: 1.0
-    weight_method_label: adaptive_w23
-    weight_group_label: bc_u
   - label: momentum_eqn
     field_label: momentum_residual
     coordinates_label: full_coords

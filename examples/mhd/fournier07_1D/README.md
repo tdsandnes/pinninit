@@ -1,9 +1,9 @@
 1D MHD example from Fournier et al. (2007)
 
 Reconstructs u and b over the whole domain -1 <= x <= 1 and 0 <= t <= 0.2 from
-measurements of b. The PINN is trained on b on a grid of points, the boundary
-conditions on u and b at x = -1 and x = 1, and the momentum and induction
-equations.
+measurements of b. The PINN is trained on b on a grid of points and the
+momentum and induction equations. The boundary conditions on u and b at x = -1
+and x = 1 hold by construction (hard boundary conditions).
 
 Needs Dedalus (for simulate.py), scipy and colorcet, as well as pinninit.
 

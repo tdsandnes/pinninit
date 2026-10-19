@@ -37,3 +37,13 @@ def induction_eqn(
     du_dx = operators.d_dcoord(u, "x")
 
     return db_dt + S * u * db_dx - S * b * du_dx - d2b_dx2
+
+
+def u_eqn(nn_u: torch.Tensor, x: torch.Tensor, operators: Operators) -> torch.Tensor:
+    """u, which is 0 at x = -1 and x = 1 by construction."""
+    return (1.0 - x**2) * nn_u
+
+
+def b_eqn(nn_b: torch.Tensor, x: torch.Tensor, operators: Operators) -> torch.Tensor:
+    """b, which is -1 at x = -1 and 1 at x = 1 by construction."""
+    return x + (1.0 - x**2) * nn_b

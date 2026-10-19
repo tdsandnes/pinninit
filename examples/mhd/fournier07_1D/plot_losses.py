@@ -12,8 +12,6 @@ STYLE_PATH = Path(__file__).resolve().parent / "paper.mplstyle"
 # Legend label and colour of each loss term
 TERMS = {
     "data_b": ("data loss", "#00798c"),
-    "bc_b": (r"$b$ bc loss", "#66a182"),
-    "bc_u": (r"$u$ bc loss", "#30638e"),
     "momentum_eqn": ("momentum loss", "#d1495b"),
     "induction_eqn": ("induction loss", "#edae49"),
 }
