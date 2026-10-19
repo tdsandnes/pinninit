@@ -19,11 +19,9 @@ T_BOUNDS = (20.0, 30.0)  # Training time window
 T_BOUNDS_TEST = (20.0, 30.0)  # Test time window
 VAL_FRACTION = 0.25  # Validation points per training point
 
-# NOTE: The paper's fiducial setup uses N_DATA = 1025, N_BC = 16384 and
-# N_PHYS = 32768. Fewer points are used here for the example.
-N_DATA = 257  # Data points at x = L, training and validation together
-N_BC = 1024  # Training points of the db/dx = 0 condition at x = L
-N_PHYS = 4096  # Training collocation points of each equation
+N_DATA = 1025  # Data points at x = L, training and validation together
+N_BC = 16384  # Training points of the db/dx = 0 condition at x = L
+N_PHYS = 32768  # Training collocation points of each equation
 N_X_TEST = 257
 N_T_TEST = 257
 
