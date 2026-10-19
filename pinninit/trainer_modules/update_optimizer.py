@@ -56,7 +56,6 @@ class UpdateOptimizer(PlateauTrainerModule):
             return
 
         # Do nothing until all staggered loss terms are active (if staggering is used)
-        ### Still think there's a more general way to do this, but fine for now
         staggering_label = LossTermStaggering.__name__
         if trainer.state.has_stop_barrier(staggering_label) and not (
             trainer.state.is_stop_barrier_met(staggering_label)

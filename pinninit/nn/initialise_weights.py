@@ -39,7 +39,7 @@ def siren_weight_init(weight: torch.Tensor) -> None:
     """SIREN hidden layer weight initialisation (Sitzmann et al. 2020).
     https://colab.research.google.com/github/vsitzmann/siren/blob/master/explore_siren.ipynb#scrollTo=MKTWL-i5xWQC"""
     n = weight.shape[1]  # in_features
-    omega = 1.0  ### hardcoded hidden layer omega for now
+    omega = 1.0  # The hidden layers' omega in layers.py
     bound = math.sqrt(6.0 / n) / omega
     init.uniform_(weight, -bound, bound)
 

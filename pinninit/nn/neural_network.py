@@ -24,7 +24,6 @@ class NNTypeLabels(str, Enum):
 
     FEEDFORWARD = "feedforward"
     MODIFIED_MLP = "modified_mlp"
-    ### e.g. PIRATENET = "piratenet"
 
 
 class NeuralNetwork(nn.Module, ABC):

@@ -88,14 +88,14 @@ class SirenLinear(nn.Module):
     def first_layer(
         cls: type[Self], in_features: int, out_features: int, **kwargs: Any
     ) -> SirenLinear:
-        ### Hardcode omega for now
+        # omega isn't configurable: it's 30 for the first layer
         return cls(in_features, out_features, omega=30.0, is_first=True, **kwargs)
 
     @classmethod
     def hidden_layer(
         cls: type[Self], in_features: int, out_features: int, **kwargs: Any
     ) -> SirenLinear:
-        ### Hardcode omega for now
+        # omega isn't configurable: it's 1 for the hidden layers
         return cls(in_features, out_features, omega=1.0, is_first=False, **kwargs)
 
 

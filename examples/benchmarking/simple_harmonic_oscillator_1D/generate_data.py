@@ -11,8 +11,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import pinninit
 from pinninit import CartesianCoords
 
-### Generates and saves datasets for the simple harmonic oscillator example.
-
 
 def compute_f(x: float | np.ndarray) -> float | np.ndarray:
     return np.sin(x)

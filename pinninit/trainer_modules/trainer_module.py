@@ -117,7 +117,6 @@ class PlateauTrainerModule(TrainerModule):
 
     def _init_plateau_detectors(self, trainer: Trainer) -> None:
         # Plateau detector for geometric mean val loss
-        ### Could also add a detector per loss term container here
         self.plateau_detectors = {
             self.geometric_mean_label: LossPlateauDetector(self.patience, self.frac_tol)
         }
