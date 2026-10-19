@@ -36,7 +36,7 @@ class AdaptiveWeightsW23(TrainerModule):
 
     def __init__(
         self,
-        alpha: float = 0.1,  # NOTE: Wang et al. 2021 alpha definition
+        alpha: float = 0.9,
         update_iter_frequency: int = 1,
         min_iter: int = 0,
         loss_function: str = "mse",
@@ -93,6 +93,6 @@ class AdaptiveWeightsW23(TrainerModule):
                 # Wang et al. (2023) Eqn. 2.15
                 trainer.update_loss_term_weight(
                     container,
-                    (1 - self.alpha) * container.loss_term_weight
-                    + self.alpha * lambda_hat,
+                    self.alpha * container.loss_term_weight
+                    + (1 - self.alpha) * lambda_hat,
                 )

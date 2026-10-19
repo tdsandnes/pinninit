@@ -93,8 +93,8 @@ def adaptive_point_weight_containers(
 def check_adaptive_weight_params(
     alpha: float, update_iter_frequency: int, min_iter: int
 ) -> None:
-    if not 0.0 < alpha <= 1.0:
-        raise ValueError(f"alpha must be in (0, 1], got {alpha}")
+    if not 0.0 <= alpha < 1.0:
+        raise ValueError(f"alpha must be in [0, 1), got {alpha}")
     if update_iter_frequency < 1:
         raise ValueError(
             f"update_iter_frequency must be >= 1, got {update_iter_frequency}"

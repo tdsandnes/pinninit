@@ -156,7 +156,7 @@ Trainer:
       eta: 0.01
     - label: w23
       method_name: adaptive_weights_w23
-      alpha: 0.1
+      alpha: 0.9
       update_iter_frequency: 100
     - label: lr_schedule
       method_name: learning_rate_schedule
