@@ -173,6 +173,41 @@ class TestLossTermContainer:
         w = (coords_2d.get_coord("x") + coords_2d.get_coord("y")).detach()
         assert torch.allclose(loss, (weights * w**2).sum() / weights.sum())
 
+    def test_data_loss_on_a_derived_field(
+        self, cartesian_2d: CoordSystem, coords_2d: Coords
+    ) -> None:
+        # The model gives u = x + y, the derived field is w = 2 * u and the
+        # data are w = x, so the residual is x + 2 * y
+        def make_w(u: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return 2 * u
+
+        x, y = coords_2d.get_coord("x"), coords_2d.get_coord("y")
+        input_data = DataContainer(coords_2d, primary_field_label_to_rank={"w": 0})
+        input_data.set_field_from_tensor("w", x)
+        output_data = DataContainer(
+            coords_2d,
+            primary_field_label_to_rank={"u": 0},
+            derived_field_label_to_rank={"w": 0},
+            equations=[Equation("w", make_w, {"w": 0})],
+        )
+        eval_context = EvaluationContext(
+            output_data=output_data,
+            loss_function=mse_loss,
+            batches=Batches(coords_2d, n_batches=1),
+            input_data=input_data,
+        )
+        container = LossTermContainer(
+            label="w",
+            train_eval_context=eval_context,
+            val_eval_context=eval_context,
+            domain=Domain(cartesian_2d),
+            loss_term=DataLoss("w"),
+        )
+
+        loss = container.compute_full_train_loss(Model())  # type: ignore[arg-type]
+
+        assert torch.allclose(loss, ((x + 2 * y) ** 2).mean())
+
     def test_loss_term_on_an_unknown_field_raises(
         self, eval_context: EvaluationContext, cartesian_2d: CoordSystem
     ) -> None:

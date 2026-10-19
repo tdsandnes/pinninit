@@ -122,16 +122,15 @@ class FieldsConfig:
             if len(labels) != len(set(labels)):
                 raise ValueError(f"Duplicate labels in {section}: {labels}.")
 
-        # derivable_fields must not overlap with input or output fields.
-        primitive_labels = {field.label for field in self.input_fields} | {
-            field.label for field in self.output_fields
-        }
+        # derivable_fields must not overlap with output fields. They can
+        # overlap with input fields, so that a data loss can be on a derived
+        # field (e.g. one with hard boundary conditions)
+        output_labels = {field.label for field in self.output_fields}
         derivable_labels = {field.label for field in self.derivable_fields}
-        overlap = primitive_labels & derivable_labels
+        overlap = output_labels & derivable_labels
         if overlap:
             raise ValueError(
-                f"Labels {overlap} appear in both primitive "
-                "(input/output) fields and derivable_fields."
+                f"Labels {overlap} appear in both output_fields and derivable_fields."
             )
 
     @property
