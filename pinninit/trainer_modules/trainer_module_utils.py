@@ -106,8 +106,7 @@ def check_adaptive_weight_params(
 def check_coast_epochs(coast_epochs_after_update: int) -> None:
     if coast_epochs_after_update < 0:
         raise ValueError(
-            "coast_epochs_after_update must be >= 0, got "
-            f"{coast_epochs_after_update}"
+            f"coast_epochs_after_update must be >= 0, got {coast_epochs_after_update}"
         )
 
 
