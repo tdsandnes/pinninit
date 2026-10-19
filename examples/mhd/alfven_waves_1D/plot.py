@@ -14,8 +14,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import pinninit
 from pinninit import CartesianCoords, make_coords_dataclass
 
-T_TRAIN_MAX = 30.0  # End of the training time window
-
 
 def load_test_data(path: str) -> dict[str, np.ndarray]:
     """Test coords and fields, as (t, x) grids."""
@@ -70,7 +68,6 @@ def plot_fields(test: dict[str, np.ndarray], pred: dict[str, np.ndarray]) -> Non
         )
         for ax, (title, values, style) in zip(row, panels, strict=True):
             mesh = ax.pcolormesh(test["x"], test["t"], values, **style)
-            ax.axhline(T_TRAIN_MAX, color="black", ls="--", lw=1)
             ax.set_title(title)
             fig.colorbar(mesh, ax=ax)
     for ax in axes[1]:
@@ -112,12 +109,9 @@ if __name__ == "__main__":
     u, b = evaluate_pinn(pinn, test["x"].ravel(), test["t"].ravel())
     pred = {"u": u.reshape(test["x"].shape), "b": b.reshape(test["x"].shape)}
 
-    # Relative errors inside and beyond the training time window
-    in_window = test["t"][:, 0] <= T_TRAIN_MAX
     for name in ("u", "b"):
-        for label, rows in (("t <= 30", in_window), ("t > 30", ~in_window)):
-            error = relative_error(pred[name][rows], test[name][rows])
-            print(f"Relative error of {name} for {label}: {error:.3e}")
+        error = relative_error(pred[name], test[name])
+        print(f"Relative error of {name}: {error:.3e}")
 
     Path("plots").mkdir(exist_ok=True)
     plot_fields(test, pred)
