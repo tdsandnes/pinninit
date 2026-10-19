@@ -4,10 +4,11 @@ set -euo pipefail
 
 scripts=(
     simulate.py
-    plot_snapshots.py
     generate_data.py
     train.py
-    plot.py
+    plot_losses.py
+    plot_snapshots.py
+    plot_error_grid.py
 )
 
 for script in "${scripts[@]}"; do

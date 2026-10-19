@@ -34,16 +34,16 @@ Coordinates:
 DataSets:
   - label: data_loss
     source: file
-    file_path: ./data/fournier07_1D_train_val.hdf5
+    file_path: ./data/train_val.hdf5
   - label: data_bc_loss
     source: file
-    file_path: ./data/fournier07_1D_train_val.hdf5
+    file_path: ./data/train_val.hdf5
   - label: phys_momentum_loss
     source: file
-    file_path: ./data/fournier07_1D_train_val.hdf5
+    file_path: ./data/train_val.hdf5
   - label: phys_induction_loss
     source: file
-    file_path: ./data/fournier07_1D_train_val.hdf5
+    file_path: ./data/train_val.hdf5
 
 Fields:
   input_fields:
@@ -88,7 +88,8 @@ LossTerms:
     coordinates_label: data_coords
     dataset_label: data_loss
     loss_type: data
-    loss_function: weighted_mean_mse
+    loss_function: weighted_mse
+    adaptive_point_weights: true
     weight_value: 1.0
     weight_method_label: adaptive_w23
     weight_group_label: data
@@ -97,7 +98,8 @@ LossTerms:
     coordinates_label: full_coords
     dataset_label: data_bc_loss
     loss_type: data
-    loss_function: weighted_mean_mse
+    loss_function: weighted_mse
+    adaptive_point_weights: true
     weight_value: 1.0
     weight_method_label: adaptive_w23
     weight_group_label: bc_b
@@ -106,7 +108,8 @@ LossTerms:
     coordinates_label: full_coords
     dataset_label: data_bc_loss
     loss_type: data
-    loss_function: weighted_mean_mse
+    loss_function: weighted_mse
+    adaptive_point_weights: true
     weight_value: 1.0
     weight_method_label: adaptive_w23
     weight_group_label: bc_u
@@ -115,7 +118,8 @@ LossTerms:
     coordinates_label: full_coords
     dataset_label: phys_momentum_loss
     loss_type: physics
-    loss_function: weighted_mean_mse
+    loss_function: weighted_mse
+    adaptive_point_weights: true
     weight_value: 1.0
     weight_method_label: adaptive_w23
     weight_group_label: momentum_eqn
@@ -124,14 +128,15 @@ LossTerms:
     coordinates_label: full_coords
     dataset_label: phys_induction_loss
     loss_type: physics
-    loss_function: weighted_mean_mse
+    loss_function: weighted_mse
+    adaptive_point_weights: true
     weight_value: 1.0
     weight_method_label: adaptive_w23
     weight_group_label: induction_eqn
 
 NN:
   type: feedforward
-  hidden_layer_widths: [128, 128, 128]
+  hidden_layer_widths: [100, 100, 100, 100, 100, 100]
   layer_types: siren
   activation_functions: siren
   init_weights: siren
@@ -157,15 +162,9 @@ Trainer:
     - label: w23
       method_name: adaptive_weights_w23
       alpha: 0.9
-      update_iter_frequency: 100
-    - label: lr_schedule
-      method_name: learning_rate_schedule
-      decay_factor: 0.5
-      n_events: 4
-      patience: 300
-      frac_tol: 0.001
-      warmup_epochs: 20
-      coast_epochs_after_update: 20
+      update_iter_frequency: 1000
+      loss_function: weighted_mse
     - label: early_stopping
       method_name: early_stopping
-      patience: 500
+      patience: 5000
+      frac_tol: 0.01

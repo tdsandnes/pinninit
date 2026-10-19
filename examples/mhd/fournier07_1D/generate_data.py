@@ -6,6 +6,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 import torch
+from scipy.stats import qmc
 from sim_config import Config
 
 # Import pinninit
@@ -13,173 +14,41 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import pinninit
 from pinninit import CartesianCoords
 
+SEED = 1
+VAL_FRACTION = 0.25  # Validation points per training point
 
-class SnapshotLoader:
-    def __init__(self, snapshot_dir: str) -> None:
-        self.paths = sorted(Path(snapshot_dir).glob("snapshot_*.hdf5"))
-        if not self.paths:
-            raise ValueError(f"No snapshots found in {snapshot_dir}")
-
-        times: list[float] = []
-        for p in self.paths:
-            with h5py.File(p, "r") as f:
-                times.append(float(f["Parameters"].attrs["t"]))
-
-        self.times = np.array(times)
-
-    def get_snapshot_index(self, t: float) -> int:
-        mask = np.isclose(self.times, t)
-        n_matches = np.count_nonzero(mask)
-
-        if n_matches == 0:
-            raise ValueError(f"Requested time {t} does not match any snapshot.")
-        if n_matches > 1:
-            raise ValueError(f"Requested time {t} matches multiple snapshots.")
-
-        return int(np.flatnonzero(mask)[0])
-
-    def load_snapshot(self, idx: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        path = self.paths[idx]
-        with h5py.File(path, "r") as f:
-            x = f["Coords"]["x"][:]
-            u = f["Fields"]["u"][:]
-            b = f["Fields"]["b"][:]
-        return x, u, b
+N_X_DATA = 21  # Data points along x, training and validation together
+N_T_DATA = 21  # Data points along t, training and validation together
+N_BC = 128  # Training points of the boundary conditions at each end
+N_PHYS = 8192  # Training collocation points of each equation
 
 
-def sample_snapshot(
-    loader: SnapshotLoader, x_value: np.ndarray, idx_t: np.ndarray
-) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Sample u(x,t), b(x,t) at snapshot idx_t.
-    """
-    U = np.zeros((len(idx_t), len(x_value)))
-    B = np.zeros_like(U)
-
-    for i, idx in enumerate(idx_t):
-        x, u, b = loader.load_snapshot(idx)
-        U[i] = np.interp(x_value, x, u)
-        B[i] = np.interp(x_value, x, b)
-
-    return U, B
+def snapshot_indices(
+    points: np.ndarray, bounds: tuple[float, float], n: int
+) -> np.ndarray:
+    """Indices of n evenly spaced snapshot points (times or x) spanning bounds."""
+    first, last = (int(np.argmin(np.abs(points - p))) for p in bounds)
+    indices = np.linspace(first, last, n).round().astype(int)
+    if not np.allclose(points[indices], np.linspace(*bounds, n)):
+        raise ValueError(f"The snapshots don't have {n} even points in {bounds}.")
+    return indices
 
 
-def generate_mhd_dataset(
-    loader: SnapshotLoader,
-    datasets: pinninit.DataSetWriter,
-    label: str,
-    role: str,
+def sobol_points(
+    rng: np.random.Generator,
+    n: int,
     x_bounds: tuple[float, float],
-    full_t_values: np.ndarray,
-    Nt: int,
-    Nx: int,
-    seed: int | None = None,
-    shift_x: bool = True,
-    shift_t: bool = True,
-    include_u: bool = True,
-    t_bounds: tuple[float, float] | None = None,
-) -> None:
-    rng = np.random.default_rng(seed)
-    x_min, x_max = x_bounds
-    N_snapshots = len(full_t_values)
-
-    dx = (x_max - x_min) / Nx
-    x = x_min + dx * np.arange(Nx)
-    if shift_x:
-        shift_x_val = rng.uniform(0, dx)
-        x = (x + shift_x_val - x_min) % (x_max - x_min) + x_min
-
-    dt_idx = N_snapshots // Nt
-    idx_t = np.arange(Nt) * dt_idx
-
-    use_snapshots = label in ("data_loss", "test")
-
-    if use_snapshots:
-        if shift_t:
-            dt_idx = N_snapshots // Nt
-            idx_t = np.arange(Nt) * dt_idx
-            shift_idx = rng.integers(0, max(1, dt_idx))
-            idx_t = (idx_t + shift_idx) % N_snapshots
-        else:
-            idx_t = np.round(np.linspace(0, N_snapshots - 1, Nt)).astype(int)
-
-        t_values = full_t_values[idx_t]
-        U, B = sample_snapshot(loader, x, idx_t)
-    else:
-        if t_bounds is None:
-            raise ValueError("t_bounds must be provided for non-data datasets")
-
-        t_min, t_max = t_bounds
-
-        if shift_t:
-            dt = (t_max - t_min) / Nt
-            t_values = t_min + dt * np.arange(Nt)
-            shift = rng.uniform(0, dt)
-            t_values = t_values + shift
-        else:
-            t_values = np.linspace(t_min, t_max, Nt)
-
-        U = B = None
-
-    T_grid, X_grid = np.meshgrid(t_values, x, indexing="ij")
-    coords = {"t": T_grid.ravel(), "x": X_grid.ravel()}
-
-    fields = {}
-    if use_snapshots:
-        fields["b"] = B.ravel()
-        if include_u:
-            fields["u"] = U.ravel()
-
-    datasets.add(label=label, role=role, coords=coords, fields=fields)
-
-
-def generate_BC_dataset(
-    datasets: pinninit.DataSetWriter,
-    label: str,
-    role: str,
-    x_bounds: tuple[float, float],
-    full_t_values: np.ndarray,
-    Nt: int,
-    u_left: float,
-    u_right: float,
-    b_left: float,
-    b_right: float,
-    seed: int | None = None,
-    shift_t: bool = True,
-    t_bounds: tuple[float, float] | None = None,
-) -> None:
-    rng = np.random.default_rng(seed)
-    x_min, x_max = x_bounds
-    N_snapshots = len(full_t_values)
-
-    x = np.array([x_min, x_max])
-
-    if t_bounds is None:
-        dt_idx = max(1, N_snapshots // Nt)
-        idx_t = np.arange(Nt) * dt_idx
-        if shift_t:
-            shift_idx = rng.integers(0, dt_idx)
-            idx_t = (idx_t + shift_idx) % N_snapshots
-        t_values = full_t_values[idx_t]
-    else:
-        t_min, t_max = t_bounds
-        if shift_t:
-            dt = (t_max - t_min) / Nt
-            t_values = t_min + dt * np.arange(Nt)
-            shift = rng.uniform(0, dt)
-            t_values = t_values + shift
-        else:
-            t_values = np.linspace(t_min, t_max, Nt)
-
-    U = np.tile(np.array([u_left, u_right]), (Nt, 1))
-    B = np.tile(np.array([b_left, b_right]), (Nt, 1))
-
-    T_grid, X_grid = np.meshgrid(t_values, x, indexing="ij")
-    coords = {"t": T_grid.ravel(), "x": X_grid.ravel()}
-
-    fields = {"u": U.ravel(), "b": B.ravel()}
-
-    datasets.add(label=label, role=role, coords=coords, fields=fields)
+    t_bounds: tuple[float, float],
+) -> dict[str, np.ndarray]:
+    """n Sobol points. With a single x, the points are along t only."""
+    single_x = x_bounds[0] == x_bounds[1]
+    sobol = qmc.Sobol(d=1 if single_x else 2, scramble=True, seed=rng)
+    unit = sobol.random_base2(int(np.ceil(np.log2(n))))[:n]
+    if single_x:
+        t = qmc.scale(unit, [t_bounds[0]], [t_bounds[1]])[:, 0]
+        return {"x": np.full_like(t, x_bounds[0]), "t": t}
+    points = qmc.scale(unit, [x_bounds[0], t_bounds[0]], [x_bounds[1], t_bounds[1]])
+    return {"x": points[:, 0], "t": points[:, 1]}
 
 
 if __name__ == "__main__":
@@ -187,176 +56,56 @@ if __name__ == "__main__":
     torch.set_default_dtype(torch.float64)
 
     cfg = Config()
-    loader = SnapshotLoader(cfg.snapshot_dir)
+    with h5py.File(cfg.snapshot_path, "r") as f:
+        times, x = f["t"][:], f["x"][:]
+        u, b = f["u"][:], f["b"][:]
 
-    full_t_values = np.array(cfg.snapshot_times)
     x_bounds = (cfg.x_min, cfg.x_max)
-
+    t_bounds = (0.0, cfg.T)
+    rng = np.random.default_rng(SEED)
     coord_system = CartesianCoords(coord_axes={"x"}, device=torch.device("cpu"))
-    datasets_train_val = pinninit.DataSetWriter(coord_system, {"x", "t"})
+    datasets = pinninit.DataSetWriter(coord_system, {"x", "t"})
 
-    Nx_data_train, Nt_data_train = 20, 20
-    Nx_data_val, Nt_data_val = 20, 20
+    # Data: b on a grid of snapshot points. Randomly chosen points are for
+    # training, and the rest for validation
+    idx_t = snapshot_indices(times, t_bounds, N_T_DATA)
+    idx_x = snapshot_indices(x, x_bounds, N_X_DATA)
+    t_grid, x_grid = np.meshgrid(times[idx_t], x[idx_x], indexing="ij")
+    b_data = b[np.ix_(idx_t, idx_x)].ravel()
+    n_data = b_data.size
+    n_train = round(n_data / (1 + VAL_FRACTION))
+    is_train = np.zeros(n_data, dtype=bool)
+    is_train[rng.choice(n_data, n_train, replace=False)] = True
+    for role, mask in (("train", is_train), ("val", ~is_train)):
+        coords = {"x": x_grid.ravel()[mask], "t": t_grid.ravel()[mask]}
+        datasets.add("data_loss", role, coords, {"b": b_data[mask]})
 
-    generate_mhd_dataset(
-        loader,
-        datasets_train_val,
-        label="data_loss",
-        role="train",
-        x_bounds=x_bounds,
-        full_t_values=full_t_values,
-        Nt=Nt_data_train,
-        Nx=Nx_data_train,
-        seed=1,
-        shift_x=True,
-        shift_t=False,
-        include_u=True,
+    # Boundary conditions: u and b at both ends, at the same times
+    for role, n in (("train", N_BC), ("val", round(N_BC * VAL_FRACTION))):
+        t = sobol_points(rng, n, (cfg.x_min, cfg.x_min), t_bounds)["t"]
+        coords = {"x": np.repeat([cfg.x_min, cfg.x_max], n), "t": np.tile(t, 2)}
+        fields = {
+            "u": np.repeat([cfg.u_left, cfg.u_right], n),
+            "b": np.repeat([cfg.b_left, cfg.b_right], n),
+        }
+        datasets.add("data_bc_loss", role, coords, fields)
+
+    # Physics: the two equations over the whole domain. Validation points are
+    # drawn separately
+    for label in ("phys_momentum_loss", "phys_induction_loss"):
+        n_val = round(N_PHYS * VAL_FRACTION)
+        for role, n in (("train", N_PHYS), ("val", n_val)):
+            datasets.add(label, role, sobol_points(rng, n, x_bounds, t_bounds), {})
+
+    datasets.save("data/train_val.hdf5")
+
+    # Test: u and b at every snapshot point
+    t_grid, x_grid = np.meshgrid(times, x, indexing="ij")
+    test = pinninit.DataSetWriter(coord_system, {"x", "t"})
+    test.add(
+        "test",
+        "test",
+        {"x": x_grid.ravel(), "t": t_grid.ravel()},
+        {"u": u.ravel(), "b": b.ravel()},
     )
-
-    generate_mhd_dataset(
-        loader,
-        datasets_train_val,
-        label="data_loss",
-        role="val",
-        x_bounds=x_bounds,
-        full_t_values=full_t_values,
-        Nt=Nt_data_val,
-        Nx=Nx_data_val,
-        seed=2,
-        shift_x=True,
-        shift_t=True,
-        include_u=True,
-    )
-
-    t_bounds = (0.0, 0.2)
-
-    Nt_BC_train = 100
-    Nt_BC_val = 100
-    u_left = 0.0
-    u_right = 0.0
-    b_left = -1.0
-    b_right = 1.0
-
-    generate_BC_dataset(
-        datasets_train_val,
-        label="data_bc_loss",
-        role="train",
-        x_bounds=x_bounds,
-        full_t_values=full_t_values,
-        Nt=Nt_BC_train,
-        u_left=u_left,
-        u_right=u_right,
-        b_left=b_left,
-        b_right=b_right,
-        seed=3,
-        shift_t=False,
-        t_bounds=t_bounds,
-    )
-
-    generate_BC_dataset(
-        datasets_train_val,
-        label="data_bc_loss",
-        role="val",
-        x_bounds=x_bounds,
-        full_t_values=full_t_values,
-        Nt=Nt_BC_val,
-        u_left=u_left,
-        u_right=u_right,
-        b_left=b_left,
-        b_right=b_right,
-        seed=4,
-        shift_t=True,
-        t_bounds=t_bounds,
-    )
-
-    Nx_phys_momentum_train, Nt_phys_momentum_train = 100, 100
-    Nx_phys_momentum_val, Nt_phys_momentum_val = 100, 100
-
-    generate_mhd_dataset(
-        loader,
-        datasets_train_val,
-        label="phys_momentum_loss",
-        role="train",
-        x_bounds=x_bounds,
-        full_t_values=full_t_values,
-        Nt=Nt_phys_momentum_train,
-        Nx=Nx_phys_momentum_train,
-        seed=5,
-        shift_x=True,
-        shift_t=True,
-        include_u=True,
-        t_bounds=t_bounds,
-    )
-
-    generate_mhd_dataset(
-        loader,
-        datasets_train_val,
-        label="phys_momentum_loss",
-        role="val",
-        x_bounds=x_bounds,
-        full_t_values=full_t_values,
-        Nt=Nt_phys_momentum_val,
-        Nx=Nx_phys_momentum_val,
-        seed=6,
-        shift_x=True,
-        shift_t=True,
-        include_u=True,
-        t_bounds=t_bounds,
-    )
-
-    Nx_phys_induction_train, Nt_phys_induction_train = 100, 100
-    Nx_phys_induction_val, Nt_phys_induction_val = 100, 100
-
-    generate_mhd_dataset(
-        loader,
-        datasets_train_val,
-        label="phys_induction_loss",
-        role="train",
-        x_bounds=x_bounds,
-        full_t_values=full_t_values,
-        Nt=Nt_phys_induction_train,
-        Nx=Nx_phys_induction_train,
-        seed=7,
-        shift_x=True,
-        shift_t=True,
-        include_u=True,
-        t_bounds=t_bounds,
-    )
-
-    generate_mhd_dataset(
-        loader,
-        datasets_train_val,
-        label="phys_induction_loss",
-        role="val",
-        x_bounds=x_bounds,
-        full_t_values=full_t_values,
-        Nt=Nt_phys_induction_val,
-        Nx=Nx_phys_induction_val,
-        seed=8,
-        shift_x=True,
-        shift_t=True,
-        include_u=True,
-        t_bounds=t_bounds,
-    )
-
-    datasets_train_val.save("data/fournier07_1D_train_val.hdf5")
-
-    # Test data
-    datasets_test = pinninit.DataSetWriter(coord_system, {"x", "t"})
-    Nx_test, Nt_test = 300, len(full_t_values)
-    generate_mhd_dataset(
-        loader,
-        datasets_test,
-        label="test",
-        role="test",
-        x_bounds=x_bounds,
-        full_t_values=full_t_values,
-        Nt=Nt_test,
-        Nx=Nx_test,
-        seed=9,
-        shift_x=True,
-        shift_t=False,
-        include_u=True,
-    )
-
-    datasets_test.save("data/fournier07_1D_test.hdf5")
+    test.save("data/test.hdf5")

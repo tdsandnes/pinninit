@@ -1,43 +1,81 @@
+from __future__ import annotations
+
+import string
+import sys
 from pathlib import Path
 
 import h5py
 import matplotlib.pyplot as plt
+import numpy as np
+import torch
 from sim_config import Config
 
+# Import pinninit
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+import pinninit
+from pinninit import CartesianCoords, make_coords_dataclass
 
-def read_snapshot(path: Path) -> tuple[float, list[float], list[float], list[float]]:
-    with h5py.File(path, "r") as f:
-        t = f["Parameters"].attrs["t"]
-        x = f["Coords"]["x"][:]
-        u = f["Fields"]["u"][:]
-        b = f["Fields"]["b"][:]
-    return t, x, u, b
+PARAM_PATH = "param_fournier07_1D.yml"
+MODEL_PATH = "models/fournier07_1D.pth"
+STYLE_PATH = Path(__file__).resolve().parent / "paper.mplstyle"
+
+# Times to plot, one column each. They have to be snapshot times
+TIMES = [0.05, 0.1, 0.15, 0.2]
+PINN_COLOR = "#ab008b"
+
+
+def evaluate_pinn(
+    pinn: pinninit.PINN, x: np.ndarray, t: np.ndarray
+) -> dict[str, np.ndarray]:
+    """The PINN's u and b at the points (x, t)."""
+    coord_system = CartesianCoords(coord_axes={"x"}, device=pinn.device)
+    XTCoords = make_coords_dataclass({"x", "t"}, coord_system, pinn.device)
+    coords = XTCoords(
+        x=torch.tensor(x, device=pinn.device), t=torch.tensor(t, device=pinn.device)
+    )
+    out = pinn.evaluate_model(coords).cpu().numpy()
+    labels = pinn.model.output_field_labels
+    return {field: out[:, labels.index(field)] for field in ("u", "b")}
 
 
 if __name__ == "__main__":
-    snapshot_dir = Path(Config().snapshot_dir)
-    files = sorted(snapshot_dir.glob("snapshot_*.hdf5"))
+    plt.style.use(STYLE_PATH)
 
-    t0, x0, u0, b0 = read_snapshot(files[0])
-    t1, x1, u1, b1 = read_snapshot(files[-1])
+    # Load the simulation snapshots and the trained model
+    with h5py.File(Config().snapshot_path, "r") as f:
+        snapshot_times, x = f["t"][:], f["x"][:]
+        sim = {"u": f["u"][:], "b": f["b"][:]}
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    pinn = pinninit.PINN.from_yaml(PARAM_PATH, device)
+    pinn.load(MODEL_PATH)
 
-    fig, (ax_u, ax_b) = plt.subplots(1, 2, figsize=(10, 4))
+    fig, axes = plt.subplots(
+        2,
+        len(TIMES),
+        figsize=(6.5, 2.6),
+        sharex=True,
+        sharey="row",
+        layout="constrained",
+    )
+    for col, time in enumerate(TIMES):
+        idx = int(np.argmin(np.abs(snapshot_times - time)))
+        if not np.isclose(snapshot_times[idx], time):
+            raise ValueError(f"No snapshot at t = {time}")
+        pred = evaluate_pinn(pinn, x, np.full_like(x, time))
 
-    ax_u.plot(x0, u0, label=f"t={t0:.3f}")
-    ax_u.plot(x1, u1, label=f"t={t1:.3f}")
-    ax_u.set_xlabel("x")
-    ax_u.set_ylabel("u")
-    ax_u.legend()
+        for row, field in enumerate(("u", "b")):
+            ax = axes[row, col]
+            ax.plot(x, sim[field][idx], color="black", lw=0.8, label="simulation")
+            ax.plot(x, pred[field], color=PINN_COLOR, ls="--", lw=0.8, label="PINN")
+            letter = string.ascii_lowercase[row * len(TIMES) + col]
+            ax.text(0.05, 0.95, f"({letter})", transform=ax.transAxes, va="top")
 
-    ax_b.plot(x0, b0, label=f"t={t0:.3f}")
-    ax_b.plot(x1, b1, label=f"t={t1:.3f}")
-    ax_b.set_xlabel("x")
-    ax_b.set_ylabel("b")
-    ax_b.legend()
+        axes[0, col].set_title(rf"$t = {time:g}$")
+        axes[1, col].set_xlabel(r"$x$")
 
-    plt.tight_layout()
+    axes[0, 0].set(xlim=(-1, 1), ylabel=r"$u$")
+    axes[1, 0].set_ylabel(r"$b$")
+    axes[1, -1].legend(loc="lower right")
 
-    plots_dir = Path("plots")
-    plots_dir.mkdir(parents=True, exist_ok=True)  # creates directory if needed
-
-    plt.savefig(plots_dir / "snapshot_plot.png", dpi=300)
+    Path("plots").mkdir(exist_ok=True)
+    fig.savefig("plots/snapshots.png")

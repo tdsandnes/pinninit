@@ -60,7 +60,8 @@ LossTerms:
     coordinates_label: data_coords
     dataset_label: data_loss
     loss_type: data
-    loss_function: weighted_mean_mse
+    loss_function: weighted_mse
+    adaptive_point_weights: true
     weight_value: 1.0
     weight_method_label: adaptive_w23
     weight_group_label: data
@@ -69,7 +70,8 @@ LossTerms:
     coordinates_label: full_coords
     dataset_label: phys_loss
     loss_type: physics
-    loss_function: weighted_mean_mse
+    loss_function: weighted_mse
+    adaptive_point_weights: true
     weight_value: 1.0
     weight_method_label: adaptive_w23
     weight_group_label: physics
@@ -77,9 +79,9 @@ LossTerms:
 NN:
   type: feedforward
   hidden_layer_widths: [60, 60, 60, 60, 60, 60]
-  layer_types: all_linear
-  activation_functions: all_tanh
-  init_weights: all_xavier
+  layer_types: siren
+  activation_functions: siren
+  init_weights: siren
   init_biases: all_zeros
   input_transformation: scale_linear
 
@@ -103,14 +105,8 @@ Trainer:
       method_name: adaptive_weights_w23
       alpha: 0.9
       update_iter_frequency: 100
-    - label: lr_schedule
-      method_name: learning_rate_schedule
-      decay_factor: 0.5
-      n_events: 4
-      patience: 300
-      frac_tol: 0.001
-      warmup_epochs: 20
-      coast_epochs_after_update: 20
+      loss_function: weighted_mse
     - label: early_stopping
       method_name: early_stopping
       patience: 500
+      frac_tol: 0.01

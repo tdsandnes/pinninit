@@ -70,7 +70,7 @@ if __name__ == "__main__":
     x_bounds_data = (0, 2 * np.pi * n_wavelengths_data)
     x_bounds_col = (0, 2 * np.pi * n_wavelengths_col)
     alpha_data = 2
-    alpha_col = 10
+    alpha_col = 50
 
     # Init dataset writer
     coord_system = CartesianCoords(coord_axes={"x"}, device=torch.device("cpu"))
@@ -82,7 +82,7 @@ if __name__ == "__main__":
     rng = np.random.default_rng(seed)
 
     # Set shift delta
-    delta = 1e-2 * 2 * np.pi
+    delta = 5e-3 * 2 * np.pi
 
     # Generate data loss points
     generate_datasets(

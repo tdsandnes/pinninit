@@ -12,8 +12,9 @@ class Config:
     Pm: float = 1e-3
 
     # Numerical parameters
-    N: int = 300
-    dt: float = 2e-3
+    N: int = 384
+    dealias: float = 3 / 2
+    dt: float = 1e-4
     T: float = 0.2
 
     # Domain
@@ -26,9 +27,11 @@ class Config:
     b_left: float = -1.0
     b_right: float = 1.0
 
-    # Snapshots
-    snapshot_times: tuple[float, ...] | None = tuple(np.linspace(0, 0.2, 101))
-    snapshot_dir: str = "data/snapshots"
+    # Snapshots: every snapshot_steps steps from t = 0, on a uniform grid of
+    # N_x_out points
+    snapshot_steps: int = 20
+    N_x_out: int = 201
+    snapshot_path: str = "data/snapshots.hdf5"
 
     # Initial conditions
     @staticmethod
