@@ -13,11 +13,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from typing import TYPE_CHECKING
 
 import pinninit
-from pinninit.data_structure.coords import make_coords_dataclass
-from pinninit.geometry.coordinate_system import CartesianCoords
+from pinninit import CartesianCoords, make_coords_dataclass
 
 if TYPE_CHECKING:
-    from pinninit.data_structure.coords import Coords
+    from pinninit import Coords
 
 
 def read_snapshot(path: Path) -> tuple[float, np.ndarray, np.ndarray, np.ndarray]:

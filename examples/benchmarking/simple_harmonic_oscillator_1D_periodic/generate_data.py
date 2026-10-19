@@ -9,7 +9,7 @@ import torch
 # Import pinninit
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 import pinninit
-from pinninit.geometry.coordinate_system import CartesianCoords
+from pinninit import CartesianCoords
 
 ### Generates and saves datasets for the simple harmonic oscillator example.
 

@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     import torch
 
     sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-    from pinninit.differential_equations.operators import Operators
+    from pinninit import Operators
 
 
 def momentum_eqn(
