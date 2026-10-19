@@ -1,0 +1,37 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+import torch
+
+# Import pinninit
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+import pinninit
+
+
+def train() -> None:
+    # Configuration
+    example_name = "alfven_waves_1D"
+
+    param_path = f"param_{example_name}.yml"
+    model_path = f"models/{example_name}.pth"
+
+    # Select device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    # Init PINN
+    pinn = pinninit.PINN.from_yaml(param_path, device)
+
+    # Train
+    pinn.train()
+
+    # Save model
+    pinn.save(model_path)
+
+    print(f"Model saved to: {model_path}")
+
+
+if __name__ == "__main__":
+    train()

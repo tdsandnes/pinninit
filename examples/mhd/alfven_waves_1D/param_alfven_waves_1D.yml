@@ -1,0 +1,178 @@
+model_name: alfven_waves_1D
+random_seed: 1
+
+DataSets:
+  - label: data_loss
+    source: file
+    file_path: ./data/train_val.hdf5
+  - label: dbdx_bc_loss
+    source: file
+    file_path: ./data/train_val.hdf5
+  - label: phys_zp_loss
+    source: file
+    file_path: ./data/train_val.hdf5
+  - label: phys_zm_loss
+    source: file
+    file_path: ./data/train_val.hdf5
+
+CoordSystems:
+  - label: cartesian_xt
+    coord_system: cartesian
+    geometric_axis_labels:
+      - x
+    non_geometric_axis_labels:
+      - t
+
+Coordinates:
+  - label: data_coords
+    coord_system_label: cartesian_xt
+    domain:
+      bounds:
+        t:
+          min: 20.0
+          max: 30.0
+        x:
+          min: 1.0
+          max: 1.0
+  - label: full_coords
+    coord_system_label: cartesian_xt
+    domain:
+      bounds:
+        t:
+          min: 20.0
+          max: 30.0
+        x:
+          min: 0.0
+          max: 1.0
+
+# The network outputs b and nn_out, and u = (1 - x) * nn_out
+Fields:
+  input_fields:
+    - label: b
+      rank: 0
+  output_fields:
+    - label: b
+      rank: 0
+    - label: nn_out
+      rank: 0
+  derivable_fields:
+    - label: u
+      rank: 0
+    - label: dbdx_residual
+      rank: 0
+    - label: zp_eqn_residual
+      rank: 0
+    - label: zm_eqn_residual
+      rank: 0
+
+Constants:
+  - label: Re
+    value: 500.0
+  - label: Rm
+    value: 500.0
+  - label: Ma
+    value: 1.0
+
+Equations:
+  - label: u_eqn
+    function_name: u_eqn
+    file_path: ./alfven_waves_1D_equations.py
+    input_labels: [nn_out, x]
+    output_labels: [u]
+    output_ranks: [0]
+  - label: dbdx_bc_eqn
+    function_name: dbdx_bc_eqn
+    file_path: ./alfven_waves_1D_equations.py
+    input_labels: [b]
+    output_labels: [dbdx_residual]
+    output_ranks: [0]
+  - label: zp_eqn
+    function_name: zp_eqn
+    file_path: ./alfven_waves_1D_equations.py
+    input_labels: [b, u, Re, Rm, Ma]
+    output_labels: [zp_eqn_residual]
+    output_ranks: [0]
+  - label: zm_eqn
+    function_name: zm_eqn
+    file_path: ./alfven_waves_1D_equations.py
+    input_labels: [b, u, Re, Rm, Ma]
+    output_labels: [zm_eqn_residual]
+    output_ranks: [0]
+
+LossTerms:
+  - label: data_b
+    field_label: b
+    dataset_label: data_loss
+    coordinates_label: data_coords
+    loss_type: data
+    loss_function: weighted_mse
+    adaptive_point_weights: true
+    weight_method_label: adaptive_w23
+    weight_value: 1.0
+    weight_group_label: data_b
+  - label: dbdx_bc
+    field_label: dbdx_residual
+    dataset_label: dbdx_bc_loss
+    coordinates_label: data_coords
+    loss_type: physics
+    loss_function: weighted_mse
+    adaptive_point_weights: true
+    weight_method_label: adaptive_w23
+    weight_value: 1.0
+    weight_group_label: dbdx_bc
+  - label: zp_eqn
+    field_label: zp_eqn_residual
+    dataset_label: phys_zp_loss
+    coordinates_label: full_coords
+    loss_type: physics
+    loss_function: weighted_mse
+    adaptive_point_weights: true
+    weight_method_label: adaptive_w23
+    weight_value: 1.0
+    weight_group_label: zp_eqn
+  - label: zm_eqn
+    field_label: zm_eqn_residual
+    dataset_label: phys_zm_loss
+    coordinates_label: full_coords
+    loss_type: physics
+    loss_function: weighted_mse
+    adaptive_point_weights: true
+    weight_method_label: adaptive_w23
+    weight_value: 1.0
+    weight_group_label: zm_eqn
+
+NN:
+  type: feedforward
+  hidden_layer_widths: [100, 100, 100, 100, 100, 100]
+  layer_types: siren
+  activation_functions: siren
+  init_weights: siren
+  init_biases: all_zeros
+  input_transformation: scale_linear
+
+# Trains until early stopping
+Trainer:
+  Optimizer:
+    optimizer: soap
+    learning_rate: 0.001
+    betas: [0.99, 0.99]
+    weight_decay: 0.0
+    precondition_frequency: 1
+  warmup_epochs: 10000
+  print_freq: 100
+  n_batches: 1
+  log_point_weight_info: true
+  TrainerModules:
+    - label: w23
+      method_name: adaptive_weights_w23
+      alpha: 0.9
+      update_iter_frequency: 1000
+      loss_function: weighted_mse
+    - label: rba
+      method_name: residual_based_attention_a24
+      gamma: 0.999
+      eta: 0.01
+    - label: early_stopping
+      method_name: early_stopping
+      patience: 5000
+      frac_tol: 0.01
