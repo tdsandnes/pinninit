@@ -24,7 +24,7 @@ class Config:
     # Snapshots: every snapshot_steps steps from t_snapshots_start, on a
     # uniform grid of N_x_out points
     t_snapshots_start: float = 20.0
-    snapshot_steps: int = 10
+    snapshot_steps: int = 2
     N_x_out: int = 257
     snapshot_path: str = "data/snapshots.hdf5"
 

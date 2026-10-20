@@ -19,7 +19,7 @@ VAL_FRACTION = 0.25  # Validation points per training point
 
 N_X_DATA = 21  # Data points along x, training and validation together
 N_T_DATA = 21  # Data points along t, training and validation together
-N_PHYS = 8192  # Training collocation points of each equation
+N_PHYS = 32768  # Training collocation points of each equation
 
 
 def snapshot_indices(

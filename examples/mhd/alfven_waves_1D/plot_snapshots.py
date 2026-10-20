@@ -21,7 +21,7 @@ MODEL_PATH = "models/alfven_waves_1D.pth"
 STYLE_PATH = Path(__file__).resolve().parent / "paper.mplstyle"
 
 # Times to plot, one column each. They have to be snapshot times
-TIMES = [22.5, 25.0, 27.5, 30.0]
+TIMES = [22.0, 24.0, 26.0, 28.0]
 PINN_COLOR = "#ab008b"
 
 
