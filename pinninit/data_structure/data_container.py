@@ -6,7 +6,7 @@ import torch
 
 from ..differential_equations.operators import Operators
 from .coords import Coords
-from .equation import Equation, sort_equations
+from .equation import Equation, needed_equations, sort_equations
 from .field import Field, make_field_dataclass
 
 
@@ -144,11 +144,17 @@ class DataContainer:
             )
         self.consts[label] = value
 
-    def evaluate_derived_fields(self, coords: Coords | None = None) -> None:
-        """Evaluate the equations at coords and store the results."""
+    def evaluate_derived_fields(
+        self, coords: Coords | None = None, labels: list[str] | None = None
+    ) -> None:
+        """Evaluate the equations at coords and store the results. If labels
+        are given, only the equations those fields need are evaluated."""
         coords = self.coords if coords is None else coords
         operators = Operators(coords)
-        for equation in self.equations:
+        equations = self.equations
+        if labels is not None:
+            equations = needed_equations(equations, labels)
+        for equation in equations:
             outputs = equation.evaluate(self, coords, operators)
             for label, tensor in outputs.items():
                 self.set_field_from_tensor(label, tensor, coords, allow_derived=True)

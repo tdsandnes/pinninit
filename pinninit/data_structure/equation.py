@@ -129,3 +129,16 @@ def sort_equations(equations: list[Equation]) -> list[Equation]:
 
     order = TopologicalSorter(dependencies).static_order()
     return [equations_by_label[label] for label in order]
+
+
+def needed_equations(equations: list[Equation], labels: list[str]) -> list[Equation]:
+    """The equations needed to compute the fields labels, keeping the order of
+    equations, which must already be sorted by sort_equations."""
+    # Going backwards, each equation comes before the equations it needs
+    needed = set(labels)
+    selected: list[Equation] = []
+    for equation in reversed(equations):
+        if needed.intersection(equation.output_labels):
+            selected.append(equation)
+            needed.update(equation.input_labels)
+    return selected[::-1]

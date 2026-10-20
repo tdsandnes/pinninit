@@ -170,6 +170,35 @@ class TestDerivedFieldEvaluation:
                 ],
             )
 
+    def test_evaluating_some_fields_only_evaluates_the_equations_they_need(
+        self, coords_2d: Coords
+    ) -> None:
+        def make_a(x: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return x
+
+        def make_b(a: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return 3.0 * a
+
+        def make_c(y: torch.Tensor, operators: Operators) -> torch.Tensor:
+            return y
+
+        data = DataContainer(
+            coords=coords_2d,
+            primary_field_label_to_rank={},
+            derived_field_label_to_rank={"a": 0, "b": 0, "c": 0},
+            equations=[
+                Equation("b", make_b, {"b": 0}),
+                Equation("a", make_a, {"a": 0}),
+                Equation("c", make_c, {"c": 0}),
+            ],
+        )
+        data.evaluate_derived_fields(labels=["b"])
+
+        x = coords_2d.get_coord("x")
+        assert torch.allclose(data.get_field_tensor("b"), 3.0 * x)
+        with pytest.raises(ValueError, match="'c' has not been initialised"):
+            data.get_field_tensor("c")
+
     def test_evaluating_on_batch_stores_values_for_the_batch(
         self, coords_2d: Coords, device: torch.device
     ) -> None:

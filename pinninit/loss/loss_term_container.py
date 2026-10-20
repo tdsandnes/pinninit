@@ -91,9 +91,10 @@ class LossTermContainer:
             )
             idx += n_components
 
-        # Evaluate equations if the loss term needs a derived field
-        if self.loss_term.field_label in eval_context.output_data.derived_field_labels:
-            eval_context.output_data.evaluate_derived_fields(coords)
+        # Evaluate the equations the loss term's field needs, if it is derived
+        field_label = self.loss_term.field_label
+        if field_label in eval_context.output_data.derived_field_labels:
+            eval_context.output_data.evaluate_derived_fields(coords, [field_label])
 
     def compute_loss_and_residuals(
         self,
