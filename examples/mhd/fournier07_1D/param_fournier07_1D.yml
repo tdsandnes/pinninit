@@ -1,5 +1,5 @@
 model_name: fournier07_1D
-random_seed: 12345
+random_seed: 1
 
 CoordSystems:
   - label: cartesian_xt

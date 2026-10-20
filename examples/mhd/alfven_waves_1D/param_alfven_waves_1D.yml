@@ -45,7 +45,7 @@ Coordinates:
           min: 0.0
           max: 1.0
 
-# The network outputs b and nn_out, and u = (1 - x) * nn_out
+# The network outputs b and nn_u, and u = (1 - x) * nn_u
 Fields:
   input_fields:
     - label: b
@@ -53,7 +53,7 @@ Fields:
   output_fields:
     - label: b
       rank: 0
-    - label: nn_out
+    - label: nn_u
       rank: 0
   derivable_fields:
     - label: u
@@ -77,7 +77,7 @@ Equations:
   - label: u_eqn
     function_name: u_eqn
     file_path: ./alfven_waves_1D_equations.py
-    input_labels: [nn_out, x]
+    input_labels: [nn_u, x]
     output_labels: [u]
     output_ranks: [0]
   - label: dbdx_bc_eqn

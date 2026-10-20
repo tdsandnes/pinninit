@@ -17,9 +17,6 @@ def train() -> None:
     param_path = f"param_{example_name}.yml"
     model_path = f"models/{example_name}.pth"
 
-    # Ensure output directory exists
-    Path(model_path).parent.mkdir(parents=True, exist_ok=True)
-
     # Select device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")

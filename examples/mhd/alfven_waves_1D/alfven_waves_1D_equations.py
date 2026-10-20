@@ -57,9 +57,9 @@ def zm_eqn(
     return dzm_dt + dzm_dx + Ma * zp * dzm_dx - nu_p * d2zm_dx2 - nu_m * d2zp_dx2
 
 
-def u_eqn(nn_out: torch.Tensor, x: torch.Tensor, operators: Operators) -> torch.Tensor:
+def u_eqn(nn_u: torch.Tensor, x: torch.Tensor, operators: Operators) -> torch.Tensor:
     """u, which is zero at x = 1 by construction."""
-    return (1.0 - x) * nn_out
+    return (1.0 - x) * nn_u
 
 
 def dbdx_bc_eqn(b: torch.Tensor, operators: Operators) -> torch.Tensor:

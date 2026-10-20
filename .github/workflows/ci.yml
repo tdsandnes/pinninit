@@ -23,7 +23,7 @@ jobs:
 
       # 3. Install Conda
       - name: Install Miniconda
-        uses: goanpeca/setup-miniconda@v2
+        uses: conda-incubator/setup-miniconda@v3
         with:
           auto-update-conda: true
           python-version: 3.11

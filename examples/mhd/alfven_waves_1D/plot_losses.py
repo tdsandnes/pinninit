@@ -20,7 +20,8 @@ TERMS = {
 
 if __name__ == "__main__":
     plt.style.use(STYLE_PATH)
-    logs = torch.load(MODEL_PATH, map_location="cpu", weights_only=True)["logs"]
+    checkpoint = torch.load(MODEL_PATH, map_location="cpu", weights_only=True)
+    logs = checkpoint["logs"]
     train_log = logs["epoch_train_losses_log"]
     val_log = logs["epoch_val_losses_log"]
 
@@ -36,11 +37,15 @@ if __name__ == "__main__":
             ax.plot(epochs, losses, color=color, label=label, alpha=0.8)
 
     # The best model is the one with the lowest geometric mean validation loss
+    # after warmup, as pinninit doesn't track the best model while warming up
+    warmup_epochs = checkpoint["parameters"]["Trainer"].get("warmup_epochs", 0)
     val_losses = np.array([[entry[term] for term in TERMS] for entry in val_log])
     geometric_mean = np.exp(np.log(val_losses).mean(axis=1))
+    val_epochs = np.arange(1, len(val_log) + 1)
+    after_warmup = val_epochs > warmup_epochs
     ax_val.plot(
-        np.arange(1, len(val_log) + 1),
-        np.minimum.accumulate(geometric_mean),
+        val_epochs[after_warmup],
+        np.minimum.accumulate(geometric_mean[after_warmup]),
         color="black",
         ls="--",
         label="lowest geometric mean",

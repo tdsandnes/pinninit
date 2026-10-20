@@ -59,9 +59,6 @@ def generate_datasets(
 
 
 if __name__ == "__main__":
-    # Match the precision used in training
-    torch.set_default_dtype(torch.float64)
-
     # Params
     n_wavelengths_data = 2
     n_wavelengths_col = 4

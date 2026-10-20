@@ -17,7 +17,7 @@ from pinninit import CartesianCoords
 SEED = 1
 VAL_FRACTION = 0.25  # Validation points per training point
 
-N_X_DATA = 21  # Data points along x, training and validation together
+N_X_DATA = 21  # Grid points along x, including x = -1 and x = 1, which aren't used
 N_T_DATA = 21  # Data points along t, training and validation together
 N_PHYS = 32768  # Training collocation points of each equation
 
@@ -47,9 +47,6 @@ def sobol_points(
 
 
 if __name__ == "__main__":
-    # Match the precision used in training
-    torch.set_default_dtype(torch.float64)
-
     cfg = Config()
     with h5py.File(cfg.snapshot_path, "r") as f:
         times, x = f["t"][:], f["x"][:]
@@ -61,10 +58,11 @@ if __name__ == "__main__":
     coord_system = CartesianCoords(coord_axes={"x"}, device=torch.device("cpu"))
     datasets = pinninit.DataSetWriter(coord_system, {"x", "t"})
 
-    # Data: b on a grid of snapshot points. Randomly chosen points are for
-    # training, and the rest for validation
+    # Data: b on a grid of snapshot points, leaving out x = -1 and x = 1, where
+    # the boundary conditions fix b. Randomly chosen points are for training,
+    # and the rest for validation
     idx_t = snapshot_indices(times, t_bounds, N_T_DATA)
-    idx_x = snapshot_indices(x, x_bounds, N_X_DATA)
+    idx_x = snapshot_indices(x, x_bounds, N_X_DATA)[1:-1]
     t_grid, x_grid = np.meshgrid(times[idx_t], x[idx_x], indexing="ij")
     b_data = b[np.ix_(idx_t, idx_x)].ravel()
     n_data = b_data.size

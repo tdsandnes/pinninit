@@ -2,6 +2,8 @@ Simple harmonic oscillator example
 
 Finds solution by constraining loss at data points and the residual of f(x)'' + f(x) = 0.
 
+Needs matplotlib (for plot.py), as well as pinninit.
+
 Files:
     - run.sh:                                       run the example with `./run.sh`
     - clean.sh:                                     clean up files generated when running the example with `./clean.sh`

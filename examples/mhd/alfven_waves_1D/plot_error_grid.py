@@ -35,8 +35,7 @@ def evaluate_pinn(
     )
     out = pinn.evaluate_model(coords)
     labels = pinn.model.output_field_labels
-    nn_out = out[:, labels.index("nn_out")]
-    u = u_eqn(nn_out, coords.get_coord("x"), Operators(coords))
+    u = u_eqn(out[:, labels.index("nn_u")], coords.get_coord("x"), Operators(coords))
     b = out[:, labels.index("b")]
     return u.cpu().numpy(), b.cpu().numpy()
 

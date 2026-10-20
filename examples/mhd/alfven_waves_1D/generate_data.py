@@ -55,9 +55,6 @@ def sobol_points(
 
 
 if __name__ == "__main__":
-    # Match the precision used in training
-    torch.set_default_dtype(torch.float64)
-
     cfg = Config()
     with h5py.File(cfg.snapshot_path, "r") as f:
         times, x = f["t"][:], f["x"][:]

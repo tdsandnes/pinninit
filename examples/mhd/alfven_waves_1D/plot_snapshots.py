@@ -36,8 +36,7 @@ def evaluate_pinn(
     )
     out = pinn.evaluate_model(coords)
     labels = pinn.model.output_field_labels
-    nn_out = out[:, labels.index("nn_out")]
-    u = u_eqn(nn_out, coords.get_coord("x"), Operators(coords))
+    u = u_eqn(out[:, labels.index("nn_u")], coords.get_coord("x"), Operators(coords))
     b = out[:, labels.index("b")]
     return u.cpu().numpy(), b.cpu().numpy()
 
@@ -79,7 +78,10 @@ if __name__ == "__main__":
 
     axes[0, 0].set(xlim=(0, 1), ylim=(-1.2, 1.2), ylabel=r"$u$")
     axes[1, 0].set_ylabel(r"$b$")
-    axes[0, -1].legend(loc="lower right")
+    # Outside the axes, so it hides none of the curves
+    fig.legend(
+        *axes[0, 0].get_legend_handles_labels(), loc="outside lower center", ncols=2
+    )
 
     Path("plots").mkdir(exist_ok=True)
     fig.savefig("plots/snapshots.png")
