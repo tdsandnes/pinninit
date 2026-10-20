@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 import torch
 
 from ..io.load_parameters_from_yaml import load_parameters_from_yaml
+from ..loss.loss_term_container import WeightMethodLabels
 from ..trainer_modules.trainer_module_registry import TrainerModuleLabels
 
 if TYPE_CHECKING:
@@ -64,8 +65,15 @@ class PINNConfig:
 
     def __post_init__(self) -> None:
         self._validate_labels()
+        self._validate_domain_bounds()
         self._validate_staggering()
         self._validate_adaptive_point_weights()
+        self._validate_adaptive_loss_term_weights()
+
+    @property
+    def _module_names(self) -> set[str]:
+        """The method names of the trainer modules."""
+        return {module.method_name.lower() for module in self.trainer.trainer_modules}
 
     def _validate_labels(self) -> None:
         """The labels in each section are unique, and the coordinate systems,
@@ -107,6 +115,19 @@ class PINNConfig:
                     f"'{loss_term.dataset_label}'. Known: {dataset_labels}."
                 )
 
+    def _validate_domain_bounds(self) -> None:
+        """Domains only bound axes of their coord system, so that e.g. a
+        misspelt axis isn't silently left unbounded."""
+        coord_systems = {cs.label: cs for cs in self.coord_systems}
+        for coords in self.coordinates:
+            axes = coord_systems[coords.coord_system_label].all_axis_labels
+            if unknown := sorted(set(coords.domain.bounds) - set(axes)):
+                raise ValueError(
+                    f"Coordinates '{coords.label}' have bounds for {unknown}, which "
+                    f"aren't axes of coord system '{coords.coord_system_label}' "
+                    f"({axes})."
+                )
+
     def _validate_staggering(self) -> None:
         """Staggered loss terms never activate without a staggering module."""
         staggered = [
@@ -115,12 +136,7 @@ class PINNConfig:
         if not staggered:
             return
 
-        builtin_module_names = {
-            module.method_name.lower()
-            for module in self.trainer.trainer_modules
-            if module.method_name is not None
-        }
-        if TrainerModuleLabels.LOSS_TERM_STAGGERING.value not in builtin_module_names:
+        if TrainerModuleLabels.LOSS_TERM_STAGGERING.value not in self._module_names:
             raise ValueError(
                 f"Loss terms {staggered} have staggering > 0 but no "
                 f"'{TrainerModuleLabels.LOSS_TERM_STAGGERING.value}' trainer module "
@@ -137,18 +153,32 @@ class PINNConfig:
         if not adaptive:
             return
 
-        builtin_module_names = {
-            module.method_name.lower()
-            for module in self.trainer.trainer_modules
-            if module.method_name is not None
-        }
         point_weight_updaters = {
             TrainerModuleLabels.RESIDUAL_BASED_ATTENTION_A24.value,
             TrainerModuleLabels.BALANCED_RESIDUAL_DECAY_RATE_C25.value,
         }
-        if not (builtin_module_names & point_weight_updaters):
+        if not (self._module_names & point_weight_updaters):
             raise ValueError(
                 f"Loss terms {adaptive} set adaptive_point_weights but no "
                 f"point-weight updater module ({sorted(point_weight_updaters)}) "
                 "is configured. Their point weights would never update."
             )
+
+    def _validate_adaptive_loss_term_weights(self) -> None:
+        """Loss terms with adaptive weights need the module that updates them."""
+        modules = {
+            WeightMethodLabels.ADAPTIVE_W21: TrainerModuleLabels.ADAPTIVE_WEIGHTS_W21,
+            WeightMethodLabels.ADAPTIVE_W23: TrainerModuleLabels.ADAPTIVE_WEIGHTS_W23,
+        }
+        for weight_method, module in modules.items():
+            adaptive = [
+                loss_term.label
+                for loss_term in self.loss
+                if loss_term.weight_method_label == weight_method
+            ]
+            if adaptive and module.value not in self._module_names:
+                raise ValueError(
+                    f"Loss terms {adaptive} have weight_method_label "
+                    f"'{weight_method.value}' but no '{module.value}' trainer module "
+                    "is configured. Their weights would never update."
+                )

@@ -98,16 +98,15 @@ class DataSetWriter:
         coords: dict[str, np.ndarray],
         fields: dict[str, np.ndarray] | None = None,
     ) -> None:
-        """Add one (dataset label, role) entry from numpy arrays.
-        Currently supports scalar (rank-0) fields."""
+        """Add one (dataset label, role) entry from numpy arrays of scalar
+        (rank 0) fields. The arrays are stored in float64, whatever torch's
+        default dtype, and converted to the training dtype when loaded."""
         if role in self.datasets.get(label, {}):
             raise ValueError(f"{label}/{role} already exists")
 
         coords_obj = self.coords_class(
             **{
-                k: torch.as_tensor(
-                    v, dtype=torch.get_default_dtype(), device=self.device
-                )
+                k: torch.as_tensor(v, dtype=torch.float64, device=self.device)
                 for k, v in coords.items()
             }
         )
@@ -117,9 +116,7 @@ class DataSetWriter:
             f_label: ScalarField(
                 label=f_label,
                 coords=coords_obj,
-                value=torch.as_tensor(
-                    arr, dtype=torch.get_default_dtype(), device=self.device
-                ),
+                value=torch.as_tensor(arr, dtype=torch.float64, device=self.device),
             )
             for f_label, arr in (fields or {}).items()
         }

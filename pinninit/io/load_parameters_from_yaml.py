@@ -221,16 +221,17 @@ def _parse_coord_system(raw: dict[str, Any]) -> CoordSystemConfig:
         optional=("geometric_axis_labels", "non_geometric_axis_labels", "fixed_axes"),
     )
     coord_system = _parse_enum(raw["coord_system"], CoordSystemLabels)
-    for ax in raw.get("fixed_axes", []):
+    raw_fixed_axes = raw.get("fixed_axes") or []
+    for ax in raw_fixed_axes:
         _check_keys(ax, "a fixed_axes entry", required=("label", "value"))
     fixed_axes: dict[str, float] = {
-        ax["label"]: float(ax["value"]) for ax in raw.get("fixed_axes", [])
+        ax["label"]: float(ax["value"]) for ax in raw_fixed_axes
     }
     return CoordSystemConfig(
         label=raw["label"],
         coord_system=coord_system,
-        geometric_axis_labels=raw.get("geometric_axis_labels", []),
-        non_geometric_axis_labels=raw.get("non_geometric_axis_labels", []),
+        geometric_axis_labels=raw.get("geometric_axis_labels") or [],
+        non_geometric_axis_labels=raw.get("non_geometric_axis_labels") or [],
         fixed_axes=fixed_axes,
     )
 
@@ -253,8 +254,8 @@ def _parse_one_coord(raw: dict[str, Any]) -> CoordinatesConfig:
 
 
 def _parse_domain(raw: dict[str, Any]) -> DomainConfig:
-    _check_keys(raw, "a domain", optional=("label", "bounds"))
-    raw_bounds = raw.get("bounds", {})
+    _check_keys(raw, "a domain", optional=("bounds",))
+    raw_bounds = raw.get("bounds") or {}
     bounds: dict[str, tuple[float | None, float | None]] = {}
     periodic_axes: set[str] = set()
 
@@ -277,7 +278,6 @@ def _parse_domain(raw: dict[str, Any]) -> DomainConfig:
             periodic_axes.add(axis_label)
 
     return DomainConfig(
-        label=raw.get("label", ""),
         bounds=bounds,
         periodic_axes=frozenset(periodic_axes),
     )
@@ -309,10 +309,12 @@ def _parse_fields(raw: dict[str, Any]) -> FieldsConfig:
         optional=("input_fields", "output_fields", "derivable_fields"),
     )
     return FieldsConfig(
-        input_fields=_parse_field_list(raw.get("input_fields", []), "input_fields"),
-        output_fields=_parse_field_list(raw.get("output_fields", []), "output_fields"),
+        input_fields=_parse_field_list(raw.get("input_fields") or [], "input_fields"),
+        output_fields=_parse_field_list(
+            raw.get("output_fields") or [], "output_fields"
+        ),
         derivable_fields=_parse_field_list(
-            raw.get("derivable_fields", []), "derivable_fields"
+            raw.get("derivable_fields") or [], "derivable_fields"
         ),
     )
 
@@ -351,10 +353,9 @@ def _parse_equations(raw: list[dict[str, Any]]) -> list[EquationConfig]:
             required=("label", "function_name", "file_path"),
             optional=("input_labels", "output_labels", "output_ranks"),
         )
-        output_labels: list[str] = equation.get("output_labels", [])
-        output_ranks: list[int] = equation.get(
-            "output_ranks",
-            [0] * len(output_labels),
+        output_labels: list[str] = equation.get("output_labels") or []
+        output_ranks: list[int] = equation.get("output_ranks") or [0] * len(
+            output_labels
         )
 
         equations.append(
@@ -362,7 +363,7 @@ def _parse_equations(raw: list[dict[str, Any]]) -> list[EquationConfig]:
                 label=equation["label"],
                 function_name=equation["function_name"],
                 file_path=equation["file_path"],
-                input_labels=equation.get("input_labels", []),
+                input_labels=equation.get("input_labels") or [],
                 output_labels=output_labels,
                 output_ranks=output_ranks,
             )
@@ -438,7 +439,7 @@ def _parse_point_weight_modifier(
     return PointWeightModifierConfig(
         file_path=raw["file_path"],
         function_name=raw["function_name"],
-        input_labels=list(raw.get("input_labels", [])),
+        input_labels=list(raw.get("input_labels") or []),
     )
 
 
@@ -597,7 +598,7 @@ def _parse_optimizer(raw: dict[str, Any]) -> OptimizerConfig:
     known_keys = {"optimizer", "learning_rate", "weight_decay_groups"}
     hyperparameters = {k: v for k, v in raw.items() if k not in known_keys}
     weight_decay_groups = {
-        name: float(wd) for name, wd in raw.get("weight_decay_groups", {}).items()
+        name: float(wd) for name, wd in (raw.get("weight_decay_groups") or {}).items()
     }
     return OptimizerConfig(
         optimizer=_parse_enum(raw["optimizer"], OptimizerLabels),
@@ -609,13 +610,12 @@ def _parse_optimizer(raw: dict[str, Any]) -> OptimizerConfig:
 
 def _parse_trainer_module(raw: dict[str, Any]) -> TrainerModuleConfig:
     # The other keys are passed to the trainer module, which rejects unknown ones
-    _require_keys(raw, "a TrainerModules entry", ("label",))
-    _reserved = {"label", "method_name", "file_path", "class_name"}
-    hyperparameters = {key: value for key, value in raw.items() if key not in _reserved}
+    _require_keys(raw, "a TrainerModules entry", ("label", "method_name"))
+    hyperparameters = {
+        key: value for key, value in raw.items() if key not in {"label", "method_name"}
+    }
     return TrainerModuleConfig(
         label=raw["label"],
-        method_name=raw.get("method_name"),
-        file_path=raw.get("file_path"),
-        class_name=raw.get("class_name"),
+        method_name=raw["method_name"],
         hyperparameters=hyperparameters,
     )

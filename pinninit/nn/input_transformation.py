@@ -6,8 +6,6 @@ from typing import TYPE_CHECKING
 import torch
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from ..data_structure.coords import Coords
 
 
@@ -15,7 +13,6 @@ class InputTransformationLabels(str, Enum):
     """Enumeration of input transformation labels."""
 
     SCALE_LINEAR = "scale_linear"
-    PERIODIC_W23 = "periodic_w23"
 
 
 class InputTransformation:
@@ -62,7 +59,8 @@ class PeriodicW23(InputTransformation):
 
     For each periodic axis with period T, sets w = 2*pi/T and embeds as
     [cos(w*x), sin(w*x)] using raw (un-normalised) coordinates so the period
-    is exact. Non-periodic axes are normalised to [-1, 1] and passed through.
+    is exact. Non-periodic axes are passed through, normalised to [-1, 1] if
+    scale_non_periodic (as with scale_linear).
     """
 
     def __init__(
@@ -111,11 +109,3 @@ class PeriodicW23(InputTransformation):
                     embeddings.append(x_i)
 
         return torch.cat(embeddings, dim=-1)
-
-
-INPUT_TRANSFORMATION_REGISTRY: dict[
-    InputTransformationLabels, Callable[..., InputTransformation]
-] = {
-    InputTransformationLabels.SCALE_LINEAR: ScaleLinear,
-    InputTransformationLabels.PERIODIC_W23: PeriodicW23,
-}

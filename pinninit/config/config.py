@@ -24,7 +24,6 @@ if TYPE_CHECKING:
 class DomainConfig:
     """Coordinate domain."""
 
-    label: str
     bounds: dict[str, tuple[float | None, float | None]]
     periodic_axes: frozenset[str] = field(default_factory=frozenset)
 
@@ -333,29 +332,8 @@ class TrainerModuleConfig:
     """A single trainer module."""
 
     label: str
-    method_name: str | None = None
-    file_path: str | None = None
-    class_name: str | None = None
+    method_name: str
     hyperparameters: dict[str, float | int | str] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        is_builtin = self.method_name is not None
-        is_custom = self.file_path is not None or self.class_name is not None
-
-        if is_builtin and is_custom:
-            raise ValueError(
-                "method_name and file_path/class_name should be mutually exclusive."
-            )
-        if not is_builtin and not is_custom:
-            raise ValueError("Must set either method_name or file_path + class_name.")
-        if is_custom and not (self.file_path and self.class_name):
-            raise ValueError(
-                "Both file_path and class_name are required for custom trainer modules."
-            )
-
-    @property
-    def is_builtin(self) -> bool:
-        return self.method_name is not None
 
 
 @dataclass(frozen=True, slots=True)

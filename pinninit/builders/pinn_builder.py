@@ -43,7 +43,7 @@ def build_pinn(
         PyTorch device.
     base_dir:
         Optional base directory for resolving relative file paths (datasets,
-        equations, custom trainer modules, the checkpoint).
+        equations, the checkpoint).
 
     Returns
     -------

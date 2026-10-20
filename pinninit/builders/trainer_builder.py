@@ -17,51 +17,29 @@ if TYPE_CHECKING:
     from ..optimizer.optimizer import Optimizer
 
 
-def build_trainer_module(
-    config: TrainerModuleConfig,
-    base_dir: Path | None = None,
-) -> TrainerModule:
+def build_trainer_module(config: TrainerModuleConfig) -> TrainerModule:
     """
     Build a TrainerModule from a TrainerModuleConfig.
 
     Parameters
     ----------
     config:
-        Config with either method_name or file_path + class_name, plus
-        hyperparameters passed as keyword arguments to the constructor.
-    base_dir:
-        Optional base directory for resolving relative file paths.
+        Config with the module's method_name, plus hyperparameters passed as
+        keyword arguments to its constructor.
 
     Returns
     -------
     TrainerModule
     """
-    if config.is_builtin:
-        assert config.method_name is not None
-        method_name = config.method_name.lower()
-        if method_name not in TrainerModuleLabels._value2member_map_:
-            valid = [member.value for member in TrainerModuleLabels]
-            raise ValueError(
-                f"Unknown trainer module '{config.method_name}'. "
-                f"Valid options: {valid}."
-            )
-        module_cls = TRAINER_MODULE_REGISTRY[TrainerModuleLabels(method_name)]
-    else:
-        raise NotImplementedError(
-            "Loading custom trainer modules is not yet implemented."
+    method_name = config.method_name.lower()
+    valid = [member.value for member in TrainerModuleLabels]
+    if method_name not in valid:
+        raise ValueError(
+            f"Unknown trainer module '{config.method_name}'. Valid options: {valid}."
         )
 
-    return module_cls(**config.hyperparameters)
-
-
-def build_trainer_modules(
-    configs: list[TrainerModuleConfig],
-    base_dir: Path | None = None,
-) -> list[TrainerModule]:
-    """
-    Build all TrainerModules from a list of TrainerModuleConfigs.
-    """
-    return [build_trainer_module(config, base_dir=base_dir) for config in configs]
+    module_class = TRAINER_MODULE_REGISTRY[TrainerModuleLabels(method_name)]
+    return module_class(**config.hyperparameters)
 
 
 def build_trainer(
@@ -88,14 +66,15 @@ def build_trainer(
     loss_containers:
         Label-keyed loss term containers.
     base_dir:
-        Optional base directory for resolving custom trainer module paths and
-        the checkpoint path.
+        Optional base directory for resolving the checkpoint path.
 
     Returns
     -------
     Trainer
     """
-    trainer_modules = build_trainer_modules(config.trainer_modules, base_dir=base_dir)
+    trainer_modules = [
+        build_trainer_module(module) for module in config.trainer_modules
+    ]
 
     # A relative checkpoint path resolves against base_dir
     checkpoint_path = None
