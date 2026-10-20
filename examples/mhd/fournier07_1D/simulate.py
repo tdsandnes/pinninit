@@ -6,7 +6,6 @@ from typing import Any
 import dedalus.public as d3
 import h5py
 import numpy as np
-from scipy.interpolate import BarycentricInterpolator
 from sim_config import Config
 
 
@@ -60,15 +59,11 @@ def simulate(cfg: Config) -> None:
     u["g"] = cfg.u_initial(x_grid)
     b["g"] = cfg.b_initial(x_grid)
 
-    # To save snapshots on a uniform grid, the Chebyshev polynomial of each
-    # field is evaluated from its grid values
+    # Snapshots are saved on a uniform grid, where Dedalus evaluates each field
     x_out = np.linspace(cfg.x_min, cfg.x_max, cfg.N_x_out)
-    to_x_out = BarycentricInterpolator(x_grid, np.eye(cfg.N))(x_out)
 
     def on_x_out(field: Any) -> np.ndarray:
-        field.change_scales(1)
-        values: np.ndarray = to_x_out @ field["g"]
-        return values
+        return np.array([field(x=x).evaluate()["g"][0] for x in x_out])
 
     # Step, saving snapshots before each step
     n_steps = round(cfg.T / cfg.dt)
