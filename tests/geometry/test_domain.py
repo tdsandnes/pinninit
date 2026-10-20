@@ -24,6 +24,15 @@ class TestGeometricBounds:
         assert domain.geometric_lb["theta"].item() == 0.0
         assert domain.geometric_ub["theta"].item() == pytest.approx(2 * math.pi)
 
+    def test_internal_bounds_with_the_default_angle_bounds(
+        self, cylindrical_2d: CoordSystem
+    ) -> None:
+        domain = Domain(coord_system=cylindrical_2d, geometric_bounds={"r": (1.0, 2.0)})
+
+        for axis in ("x", "y"):
+            assert domain.internal_lb[axis].item() == pytest.approx(-2.0)
+            assert domain.internal_ub[axis].item() == pytest.approx(2.0)
+
     def test_given_bounds_are_used(self, cartesian_2d: CoordSystem) -> None:
         domain = Domain(
             coord_system=cartesian_2d,

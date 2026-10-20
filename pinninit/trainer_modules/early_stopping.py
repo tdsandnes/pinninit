@@ -19,18 +19,18 @@ class EarlyStopping(PlateauTrainerModule):
     def on_train_start(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        # Initialise plateau detectors
-        self._init_plateau_detectors(trainer)
+        # Start detecting plateaus from scratch
+        self.plateau_detector.reset()
 
     def on_epoch_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        # Wait until min_epoch to update plateau detectors
+        # Wait until min_epoch to update the plateau detector
         if trainer.epoch < self.min_epoch:
             return
 
         # If validation loss has plateaued, request stop
-        if self._step_plateau_detectors_full(trainer):
+        if self._step_plateau_detector(trainer):
             trainer.state.stop_requested = True
 
             # Log early stopping request
@@ -40,5 +40,5 @@ class EarlyStopping(PlateauTrainerModule):
     def on_state_change(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        # Fully re-initialise plateau detectors in case new containers were added
-        self._init_plateau_detectors(trainer)
+        # Start detecting plateaus from scratch, as the trainer state changed
+        self.plateau_detector.reset()

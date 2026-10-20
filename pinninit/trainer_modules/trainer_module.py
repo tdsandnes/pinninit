@@ -99,7 +99,8 @@ class TrainerModule:
 
 
 class PlateauTrainerModule(TrainerModule):
-    """Base class for trainer modules that act when validation loss plateaus."""
+    """Base class for trainer modules that act when the geometric mean
+    validation loss plateaus."""
 
     def __init__(
         self, patience: int, frac_tol: float = 0.0, min_epoch: int = 0
@@ -108,52 +109,27 @@ class PlateauTrainerModule(TrainerModule):
             raise ValueError(f"patience must be >= 1, got {patience}")
         if min_epoch < 0:
             raise ValueError(f"min_epoch must be >= 0, got {min_epoch}")
-        self.patience = patience
-        self.frac_tol = frac_tol
         self.min_epoch = min_epoch
+        self.plateau_detector = LossPlateauDetector(patience, frac_tol)
 
-        self.geometric_mean_label = "geometric_mean"
-        self.plateau_detectors: dict[str, LossPlateauDetector] = {}
-
-    def _init_plateau_detectors(self, trainer: Trainer) -> None:
-        # Plateau detector for geometric mean val loss
-        self.plateau_detectors = {
-            self.geometric_mean_label: LossPlateauDetector(self.patience, self.frac_tol)
-        }
-
-    def _reset_plateau_detectors(self) -> None:
-        for plateau_detector in self.plateau_detectors.values():
-            plateau_detector.reset()
-
-    def _step_plateau_detectors_full(self, trainer: Trainer) -> bool:
-        """Feed the epoch's full-set validation losses to detectors. Returns True
-        if all detectors have detected a plateau."""
-        full_losses = trainer.epoch_val_losses
-        for label, detector in self.plateau_detectors.items():
-            if label in full_losses:
-                detector.step(full_losses[label])
-            elif label == self.geometric_mean_label:
-                detector.step(trainer.epoch_geometric_mean_val_loss)
-            else:
-                raise KeyError(f"No loss value found for label {label}")
-        return all(d.plateau_detected for d in self.plateau_detectors.values())
+    def _step_plateau_detector(self, trainer: Trainer) -> bool:
+        """Give the epoch's geometric mean validation loss to the plateau
+        detector. Returns True if it has detected a plateau."""
+        self.plateau_detector.step(trainer.epoch_geometric_mean_val_loss)
+        return self.plateau_detector.plateau_detected
 
     def state_dict(self) -> dict[str, Any]:
+        detector = self.plateau_detector
         return {
-            "plateau_detectors": {
-                label: {
-                    "best": d.best,
-                    "best_history": list(d.best_history),
-                    "plateau_detected": d.plateau_detected,
-                }
-                for label, d in self.plateau_detectors.items()
+            "plateau_detector": {
+                "best": detector.best,
+                "best_history": list(detector.best_history),
+                "plateau_detected": detector.plateau_detected,
             }
         }
 
     def load_state_dict(self, state: dict[str, Any], trainer: Trainer) -> None:
-        for label, d_state in state.get("plateau_detectors", {}).items():
-            if label in self.plateau_detectors:
-                detector = self.plateau_detectors[label]
-                detector.best = d_state["best"]
-                detector.best_history = list(d_state["best_history"])
-                detector.plateau_detected = d_state["plateau_detected"]
+        detector_state = state["plateau_detector"]
+        self.plateau_detector.best = detector_state["best"]
+        self.plateau_detector.best_history = list(detector_state["best_history"])
+        self.plateau_detector.plateau_detected = detector_state["plateau_detected"]

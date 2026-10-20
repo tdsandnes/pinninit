@@ -58,8 +58,8 @@ class LossTermStaggering(PlateauTrainerModule):
                 f"Expected {expected_keys}, got {keys}."
             )
 
-        # Initialise plateau detectors
-        self._init_plateau_detectors(trainer)
+        # Start detecting plateaus from scratch
+        self.plateau_detector.reset()
 
         # Training can only stop after all loss terms have been activated
         trainer.state.init_stop_barrier(self.stop_barrier_label)
@@ -72,7 +72,7 @@ class LossTermStaggering(PlateauTrainerModule):
     def on_epoch_end(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        # Wait until min_epoch to update plateau detectors
+        # Wait until min_epoch to update the plateau detector
         if trainer.epoch < self.min_epoch:
             return
 
@@ -81,7 +81,7 @@ class LossTermStaggering(PlateauTrainerModule):
             return
 
         # If validation loss has plateaued, activate next stagger group
-        if self._step_plateau_detectors_full(trainer):
+        if self._step_plateau_detector(trainer):
             # Update counter
             self.current_stagger_idx += 1
             current_stagger = self.current_stagger_idx
@@ -102,8 +102,8 @@ class LossTermStaggering(PlateauTrainerModule):
                 if logger is not None:
                     logger.log_event("activated_loss_term_" + label)
 
-            # Init new plateau detectors, including the newly activated containers
-            self._init_plateau_detectors(trainer)
+            # Start detecting plateaus from scratch, with the new loss terms
+            self.plateau_detector.reset()
 
             # Check if all loss terms are now active
             if self.current_stagger_idx == len(self.staggering_container_dict) - 1:
@@ -125,8 +125,8 @@ class LossTermStaggering(PlateauTrainerModule):
     def on_state_change(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        # Reset counter if another module changed trainer state
-        self._reset_plateau_detectors()
+        # Start detecting plateaus from scratch, as the trainer state changed
+        self.plateau_detector.reset()
 
     def state_dict(self) -> dict[str, Any]:
         state = super().state_dict()

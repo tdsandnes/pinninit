@@ -123,8 +123,11 @@ class LossTermContainer:
         residuals = []
         for batch_coords in eval_context.batches.in_order():
             self._apply_model(model, batch_coords, eval_context)
-            residual = self.loss_term.compute_residual(eval_context, batch_coords)
-            residuals.append(residual.detach())
+            residuals.append(
+                self.loss_term.compute_residual(eval_context, batch_coords).detach()
+            )
+            # Free the batch's autograd graph, which its fields hold
+            eval_context.output_data.clear_fields()
 
         loss = eval_context.loss_function(
             residuals=torch.cat(residuals),

@@ -53,28 +53,16 @@ def load_data(
 
 # Scatter plotting
 def plot_training_scatter(
-    pinn: pinninit.PINN,
-    coords: Coords | None,
+    coords: Coords,
+    fields: TensorDict,
     label: str,
     marker: MarkerType,
     color: str,
 ) -> None:
-    if coords is None:
-        return
-
-    with torch.no_grad():
-        model_out = pinn.evaluate_model(coords)
-
-    x_train = coords.get_coord("x").detach().cpu().numpy()
-    f_train = model_out[:, 0].cpu().numpy()
-
-    idx = np.argsort(x_train)
-    x_train = x_train[idx]
-    f_train = f_train[idx]
-
+    """The training points, at their values of f."""
     plt.scatter(
-        x_train,
-        f_train,
+        coords.get_coord("x").cpu().numpy(),
+        fields["f"].cpu().numpy(),
         s=25,
         marker=marker,
         color=color,
@@ -87,12 +75,11 @@ def plot_training_scatter(
 
 def plot_model_output(
     output_filepath: str | Path,
-    pinn: pinninit.PINN,
     test_coords: Coords,
     test_fields: TensorDict,
     test_model_output: torch.Tensor,
-    data_loss_coords: Coords | None = None,
-    phys_loss_coords: Coords | None = None,
+    data_loss: tuple[Coords, TensorDict],
+    phys_loss: tuple[Coords, TensorDict],
 ) -> None:
     # Test data
     x = test_coords.get_coord("x").detach().cpu().numpy().squeeze()
@@ -109,20 +96,8 @@ def plot_model_output(
     plt.plot(x, f_pred, "r--", label="PINN prediction")
 
     # Scatter points for training sets
-    plot_training_scatter(
-        pinn,
-        phys_loss_coords,
-        "Training collocation points",
-        "^",
-        "green",
-    )
-    plot_training_scatter(
-        pinn,
-        data_loss_coords,
-        "Training data points",
-        "o",
-        "blue",
-    )
+    plot_training_scatter(*phys_loss, "Training collocation points", "^", "green")
+    plot_training_scatter(*data_loss, "Training data points", "o", "blue")
 
     plt.ylim((-1.5, 3.5))
     plt.xlabel(r"$x$")
@@ -161,7 +136,7 @@ if __name__ == "__main__":
     )
 
     # Load training data
-    data_loss_coords, _ = load_data(
+    data_loss = load_data(
         TRAIN_DATA_FILE,
         "data_loss",
         "train",
@@ -169,7 +144,7 @@ if __name__ == "__main__":
         device,
     )
 
-    phys_loss_coords, _ = load_data(
+    phys_loss = load_data(
         TRAIN_DATA_FILE,
         "phys_loss",
         "train",
@@ -190,10 +165,9 @@ if __name__ == "__main__":
     # Plot
     plot_model_output(
         output_filepath,
-        pinn,
         test_coords,
         test_fields,
         test_model_output,
-        data_loss_coords,
-        phys_loss_coords,
+        data_loss,
+        phys_loss,
     )

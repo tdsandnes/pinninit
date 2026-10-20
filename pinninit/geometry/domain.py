@@ -72,8 +72,8 @@ class Domain:
                     f"got [{lb}, {ub}]"
                 )
 
-            self.geometric_lb[axis] = torch.tensor(lb, device=self.device)
-            self.geometric_ub[axis] = torch.tensor(ub, device=self.device)
+            self.geometric_lb[axis] = torch.tensor(float(lb), device=self.device)
+            self.geometric_ub[axis] = torch.tensor(float(ub), device=self.device)
 
     def _set_non_geometric_bounds(
         self,
@@ -98,8 +98,8 @@ class Domain:
                     f"Lower bound must be <= upper bound for axis '{axis}', "
                     f"got [{lb}, {ub}]"
                 )
-            self.non_geometric_lb[axis] = torch.tensor(lb, device=self.device)
-            self.non_geometric_ub[axis] = torch.tensor(ub, device=self.device)
+            self.non_geometric_lb[axis] = torch.tensor(float(lb), device=self.device)
+            self.non_geometric_ub[axis] = torch.tensor(float(ub), device=self.device)
 
     def _set_internal_bounds(self) -> None:
         # Derive internal bounds from coord system

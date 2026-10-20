@@ -50,8 +50,8 @@ class LearningRateSchedule(PlateauTrainerModule):
     def on_train_start(
         self, trainer: Trainer, logger: TrainerLogger | None = None
     ) -> None:
-        # Initialise plateau detectors
-        self._init_plateau_detectors(trainer)
+        # Start detecting plateaus from scratch
+        self.plateau_detector.reset()
 
         # Training can only stop after learning rate schedule is finished
         trainer.state.init_stop_barrier(self.stop_barrier_label)
@@ -108,7 +108,7 @@ class LearningRateSchedule(PlateauTrainerModule):
             return
 
         # If validation loss has plateaued, decay learning rate
-        if self._step_plateau_detectors_full(trainer):
+        if self._step_plateau_detector(trainer):
             # Load the best model
             trainer.load_best_model()
 
@@ -136,8 +136,8 @@ class LearningRateSchedule(PlateauTrainerModule):
                     trainer.epoch + self.coast_epochs_after_update,
                 )
 
-            # Re-initialise plateau detectors
-            self._init_plateau_detectors(trainer)
+            # Start detecting plateaus from scratch
+            self.plateau_detector.reset()
 
             # Update counter
             self.event_count += 1
@@ -152,8 +152,8 @@ class LearningRateSchedule(PlateauTrainerModule):
         if self.event_count >= self.n_events:
             return
 
-        # Fully re-initialise plateau detectors in case new containers were added
-        self._init_plateau_detectors(trainer)
+        # Start detecting plateaus from scratch, as the trainer state changed
+        self.plateau_detector.reset()
 
     def state_dict(self) -> dict[str, Any]:
         state = super().state_dict()

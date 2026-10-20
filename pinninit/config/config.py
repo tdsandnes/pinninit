@@ -133,6 +133,21 @@ class FieldsConfig:
                 f"Labels {overlap} appear in both output_fields and derivable_fields."
             )
 
+        # A field with data (input_fields) and a prediction (output_fields or
+        # derivable_fields) needs the same rank in both
+        predicted_ranks = {
+            field.label: field.rank
+            for field in self.output_fields + self.derivable_fields
+        }
+        for input_field in self.input_fields:
+            rank = predicted_ranks.get(input_field.label, input_field.rank)
+            if rank != input_field.rank:
+                raise ValueError(
+                    f"Field '{input_field.label}' has rank {input_field.rank} in "
+                    f"input_fields but rank {rank} in output_fields or "
+                    "derivable_fields."
+                )
+
     @property
     def input_field_label_to_rank(self) -> dict[str, int]:
         return {field.label: field.rank for field in self.input_fields}

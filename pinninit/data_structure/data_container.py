@@ -144,6 +144,11 @@ class DataContainer:
             )
         self.consts[label] = value
 
+    def clear_fields(self) -> None:
+        """Forget the values of all fields, e.g. to free the autograd graphs
+        they hold."""
+        self.fields.clear()
+
     def evaluate_derived_fields(
         self, coords: Coords | None = None, labels: list[str] | None = None
     ) -> None:
