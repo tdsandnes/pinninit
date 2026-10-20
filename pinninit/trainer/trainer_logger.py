@@ -118,7 +118,7 @@ class TrainerLogger:
         if trainer.epoch % self.print_freq == 0:
             self._print_summary(
                 f"Epoch: {trainer.epoch}  (iter {trainer.iter}, "
-                f"{_format_time(trainer.elapsed_train_time)} elapsed)",
+                f"wall-clock time: {_format_time(trainer.elapsed_train_time)})",
                 "Training loss (epoch mean of batch losses)",
                 epoch_train_losses,
                 full_val_losses,
