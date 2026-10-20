@@ -78,7 +78,7 @@ LossTerms:
 
 NN:
   type: feedforward
-  hidden_layer_widths: [60, 60, 60, 60, 60, 60]
+  hidden_layer_widths: [60, 60, 60]
   layer_types: siren
   activation_functions: siren
   init_weights: siren
@@ -92,20 +92,19 @@ Trainer:
     betas: [0.99, 0.99]
     weight_decay: 0.0
     precondition_frequency: 1
-  max_epoch: 20000
-  warmup_epochs: 20
+  warmup_epochs: 100
   print_freq: 100
-  n_batches: 2
+  n_batches: 1
   TrainerModules:
-    - label: rba
-      method_name: residual_based_attention_a24
-      gamma: 0.999
-      eta: 0.01
     - label: w23
       method_name: adaptive_weights_w23
       alpha: 0.9
       update_iter_frequency: 100
       loss_function: weighted_mse
+    - label: rba
+      method_name: residual_based_attention_a24
+      gamma: 0.999
+      eta: 0.01
     - label: early_stopping
       method_name: early_stopping
       patience: 500
