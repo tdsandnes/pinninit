@@ -47,9 +47,7 @@ class LearningRateSchedule(PlateauTrainerModule):
         self.event_count = 0
         self.stop_barrier_label = self.__class__.__name__
 
-    def on_train_start(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_train_start(self, trainer: Trainer, logger: TrainerLogger) -> None:
         # Start detecting plateaus from scratch
         self.plateau_detector.reset()
 
@@ -71,9 +69,7 @@ class LearningRateSchedule(PlateauTrainerModule):
         for group in param_groups:
             group["lr"] = self.lr_init
 
-    def on_epoch_end(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_epoch_end(self, trainer: Trainer, logger: TrainerLogger) -> None:
         # Don't do anything if already finished
         if self.event_count >= self.n_events:
             return
@@ -94,8 +90,7 @@ class LearningRateSchedule(PlateauTrainerModule):
             # Print message when warmup finishes
             if trainer.epoch == self.warmup_epochs:
                 print(f"Learning rate warmup completed after epoch {trainer.epoch}.")
-                if logger is not None:
-                    logger.log_event("learning_rate_warmup_complete")
+                logger.log_event("learning_rate_warmup_complete")
 
             return
 
@@ -123,8 +118,7 @@ class LearningRateSchedule(PlateauTrainerModule):
                 )
 
             # Log learning rate decay
-            if logger is not None:
-                logger.log_event("learning_rate_decay")
+            logger.log_event("learning_rate_decay")
 
             # Notify trainer that its state has changed
             trainer.state.state_updated = True
@@ -146,9 +140,7 @@ class LearningRateSchedule(PlateauTrainerModule):
             if self.event_count >= self.n_events:
                 trainer.state.update_stop_barrier(self.stop_barrier_label, True)
 
-    def on_state_change(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_state_change(self, trainer: Trainer, logger: TrainerLogger) -> None:
         if self.event_count >= self.n_events:
             return
 

@@ -50,9 +50,7 @@ class AdaptiveWeightsW23(TrainerModule):
         # Maps weight_group_label to LossTermContainers
         self.adaptive_groups: dict[str, list[LossTermContainer]] = {}
 
-    def on_train_start(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_train_start(self, trainer: Trainer, logger: TrainerLogger) -> None:
         self.adaptive_groups = adaptive_weight_groups(
             trainer, WeightMethodLabels.ADAPTIVE_W23
         )
@@ -60,9 +58,7 @@ class AdaptiveWeightsW23(TrainerModule):
             for container in container_list:
                 container.loss_term_weight = container.initial_weight
 
-    def on_pre_optimizer_step(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_pre_optimizer_step(self, trainer: Trainer, logger: TrainerLogger) -> None:
         if trainer.iter < self.min_iter:
             return
         if trainer.iter % self.update_iter_frequency == 0:

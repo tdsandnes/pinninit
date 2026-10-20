@@ -61,7 +61,6 @@ class TestFields:
 
         assert torch.equal(data.get_field_tensor("u"), 2.0 * x)
         assert torch.equal(data.get_field_component_tensor("v"), v)
-        assert torch.equal(data.get_field_component("v", "y"), y)
 
         data.set_field_from_component_dict("v", {"x": y, "y": x})
 
@@ -98,7 +97,7 @@ class TestFields:
         assert data.get_field("u").coords is batch
         assert torch.equal(data.get_field_tensor("u", batch), batch_values)
         # The other points have no values now, so the full field can't be read
-        with pytest.raises(ValueError, match="must be the active coords"):
+        with pytest.raises(ValueError, match="must be the container's coords"):
             data.get_field_tensor("u")
 
     def test_setting_on_unrelated_coords_raises(
@@ -109,7 +108,7 @@ class TestFields:
             x=torch.zeros(N_POINTS, device=device),
             y=torch.zeros(N_POINTS, device=device),
         )
-        with pytest.raises(ValueError, match="must be the active coords"):
+        with pytest.raises(ValueError, match="must be the container's coords"):
             data.set_field_from_tensor(
                 "u", torch.zeros(N_POINTS, device=device), unrelated
             )
@@ -216,7 +215,7 @@ class TestDerivedFieldEvaluation:
         data.evaluate_derived_fields(batch)
 
         assert torch.equal(data.get_field_tensor("a", batch), batch.get_coord("x"))
-        with pytest.raises(ValueError, match="must be the active coords"):
+        with pytest.raises(ValueError, match="must be the container's coords"):
             data.get_field_tensor("a")
 
     def test_unset_primary_field_input_raises(self, coords_2d: Coords) -> None:

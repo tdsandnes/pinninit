@@ -72,9 +72,7 @@ class BalancedResidualDecayRateC25(TrainerModule):
     def summary(self) -> str:
         return f"BRDR scaling factor s: {self.scaling_factor_s:.6g} \n"
 
-    def on_train_start(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_train_start(self, trainer: Trainer, logger: TrainerLogger) -> None:
         self.containers = adaptive_point_weight_containers(trainer, type(self).__name__)
         self.scaling_factor_s = 1.0
         self.last_update_iter = 0
@@ -105,9 +103,7 @@ class BalancedResidualDecayRateC25(TrainerModule):
                     ),
                 )
 
-    def on_pre_optimizer_step(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_pre_optimizer_step(self, trainer: Trainer, logger: TrainerLogger) -> None:
         if trainer.iter < self.min_iter:
             return
 

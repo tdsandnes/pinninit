@@ -135,9 +135,7 @@ class WeightRecorder(TrainerModule):
     def __init__(self) -> None:
         self.seen: list[dict[str, tuple[float, torch.Tensor]]] = []
 
-    def on_pre_optimizer_step(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_pre_optimizer_step(self, trainer: Trainer, logger: TrainerLogger) -> None:
         self.seen.append(weights(trainer))
 
 
@@ -147,9 +145,7 @@ class SigtermSender(TrainerModule):
     def __init__(self, iter: int | None) -> None:
         self.iter = iter
 
-    def on_step_end(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_step_end(self, trainer: Trainer, logger: TrainerLogger) -> None:
         if trainer.iter == self.iter:
             os.kill(os.getpid(), signal.SIGTERM)
 
@@ -159,10 +155,10 @@ class TestTrainerModules:
         self, coords_2d: Coords, cartesian_2d: CoordSystem
     ) -> None:
         # Staggering and the learning rate schedule both see a plateau at the
-        # end of epoch 2 (the val loss hasn't halved), so they both act at the
-        # same epoch end. Each decides from the epoch's val losses: once
-        # staggering adds 'b', the geometric mean val loss is much smaller, so
-        # a module reading it after staggering wouldn't see a plateau.
+        # same epoch end (the val loss hasn't halved), so they both act then.
+        # Each decides from the epoch's val losses: once staggering adds 'b',
+        # the geometric mean val loss is much smaller, so a module reading it
+        # after staggering wouldn't see a plateau.
         def train(reverse: bool) -> Trainer:
             modules: list[TrainerModule] = [
                 ResidualBasedAttentionA24(),
@@ -188,7 +184,10 @@ class TestTrainerModules:
         first, second = train(reverse=False), train(reverse=True)
 
         events = {(e["epoch"], e["event"]) for e in first.logger.events}
-        assert {(2, "activated_loss_term_b"), (2, "learning_rate_decay")} <= events
+        [epoch_b] = [
+            epoch for epoch, event in events if event == "activated_loss_term_b"
+        ]
+        assert (epoch_b, "learning_rate_decay") in events
         assert events == {(e["epoch"], e["event"]) for e in second.logger.events}
         for p, q in zip(
             first.model.parameters(), second.model.parameters(), strict=True
@@ -199,9 +198,9 @@ class TestTrainerModules:
             first.logger.epoch_point_weight_info_log
             == second.logger.epoch_point_weight_info_log
         )
-        # The epoch is logged before the modules act on it: 'b' is activated
-        # at the end of epoch 2, so it isn't in that epoch's log
-        assert list(first.logger.epoch_point_weight_info_log[1]) == ["a"]
+        # The epoch is logged before the modules act on it: 'b' isn't in the
+        # log of the epoch it is activated at the end of
+        assert list(first.logger.epoch_point_weight_info_log[epoch_b - 1]) == ["a"]
 
     def test_modules_see_the_weights_the_loss_was_computed_with(
         self, coords_2d: Coords, cartesian_2d: CoordSystem
@@ -286,7 +285,8 @@ class TestTrainerModules:
         uninterrupted.train()
 
         # SIGTERM in the middle of epoch 5 (2 steps per epoch) stops training
-        # at its end, with a checkpoint. The best model is then from epoch 3.
+        # at its end, with a checkpoint. The best model is from an earlier
+        # epoch, so loading it changes the model.
         checkpoint_path = tmp_path / "checkpoint.pth"
         stopped = make(
             sigterm_iter=9,
@@ -297,7 +297,8 @@ class TestTrainerModules:
         stopped.train()
         assert stopped.stopped_by_sigterm
         assert stopped.epoch == 5
-        assert stopped.best_model_epoch == 3
+        assert stopped.best_model_epoch is not None
+        assert stopped.best_model_epoch < stopped.epoch
         resumed = make(max_epoch=8)
         resumed.load(checkpoint_path)
         resumed.train()

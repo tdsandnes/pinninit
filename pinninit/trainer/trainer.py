@@ -610,8 +610,7 @@ class Trainer:
         checkpoint = torch.load(path, map_location=device, weights_only=True)
         self.model.load_state_dict(checkpoint["model_state_dict"])
 
-        # Checkpoints saved before parameters were stored have none
-        saved_parameters = checkpoint.get("parameters")
+        saved_parameters = checkpoint["parameters"]
         changes = (
             changed_parameters(saved_parameters, self.parameters)
             if saved_parameters is not None and self.parameters is not None

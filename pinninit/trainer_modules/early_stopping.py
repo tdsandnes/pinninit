@@ -16,15 +16,11 @@ class EarlyStopping(PlateauTrainerModule):
     runs_during_coast = False
     stops_training = True
 
-    def on_train_start(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_train_start(self, trainer: Trainer, logger: TrainerLogger) -> None:
         # Start detecting plateaus from scratch
         self.plateau_detector.reset()
 
-    def on_epoch_end(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_epoch_end(self, trainer: Trainer, logger: TrainerLogger) -> None:
         # Wait until min_epoch to update the plateau detector
         if trainer.epoch < self.min_epoch:
             return
@@ -34,11 +30,8 @@ class EarlyStopping(PlateauTrainerModule):
             trainer.state.stop_requested = True
 
             # Log early stopping request
-            if logger is not None:
-                logger.log_event("early_stopping_requested")
+            logger.log_event("early_stopping_requested")
 
-    def on_state_change(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_state_change(self, trainer: Trainer, logger: TrainerLogger) -> None:
         # Start detecting plateaus from scratch, as the trainer state changed
         self.plateau_detector.reset()

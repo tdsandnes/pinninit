@@ -45,7 +45,6 @@ class DataContainer:
         self.coords = coords
         self.coord_labels = coords.coord_labels
         self.device = coords.device
-        self.primary_field_labels = set(primary_field_label_to_rank)
         self.derived_field_labels = set(derived_field_label_to_rank)
 
         # The Field class of each field, and the field once it has been set
@@ -81,12 +80,6 @@ class DataContainer:
     ) -> torch.Tensor:
         field, coords = self._field_to_read(label, coords)
         return field.tensor(coords)
-
-    def get_field_component(
-        self, field_label: str, component_label: str, coords: Coords | None = None
-    ) -> torch.Tensor:
-        field, coords = self._field_to_read(field_label, coords)
-        return field.get_component(component_label, coords)
 
     def get_field_component_tensor(
         self, label: str, coords: Coords | None = None
@@ -204,7 +197,7 @@ class DataContainer:
         coords = self.coords if coords is None else coords
         if not self.coords.is_ancestor_of(coords):
             raise ValueError(
-                f"Evaluation coords for '{label}' must be the active coords "
+                f"Evaluation coords for '{label}' must be the container's coords "
                 "or a descendant of them."
             )
         return self.field_classes[label](label=label, coords=coords)
@@ -215,7 +208,7 @@ class DataContainer:
         coords = self.coords if coords is None else coords
         if not field.coords.is_ancestor_of(coords):
             raise ValueError(
-                f"Evaluation coords for '{label}' must be the active coords "
+                f"Evaluation coords for '{label}' must be the container's coords "
                 "or a descendant of them."
             )
         return field, coords

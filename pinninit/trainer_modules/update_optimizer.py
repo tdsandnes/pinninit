@@ -35,18 +35,14 @@ class UpdateOptimizer(PlateauTrainerModule):
         self.updated = False
         self.stop_barrier_label = self.__class__.__name__
 
-    def on_train_start(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_train_start(self, trainer: Trainer, logger: TrainerLogger) -> None:
         # Start detecting plateaus from scratch
         self.plateau_detector.reset()
 
         # Training can only stop after optimizer has been updated
         trainer.state.init_stop_barrier(self.stop_barrier_label)
 
-    def on_epoch_end(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_epoch_end(self, trainer: Trainer, logger: TrainerLogger) -> None:
         # Don't do anything if already updated
         if self.updated:
             return
@@ -76,8 +72,7 @@ class UpdateOptimizer(PlateauTrainerModule):
             print(f"Optimizer updated on epoch {trainer.epoch}.")
 
             # Log optimizer update
-            if logger is not None:
-                logger.log_event("optimizer_update")
+            logger.log_event("optimizer_update")
 
             # Notify trainer that its state has changed
             trainer.state.state_updated = True
@@ -92,9 +87,7 @@ class UpdateOptimizer(PlateauTrainerModule):
             # Remove stop barrier
             trainer.state.update_stop_barrier(self.stop_barrier_label, True)
 
-    def on_state_change(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_state_change(self, trainer: Trainer, logger: TrainerLogger) -> None:
         if self.updated:
             return
 

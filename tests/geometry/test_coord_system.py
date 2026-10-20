@@ -237,20 +237,27 @@ class TestVectorTransforms:
         expected = torch.tensor([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]], device=device)
         assert torch.allclose(cartesian, expected, atol=1e-6)
 
-    def test_spherical_round_trip(
+    def test_spherical_unit_vectors_on_the_y_axis(
         self, spherical_3d: CoordSystem, device: torch.device
     ) -> None:
+        # At theta = phi = pi/2: e_r = y, e_theta = -z and e_phi = -x
         geometric = {
-            "r": torch.tensor([1.0, 2.0], device=device),
-            "theta": torch.tensor([0.4, 1.2], device=device),
-            "phi": torch.tensor([0.5, 4.0], device=device),
+            "r": torch.full((3,), 2.0, device=device),
+            "theta": torch.full((3,), PI / 2, device=device),
+            "phi": torch.full((3,), PI / 2, device=device),
         }
-        v = torch.randn(2, 3, device=device)
+        unit_vectors = torch.eye(3, device=device)
+        expected = torch.tensor(
+            [[0.0, 1.0, 0.0], [0.0, 0.0, -1.0], [-1.0, 0.0, 0.0]], device=device
+        )
 
-        cartesian = spherical_3d.transform_geometric_to_cartesian(v, geometric)
+        cartesian = spherical_3d.transform_geometric_to_cartesian(
+            unit_vectors, geometric
+        )
         back = spherical_3d.transform_cartesian_to_geometric(cartesian, geometric)
 
-        assert torch.allclose(back, v, atol=1e-6)
+        assert torch.allclose(cartesian, expected, atol=1e-6)
+        assert torch.allclose(back, unit_vectors, atol=1e-6)
 
 
 class TestInternalBounds:

@@ -66,9 +66,7 @@ class ResidualBasedAttentionA24(TrainerModule):
         # Containers whose training loss uses adaptive point weights
         self.containers: dict[str, LossTermContainer] = {}
 
-    def on_train_start(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_train_start(self, trainer: Trainer, logger: TrainerLogger) -> None:
         self.containers = adaptive_point_weight_containers(trainer, type(self).__name__)
 
         # Initialise lambda (stored as w = lambda^2)
@@ -80,9 +78,7 @@ class ResidualBasedAttentionA24(TrainerModule):
                 )
             )
 
-    def on_pre_optimizer_step(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_pre_optimizer_step(self, trainer: Trainer, logger: TrainerLogger) -> None:
         if trainer.iter < self.min_iter:
             return
 

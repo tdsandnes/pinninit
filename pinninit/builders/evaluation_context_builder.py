@@ -50,8 +50,7 @@ def build_evaluation_contexts(
     This function:
       1. Loads train and val coordinates and input fields from HDF5
       2. Builds input and output DataContainers for each role
-      3. Wires up the shared loss function
-      4. Splits the coords into batches
+      3. Splits the coords into batches
 
     Parameters
     ----------

@@ -14,7 +14,7 @@ def build_coords_class(
     device: torch.device,
 ) -> type[Coords]:
     """
-    Build the Coords *class* (not an instance) for a given CoordinatesConfig.
+    Build the Coords *class* (not an instance) for a given CoordSystemConfig.
 
     The class encodes the coordinate labels, coord system, and device. An
     instance is created later once the actual coordinate tensors are available

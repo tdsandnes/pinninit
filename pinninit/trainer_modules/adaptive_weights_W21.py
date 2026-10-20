@@ -55,9 +55,7 @@ class AdaptiveWeightsW21(TrainerModule):
         self.adaptive_groups: dict[str, list[LossTermContainer]] = {}
         self.reference_weight_group: list[LossTermContainer] = []
 
-    def on_train_start(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_train_start(self, trainer: Trainer, logger: TrainerLogger) -> None:
         self.adaptive_groups = adaptive_weight_groups(
             trainer, WeightMethodLabels.ADAPTIVE_W21
         )
@@ -83,9 +81,7 @@ class AdaptiveWeightsW21(TrainerModule):
                     f"'{container.weight_method_label.value}'."
                 )
 
-    def on_pre_optimizer_step(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_pre_optimizer_step(self, trainer: Trainer, logger: TrainerLogger) -> None:
         if trainer.iter < self.min_iter:
             return
         if trainer.iter % self.update_iter_frequency == 0:

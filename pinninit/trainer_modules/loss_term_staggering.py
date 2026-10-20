@@ -36,9 +36,7 @@ class LossTermStaggering(PlateauTrainerModule):
         self.stop_barrier_label = self.__class__.__name__
         self.completed = False
 
-    def on_train_start(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_train_start(self, trainer: Trainer, logger: TrainerLogger) -> None:
         self.current_stagger_idx = 0
 
         # Get the staggering values of containers
@@ -69,9 +67,7 @@ class LossTermStaggering(PlateauTrainerModule):
         if self.completed:
             trainer.state.update_stop_barrier(self.stop_barrier_label, True)
 
-    def on_epoch_end(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_epoch_end(self, trainer: Trainer, logger: TrainerLogger) -> None:
         # Wait until min_epoch to update the plateau detector
         if trainer.epoch < self.min_epoch:
             return
@@ -99,8 +95,7 @@ class LossTermStaggering(PlateauTrainerModule):
 
                 # Log loss container activation
                 print(f"Activated loss term {label} on epoch {trainer.epoch}.")
-                if logger is not None:
-                    logger.log_event("activated_loss_term_" + label)
+                logger.log_event("activated_loss_term_" + label)
 
             # Start detecting plateaus from scratch, with the new loss terms
             self.plateau_detector.reset()
@@ -122,9 +117,7 @@ class LossTermStaggering(PlateauTrainerModule):
                     trainer.epoch + self.coast_epochs_after_update,
                 )
 
-    def on_state_change(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_state_change(self, trainer: Trainer, logger: TrainerLogger) -> None:
         # Start detecting plateaus from scratch, as the trainer state changed
         self.plateau_detector.reset()
 

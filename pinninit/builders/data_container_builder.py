@@ -56,5 +56,5 @@ def populate_consts(
         if not cfg.learnable:
             value = torch.tensor(cfg.value, device=data_container.device)
             data_container.set_const(cfg.label, value)
-        # Learnable constants are handled separately by the NN/trainer builder
-        # since they need to be registered as nn.Parameters.
+        # Learnable constants are set by the PINN builder, which registers them
+        # as nn.Parameters on the model

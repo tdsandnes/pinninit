@@ -18,7 +18,8 @@ class TrainerModule:
     A module changes the training through the trainer: update_point_weights,
     update_loss_term_weight, replace_optimizer and state.update_stop_barrier.
     The trainer applies these changes once all the modules have run, so every
-    module sees the same state and the order of the modules doesn't matter.
+    module sees the same state. Modules that only change the training this way
+    can run in any order (as the built-in modules do, which is tested).
     """
 
     # Class attributes
@@ -31,24 +32,16 @@ class TrainerModule:
     # so that training ends without max_epoch
     stops_training: ClassVar[bool] = False
 
-    def on_train_start(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_train_start(self, trainer: Trainer, logger: TrainerLogger) -> None:
         pass
 
-    def on_train_end(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_train_end(self, trainer: Trainer, logger: TrainerLogger) -> None:
         pass
 
-    def on_step_start(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_step_start(self, trainer: Trainer, logger: TrainerLogger) -> None:
         pass
 
-    def on_pre_optimizer_step(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_pre_optimizer_step(self, trainer: Trainer, logger: TrainerLogger) -> None:
         """Called after the training loss and gradients are computed (residuals
         cached) but before the optimizer applies the parameter update.
 
@@ -63,14 +56,10 @@ class TrainerModule:
         requires a fixed loss (e.g. L-BFGS)."""
         pass
 
-    def on_step_end(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_step_end(self, trainer: Trainer, logger: TrainerLogger) -> None:
         pass
 
-    def on_epoch_end(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_epoch_end(self, trainer: Trainer, logger: TrainerLogger) -> None:
         """Called at the end of each epoch (a full pass over the training data),
         after the epoch's results are logged.
 
@@ -80,9 +69,7 @@ class TrainerModule:
         have run, and the best model is only loaded once in a step."""
         pass
 
-    def on_state_change(
-        self, trainer: Trainer, logger: TrainerLogger | None = None
-    ) -> None:
+    def on_state_change(self, trainer: Trainer, logger: TrainerLogger) -> None:
         """Called when another module changes the trainer state
         (e.g. optimizer updated)."""
         pass
