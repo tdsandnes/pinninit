@@ -11,31 +11,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Check out the code
+      # PyTorch with CUDA, in the environment and in pre-commit's mypy hook,
+      # needs more space than the runner has free by default
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. Set up Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # 3. Install Conda
       - name: Install Miniconda
         uses: conda-incubator/setup-miniconda@v3
         with:
           auto-update-conda: true
           python-version: 3.11
 
-      # 4. Create Conda environment
       - name: Create environment
         run: conda env create -f environment.yml
 
-      # 5. Run pre-commit hooks inside the environment
       - name: Run pre-commit
         run: conda run -n pinninit pre-commit run --all-files
 
-      # 6. Run tests inside the environment
       - name: Run tests
         run: conda run -n pinninit pytest --maxfail=1 --disable-warnings -q
