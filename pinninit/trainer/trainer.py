@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from ..loss.loss_term_container import LossTermContainer
+from ..optimizer.pytorch_optimizers import LBFGS
 from .trainer_logger import TrainerLogger
 from .trainer_state import TrainerState
 
@@ -476,6 +477,15 @@ class Trainer:
         self._loss_term_weight_updates.clear()
 
         if self._next_optimizer is not None:
+            # The new optimizer would lose a learning rate decay made in this step
+            if any(
+                event["epoch"] == self.epoch and event["event"] == "learning_rate_decay"
+                for event in self.logger.events
+            ):
+                raise NotImplementedError(
+                    "Decaying the learning rate and replacing the optimizer at the "
+                    "same epoch end is not implemented."
+                )
             self.optimizer = self._next_optimizer
             self.optimizer.attach_trainer(self)
             self._next_optimizer = None
@@ -502,6 +512,8 @@ class Trainer:
     def update_best_model(self) -> None:
         """Updates best model state if validation loss is lower than previous best."""
         current = self.epoch_geometric_mean_val_loss
+        if not math.isfinite(current):
+            return
 
         if (
             self.best_geometric_mean_val_loss is None
@@ -557,6 +569,9 @@ class Trainer:
         self.logger.log_event("load_best_model")
 
         self.model.load_state_dict(self.best_model_state)
+        # L-BFGS's curvature history is from the parameters before the load
+        if isinstance(self.optimizer, LBFGS):
+            self.optimizer.optimizer.state.clear()
         self._best_model_loaded = True
         self._clear_caches()
         for label, weight in self.best_loss_term_weights.items():

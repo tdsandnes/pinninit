@@ -63,9 +63,6 @@ class UpdateOptimizer(PlateauTrainerModule):
             # Reload the best model before switching optimizer
             trainer.load_best_model()
 
-            # Reset the best model tracker
-            trainer.reset_best_model()
-
             # Update optimizer
             trainer.replace_optimizer(self.new_optimizer)
             self.updated = True

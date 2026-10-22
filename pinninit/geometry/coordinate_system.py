@@ -481,6 +481,18 @@ class SphericalCoords(CoordSystem):
         },
     )
 
+    def _validate_selected_axes(
+        self, coord_axes: set[str], fixed_axes: dict[str, float]
+    ) -> None:
+        # The cylindrical redirections only hold on the theta = pi/2 plane
+        theta = fixed_axes.get("theta", np.pi / 2)
+        if "theta" not in coord_axes and not np.isclose(theta, np.pi / 2):
+            raise NotImplementedError(
+                "Spherical coordinates with theta fixed other than pi/2 are not "
+                "implemented."
+            )
+        super()._validate_selected_axes(coord_axes, fixed_axes)
+
     def metric_tensor(
         self,
         n_points: int,

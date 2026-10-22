@@ -130,7 +130,14 @@ def build_pinn(
     domains = [container.domain for container in loss_containers.values()]
     internal_labels = get_internal_labels(loss_containers)
     periodic_coords = collect_periodic_coords(domains)
-    dim_geometric = next(iter(coord_systems.values())).dim_geometric
+    dims = {coord_system.dim_geometric for coord_system in coord_systems.values()}
+    has_vector_outputs = any(field.rank > 0 for field in config.fields.output_fields)
+    if len(dims) > 1 and has_vector_outputs:
+        raise NotImplementedError(
+            "Vector output fields with coordinate systems of different dimensions "
+            "are not implemented."
+        )
+    dim_geometric = dims.pop()
 
     model = build_nn(
         nn_config=config.nn,
@@ -150,8 +157,9 @@ def build_pinn(
     # Optimizer over model parameters
     params: list[nn.Parameter] | list[dict[str, object]]
     wd_groups = config.trainer.optimizer.weight_decay_groups
-    if wd_groups:
-        params = _build_param_groups(model, wd_groups)
+    if wd_groups or learnt_consts:
+        # Learnable physical constants aren't weight decayed
+        params = _build_param_groups(model, wd_groups, list(learnt_consts.values()))
     else:
         params = list(model.parameters())
     optimizer = build_optimizer(config.trainer.optimizer, params)
@@ -177,9 +185,12 @@ def build_pinn(
 
 
 def _build_param_groups(
-    model: NeuralNetwork, weight_decay_groups: dict[str, float]
+    model: NeuralNetwork,
+    weight_decay_groups: dict[str, float],
+    no_decay: list[nn.Parameter],
 ) -> list[dict[str, object]]:
-    """Map a {group_name: weight_decay} onto the model's named parameter groups."""
+    """Map a {group_name: weight_decay} onto the model's named parameter groups,
+    with the no_decay parameters in a group without weight decay."""
     named = model.named_parameter_groups()
     unknown = set(weight_decay_groups) - set(named)
     if unknown:
@@ -189,11 +200,14 @@ def _build_param_groups(
         )
 
     decayed_groups: list[dict[str, object]] = []
-    claimed: set[int] = set()
+    claimed: set[int] = {id(p) for p in no_decay}
     for name, decay in weight_decay_groups.items():
         params = named[name]
         decayed_groups.append({"params": params, "weight_decay": decay})
         claimed.update(id(p) for p in params)
 
     default = [p for p in model.parameters() if id(p) not in claimed]
-    return [{"params": default}, *decayed_groups]
+    groups: list[dict[str, object]] = [{"params": default}, *decayed_groups]
+    if no_decay:
+        groups.append({"params": no_decay, "weight_decay": 0.0})
+    return groups

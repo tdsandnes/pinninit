@@ -147,6 +147,20 @@ def load_parameters_from_yaml(path: str | Path) -> dict[str, Any]:
     }
 
 
+def _as_bool(value: Any, key: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"'{key}' must be true or false, got {value!r}.")
+    return value
+
+
+def _as_int(value: Any, key: str) -> int:
+    if isinstance(value, bool) or not (
+        isinstance(value, int) or (isinstance(value, float) and value.is_integer())
+    ):
+        raise ValueError(f"'{key}' must be an integer, got {value!r}.")
+    return int(value)
+
+
 def _require_keys(raw: Any, where: str, required: Iterable[str]) -> None:
     """Check that raw is a mapping with all the required keys."""
     if not isinstance(raw, dict):
@@ -274,7 +288,7 @@ def _parse_domain(raw: dict[str, Any]) -> DomainConfig:
             float(ub) if ub is not None else None,
         )
 
-        if entry.get("periodic", False):
+        if _as_bool(entry.get("periodic", False), "periodic"):
             periodic_axes.add(axis_label)
 
     return DomainConfig(
@@ -322,7 +336,10 @@ def _parse_fields(raw: dict[str, Any]) -> FieldsConfig:
 def _parse_field_list(raw: list[dict[str, Any]], where: str) -> list[FieldConfig]:
     for field in raw:
         _check_keys(field, f"a {where} entry", required=("label", "rank"))
-    return [FieldConfig(label=field["label"], rank=int(field["rank"])) for field in raw]
+    return [
+        FieldConfig(label=field["label"], rank=_as_int(field["rank"], "rank"))
+        for field in raw
+    ]
 
 
 def _parse_constants(raw: list[dict[str, Any]]) -> list[ConstConfig]:
@@ -337,7 +354,7 @@ def _parse_constants(raw: list[dict[str, Any]]) -> list[ConstConfig]:
         ConstConfig(
             label=const["label"],
             value=float(const["value"]),
-            learnable=bool(const.get("learnable", False)),
+            learnable=_as_bool(const.get("learnable", False), "learnable"),
         )
         for const in raw
     ]
@@ -414,8 +431,10 @@ def _parse_loss(raw: list[dict[str, Any]]) -> list[LossTermConfig]:
                 weight_value=float(term.get("weight_value", 1.0)),
                 weight_method_label=weight_method_label,
                 weight_group_label=term.get("weight_group_label"),
-                staggering=int(term.get("staggering", 0)),
-                adaptive_point_weights=bool(term.get("adaptive_point_weights", False)),
+                staggering=_as_int(term.get("staggering", 0), "staggering"),
+                adaptive_point_weights=_as_bool(
+                    term.get("adaptive_point_weights", False), "adaptive_point_weights"
+                ),
                 point_weight_modifier=_parse_point_weight_modifier(
                     term.get("point_weight_modifier")
                 ),
@@ -533,7 +552,7 @@ def _parse_nn(raw: dict[str, Any]) -> NNConfig:
             num_layers,
         ),
         input_transformation=input_transformation,
-        weight_norm=bool(raw.get("weight_norm", False)),
+        weight_norm=_as_bool(raw.get("weight_norm", False), "weight_norm"),
         encoder_layer_type=_parse_optional_enum(
             raw, "encoder_layer_type", LayerTypeLabels
         ),
@@ -546,7 +565,7 @@ def _parse_nn(raw: dict[str, Any]) -> NNConfig:
         encoder_init_biases=_parse_optional_enum(
             raw, "encoder_init_biases", BiasInitLabels
         ),
-        skip_connection=bool(raw.get("skip_connection", False)),
+        skip_connection=_as_bool(raw.get("skip_connection", False), "skip_connection"),
     )
 
 
@@ -579,16 +598,20 @@ def _parse_trainer(raw: dict[str, Any]) -> TrainerConfig:
     return TrainerConfig(
         optimizer=optimizer,
         trainer_modules=modules,
-        max_epoch=int(max_epoch) if max_epoch is not None else None,
-        warmup_epochs=int(raw.get("warmup_epochs", 0)),
-        print_freq=int(raw.get("print_freq", 1)),
-        n_batches=int(raw.get("n_batches", 1)),
-        shuffle=bool(raw.get("shuffle", True)),
-        log_point_weight_info=bool(raw.get("log_point_weight_info", False)),
-        point_weight_snapshot_freq=int(raw.get("point_weight_snapshot_freq", 0)),
+        max_epoch=_as_int(max_epoch, "max_epoch") if max_epoch is not None else None,
+        warmup_epochs=_as_int(raw.get("warmup_epochs", 0), "warmup_epochs"),
+        print_freq=_as_int(raw.get("print_freq", 1), "print_freq"),
+        n_batches=_as_int(raw.get("n_batches", 1), "n_batches"),
+        shuffle=_as_bool(raw.get("shuffle", True), "shuffle"),
+        log_point_weight_info=_as_bool(
+            raw.get("log_point_weight_info", False), "log_point_weight_info"
+        ),
+        point_weight_snapshot_freq=_as_int(
+            raw.get("point_weight_snapshot_freq", 0), "point_weight_snapshot_freq"
+        ),
         checkpoint_path=raw.get("checkpoint_path"),
-        checkpoint_freq=int(raw.get("checkpoint_freq", 100)),
-        stop_on_sigterm=bool(raw.get("stop_on_sigterm", False)),
+        checkpoint_freq=_as_int(raw.get("checkpoint_freq", 100), "checkpoint_freq"),
+        stop_on_sigterm=_as_bool(raw.get("stop_on_sigterm", False), "stop_on_sigterm"),
     )
 
 

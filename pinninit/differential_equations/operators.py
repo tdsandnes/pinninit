@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from ..geometry.coordinate_system import CylindricalCoords
+
 if TYPE_CHECKING:
     from ..data_structure.coords import Coords
 
@@ -66,9 +68,7 @@ class Operators:
         # Deal with case where f is indep of coord
         if any(d is None for d in derivatives):
             self._check_computed_from_coords(f)
-        derivatives = [
-            d if d is not None else torch.zeros_like(coord) for d in derivatives
-        ]
+        derivatives = [self._attach(d, coord) for d in derivatives]
 
         return torch.stack(derivatives, dim=1).reshape_as(f)
 
@@ -108,8 +108,7 @@ class Operators:
         if any(d is None for d in derivatives):
             self._check_computed_from_coords(f)
         derivatives_list = [
-            d if d is not None else torch.zeros_like(coord)
-            for d, coord in zip(derivatives, coords, strict=True)
+            self._attach(d, coord) for d, coord in zip(derivatives, coords, strict=True)
         ]
 
         derivative_f = torch.stack(derivatives_list, dim=1)
@@ -290,6 +289,13 @@ class Operators:
             field (n_points, dim_geometric)
         """
         self._check_vector(v)
+        if isinstance(self.coord_system, CylindricalCoords) and (
+            "r" in self.coord_system.fixed_axes
+        ):
+            raise NotImplementedError(
+                "vector_laplacian is not implemented for cylindrical coordinates "
+                "with r fixed."
+            )
 
         # Transform v to Cartesian
         v_cartesian = self.coord_system.transform_geometric_to_cartesian(
@@ -314,6 +320,13 @@ class Operators:
                 f"Expected a vector field of shape {expected_shape}, "
                 f"got {tuple(v.shape)}"
             )
+
+    def _attach(self, d: torch.Tensor | None, coord: torch.Tensor) -> torch.Tensor:
+        """The derivative d (zero if None), kept on coord's graph so it can be
+        differentiated again when it doesn't depend on the coords."""
+        if d is None:
+            return 0.0 * coord
+        return d if d.requires_grad else d + 0.0 * coord
 
     def _check_differentiable(self, f: torch.Tensor) -> None:
         if not f.requires_grad:

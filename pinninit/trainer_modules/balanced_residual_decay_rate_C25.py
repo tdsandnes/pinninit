@@ -84,7 +84,7 @@ class BalancedResidualDecayRateC25(TrainerModule):
 
             # Weights start at 1
             container.train_eval_context.update_point_weights(
-                torch.ones(coords.n_points, device=coords.device)
+                torch.ones(coords.n_points, dtype=coords.dtype, device=coords.device)
             )
 
             # Per-point R4 moving average and last-seen iteration
@@ -92,7 +92,9 @@ class BalancedResidualDecayRateC25(TrainerModule):
             self.r4_bar[label] = ScalarField(
                 label="brdr_r4_bar",
                 coords=coords,
-                value=torch.zeros(coords.n_points, device=coords.device),
+                value=torch.zeros(
+                    coords.n_points, dtype=coords.dtype, device=coords.device
+                ),
             )
             if self.use_minibatch_effective_betas:
                 self.n_last[label] = ScalarField(
@@ -140,6 +142,8 @@ class BalancedResidualDecayRateC25(TrainerModule):
 
         # Mean across all weighted containers
         c_bar = torch.cat(list(c_by_label.values())).mean()
+        if c_bar == 0:
+            return
 
         for label, c in c_by_label.items():
             container = containers[label]
@@ -211,6 +215,8 @@ class BalancedResidualDecayRateC25(TrainerModule):
         # term not yet activated by staggering) have no gradient.
         grads = [p.grad for p in trainer.model.parameters() if p.grad is not None]
         sum_sq_grad_L = float(sum(g.pow(2).sum() for g in grads))
+        if sum_sq_grad_L == 0:
+            return
 
         lr = trainer.optimizer.optimizer.param_groups[0]["lr"]
 

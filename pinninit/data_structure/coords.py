@@ -109,6 +109,23 @@ class Coords:
         if not torch.all(mask):
             raise ValueError("Geometric coordinates lie outside of domain.")
 
+        for axis, lb in domain.non_geometric_lb.items():
+            coord = self.get_coord(axis)
+            if not torch.all((coord >= lb) & (coord <= domain.non_geometric_ub[axis])):
+                raise ValueError(f"Coordinate '{axis}' lies outside of domain.")
+
+        # The operators divide by the metric, so they give NaN on e.g. r = 0
+        geometric = self.geometric.detach()
+        sqrt_det = self.coord_system.metric_tensor(
+            self.n_points,
+            {label: geometric[:, i] for i, label in enumerate(self.geometric_labels)},
+        ).sqrt_det.abs()
+        if torch.any(sqrt_det <= torch.finfo(sqrt_det.dtype).eps * sqrt_det.max()):
+            raise NotImplementedError(
+                "Points on a coordinate singularity (e.g. r = 0, or theta = 0 or "
+                "pi in spherical coordinates) are not supported."
+            )
+
     def _set_tensors(self) -> None:
         """
         Store coords tensor, geometric coords tensor, and internal coords tensor.
@@ -224,6 +241,12 @@ def make_coords_dataclass(
     non_geometric_labels = [
         label for label in coord_labels_sorted if label not in geometric_labels
     ]
+    clashes = set(non_geometric_labels) & set(coord_system.internal_geometric_labels)
+    if clashes:
+        raise ValueError(
+            f"Coords {sorted(clashes)} clash with the internal labels of the "
+            "coordinate system."
+        )
     internal_labels = tuple(
         sorted([*non_geometric_labels, *coord_system.internal_geometric_labels])
     )

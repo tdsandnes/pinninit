@@ -27,9 +27,8 @@ class ResidualBasedAttentionA24(TrainerModule):
 
     where the max runs over the batch.
 
-    The loss functions compute mean(w * r^2), while the paper defines the
-    RBA loss as mean((lambda * r)^2), so the stored point weights are
-    w = lambda^2.
+    The loss functions weight r^2 by w, while the paper defines the RBA loss
+    with (lambda * r)^2, so the stored point weights are w = lambda^2.
 
     Differences from the paper: lambda starts at lambda_init (the paper uses
     0), so that the loss is not zero (and a weight-normalised loss is defined)
@@ -74,7 +73,10 @@ class ResidualBasedAttentionA24(TrainerModule):
             coords = container.train_eval_context.coords
             container.train_eval_context.update_point_weights(
                 torch.full(
-                    (coords.n_points,), self.lambda_init**2, device=coords.device
+                    (coords.n_points,),
+                    self.lambda_init**2,
+                    dtype=coords.dtype,
+                    device=coords.device,
                 )
             )
 
