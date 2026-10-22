@@ -1,0 +1,162 @@
+model_name: fournier07_1D
+random_seed: 1
+
+CoordSystems:
+  - label: cartesian_xt
+    coord_system: cartesian
+    geometric_axis_labels:
+      - x
+    non_geometric_axis_labels:
+      - t
+
+Coordinates:
+  - label: data_coords
+    coord_system_label: cartesian_xt
+    domain:
+      bounds:
+        t:
+          min: 0.0
+          max: 0.2
+        x:
+          min: -1.0
+          max: 1.0
+  - label: full_coords
+    coord_system_label: cartesian_xt
+    domain:
+      bounds:
+        t:
+          min: 0.0
+          max: 0.2
+        x:
+          min: -1.0
+          max: 1.0
+
+DataSets:
+  - label: data_loss
+    source: file
+    file_path: ./data/train_val.hdf5
+  - label: phys_momentum_loss
+    source: file
+    file_path: ./data/train_val.hdf5
+  - label: phys_induction_loss
+    source: file
+    file_path: ./data/train_val.hdf5
+
+# The network outputs nn_u and nn_b, and u = (1 - x^2) * nn_u and
+# b = x + (1 - x^2) * nn_b, so the boundary conditions hold by construction
+Fields:
+  input_fields:
+    - label: b
+      rank: 0
+  output_fields:
+    - label: nn_u
+      rank: 0
+    - label: nn_b
+      rank: 0
+  derivable_fields:
+    - label: u
+      rank: 0
+    - label: b
+      rank: 0
+    - label: momentum_residual
+      rank: 0
+    - label: induction_residual
+      rank: 0
+
+Constants:
+  - label: S
+    value: 1.0
+  - label: Pm
+    value: 0.001
+
+Equations:
+  - label: u_eqn
+    function_name: u_eqn
+    file_path: ./fournier07_1D_equations.py
+    input_labels: [nn_u, x]
+    output_labels: [u]
+    output_ranks: [0]
+  - label: b_eqn
+    function_name: b_eqn
+    file_path: ./fournier07_1D_equations.py
+    input_labels: [nn_b, x]
+    output_labels: [b]
+    output_ranks: [0]
+  - label: momentum_eqn
+    function_name: momentum_eqn
+    file_path: ./fournier07_1D_equations.py
+    input_labels: [b, u, S, Pm]
+    output_labels: [momentum_residual]
+    output_ranks: [0]
+  - label: induction_eqn
+    function_name: induction_eqn
+    file_path: ./fournier07_1D_equations.py
+    input_labels: [b, u, S]
+    output_labels: [induction_residual]
+    output_ranks: [0]
+
+LossTerms:
+  - label: data_b
+    field_label: b
+    coordinates_label: data_coords
+    dataset_label: data_loss
+    loss_type: data
+    loss_function: weighted_mse
+    adaptive_point_weights: true
+    weight_value: 1.0
+    weight_method_label: adaptive_w23
+    weight_group_label: data
+  - label: momentum_eqn
+    field_label: momentum_residual
+    coordinates_label: full_coords
+    dataset_label: phys_momentum_loss
+    loss_type: physics
+    loss_function: weighted_mse
+    adaptive_point_weights: true
+    weight_value: 1.0
+    weight_method_label: adaptive_w23
+    weight_group_label: momentum_eqn
+  - label: induction_eqn
+    field_label: induction_residual
+    coordinates_label: full_coords
+    dataset_label: phys_induction_loss
+    loss_type: physics
+    loss_function: weighted_mse
+    adaptive_point_weights: true
+    weight_value: 1.0
+    weight_method_label: adaptive_w23
+    weight_group_label: induction_eqn
+
+NN:
+  type: feedforward
+  hidden_layer_widths: [100, 100, 100, 100, 100, 100]
+  layer_types: siren
+  activation_functions: siren
+  init_weights: siren
+  init_biases: all_zeros
+  input_transformation: scale_linear
+
+Trainer:
+  Optimizer:
+    optimizer: soap
+    learning_rate: 0.001
+    betas: [0.99, 0.99]
+    weight_decay: 0.0
+    precondition_frequency: 1
+  warmup_epochs: 10000
+  print_freq: 100
+  n_batches: 10
+  TrainerModules:
+    - label: w23
+      method_name: adaptive_weights_w23
+      alpha: 0.9
+      update_iter_frequency: 1000
+      loss_function: weighted_mse
+    - label: rba
+      method_name: residual_based_attention_a24
+      gamma: 0.999
+      eta: 0.01
+    - label: early_stopping
+      method_name: early_stopping
+      patience: 5000
+      frac_tol: 0.01

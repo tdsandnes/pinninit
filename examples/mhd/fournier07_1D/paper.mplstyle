@@ -1,0 +1,45 @@
+# --- Fonts ---
+font.family:        serif
+font.serif:         STIXGeneral
+mathtext.fontset:   stix
+font.size:          10
+axes.labelsize:     10
+xtick.labelsize:    8
+ytick.labelsize:    8
+legend.fontsize:    6
+legend.title_fontsize: 8
+
+# --- Ticks ---
+xtick.direction:     in
+ytick.direction:     in
+xtick.top:           True
+ytick.right:         True
+xtick.minor.visible: True
+ytick.minor.visible: True
+xtick.major.size:    3.0
+ytick.major.size:    3.0
+xtick.minor.size:    1.5
+ytick.minor.size:    1.5
+xtick.major.width:   0.5
+ytick.major.width:   0.5
+xtick.minor.width:   0.5
+ytick.minor.width:   0.5
+
+# --- Lines and axes ---
+axes.linewidth:     0.6
+lines.linewidth:    0.6
+lines.dashed_pattern: 6.0, 4.0
+
+# --- Legend ---
+legend.frameon:     True
+legend.edgecolor:   0.8
+legend.framealpha:  1.0
+legend.fancybox:    False
+
+# --- Figure and saving ---
+savefig.dpi:        300
+savefig.bbox:       standard
+figure.facecolor:   white
+axes.facecolor:     white
+savefig.facecolor:  white
+savefig.edgecolor:  white

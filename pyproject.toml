@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 line-length = 88
 indent-width = 4
 target-version = "py311"
+exclude = ["pinninit/optimizer/soap.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "UP", "B", "SIM", "I", "C4"]
@@ -15,3 +16,6 @@ ignore = []
 python_version = 3.11
 ignore_missing_imports = true
 strict = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

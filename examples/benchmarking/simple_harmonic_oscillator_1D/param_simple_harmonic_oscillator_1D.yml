@@ -1,0 +1,111 @@
+model_name: simple_harmonic_oscillator_1D
+random_seed: 12345
+
+CoordSystems:
+  - label: cartesian_x
+    coord_system: cartesian
+    geometric_axis_labels:
+      - x
+
+Coordinates:
+  - label: data_coords
+    coord_system_label: cartesian_x
+    domain:
+      bounds:
+        x:
+          min: 0.0
+          max: 12.57
+  - label: full_coords
+    coord_system_label: cartesian_x
+    domain:
+      bounds:
+        x:
+          min: 0.0
+          max: 37.70
+
+DataSets:
+  - label: data_loss
+    source: file
+    file_path: ./data/simple_harmonic_oscillator_1D_train_val.hdf5
+  - label: phys_loss
+    source: file
+    file_path: ./data/simple_harmonic_oscillator_1D_train_val.hdf5
+
+Fields:
+  input_fields:
+    - label: f
+      rank: 0
+  output_fields:
+    - label: f
+      rank: 0
+  derivable_fields:
+    - label: pde_residual
+      rank: 0
+
+Constants:
+  - label: omega
+    value: 1.0
+
+Equations:
+  - label: pde_residual
+    function_name: simple_harmonic_oscillator_1D_pde_residual
+    file_path: ./simple_harmonic_oscillator_1D_equations.py
+    input_labels: [f, omega]
+    output_labels: [pde_residual]
+    output_ranks: [0]
+
+LossTerms:
+  - label: f
+    field_label: f
+    coordinates_label: data_coords
+    dataset_label: data_loss
+    loss_type: data
+    loss_function: weighted_mse
+    adaptive_point_weights: true
+    weight_value: 1.0
+    weight_method_label: adaptive_w23
+    weight_group_label: data
+  - label: pde_residual
+    field_label: pde_residual
+    coordinates_label: full_coords
+    dataset_label: phys_loss
+    loss_type: physics
+    loss_function: weighted_mse
+    adaptive_point_weights: true
+    weight_value: 1.0
+    weight_method_label: adaptive_w23
+    weight_group_label: physics
+
+NN:
+  type: feedforward
+  hidden_layer_widths: [60, 60, 60]
+  layer_types: siren
+  activation_functions: siren
+  init_weights: siren
+  init_biases: all_zeros
+  input_transformation: scale_linear
+
+Trainer:
+  Optimizer:
+    optimizer: soap
+    learning_rate: 0.001
+    betas: [0.99, 0.99]
+    weight_decay: 0.0
+    precondition_frequency: 1
+  warmup_epochs: 100
+  print_freq: 100
+  n_batches: 1
+  TrainerModules:
+    - label: w23
+      method_name: adaptive_weights_w23
+      alpha: 0.9
+      update_iter_frequency: 100
+      loss_function: weighted_mse
+    - label: rba
+      method_name: residual_based_attention_a24
+      gamma: 0.999
+      eta: 0.01
+    - label: early_stopping
+      method_name: early_stopping
+      patience: 500
+      frac_tol: 0.01

@@ -1,0 +1,346 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+import torch
+
+from ..geometry.coordinate_system import CylindricalCoords
+
+if TYPE_CHECKING:
+    from ..data_structure.coords import Coords
+
+
+class Operators:
+    """
+    Differential operators at a set of coords, in their coordinate system.
+
+    Vector fields are given and returned in the physical basis,
+    except by the methods named contravariant_*.
+    """
+
+    def __init__(self, coords: Coords) -> None:
+        self.coords = coords
+        self.coord_system = coords.coord_system
+        self.geometric_labels = coords.geometric_labels
+        self.geometric_coords = {
+            label: coords.get_coord(label) for label in self.geometric_labels
+        }
+        self.G = self.coord_system.metric_tensor(coords.n_points, self.geometric_coords)
+
+    def d_dcoord(
+        self,
+        f: torch.Tensor,
+        coord_label: str,
+    ) -> torch.Tensor:
+        """
+        Compute the derivative of all elements of f wrt a given coordinate
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            Function to be taken derivative of.
+            Shape: (n_points,), (n_points, dim), (n_points, dim, dim), ...
+        coord_label : str
+            The coordinate to differentiate with respect to, geometric or not
+            (e.g. time).
+
+        Returns
+        -------
+        torch.Tensor
+            Derivative of each element of f.
+        """
+        self._check_differentiable(f)
+        coord = self.coords.get_coord(coord_label)
+
+        flat = f.reshape(f.shape[0], -1)
+
+        derivatives = [
+            torch.autograd.grad(
+                flat[:, i],
+                coord,
+                grad_outputs=torch.ones_like(flat[:, i]),
+                create_graph=True,
+                allow_unused=True,
+            )[0]
+            for i in range(flat.shape[1])
+        ]
+
+        # Deal with case where f is indep of coord
+        if any(d is None for d in derivatives):
+            self._check_computed_from_coords(f)
+        derivatives = [self._attach(d, coord) for d in derivatives]
+
+        return torch.stack(derivatives, dim=1).reshape_as(f)
+
+    def contravariant_grad(self, f: torch.Tensor) -> torch.Tensor:
+        """
+        Compute the contravariant gradient of a function in a given coordinate system.
+
+        contravariant_grad(f) = g^{ij} * partial_j f
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            Function to be taken gradient of. Shape: (n_points,)
+
+        Returns
+        -------
+        torch.Tensor
+            Contravariant gradient of the function: (n_points, dim_geometric)
+        """
+        if f.ndim != 1:
+            raise ValueError(
+                f"contravariant_grad expects a scalar field, got shape {f.shape}"
+            )
+
+        self._check_differentiable(f)
+        coords = [self.coords.get_coord(label) for label in self.geometric_labels]
+
+        derivatives = torch.autograd.grad(
+            outputs=f,
+            inputs=coords,
+            grad_outputs=torch.ones_like(f),
+            create_graph=True,
+            allow_unused=True,
+        )
+
+        # Deal with case where f is indep of coord
+        if any(d is None for d in derivatives):
+            self._check_computed_from_coords(f)
+        derivatives_list = [
+            self._attach(d, coord) for d, coord in zip(derivatives, coords, strict=True)
+        ]
+
+        derivative_f = torch.stack(derivatives_list, dim=1)
+
+        return self.G.inv_metric_times_vec(derivative_f)
+
+    def grad(
+        self,
+        f: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute the gradient of a function in a physical basis.
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            Function to be taken gradient of. Shape: (n_points,)
+
+        Returns
+        -------
+        torch.Tensor
+            Gradient of the function: (n_points, dim_geometric)
+        """
+        return self.G.scale_factors_times_vec(self.contravariant_grad(f))
+
+    def v_dot_grad(
+        self,
+        v1: torch.Tensor,
+        v2: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute the operation (v1 dot grad)(v2) in physical basis.
+
+        Since v2 is given to the function in the physical bases, this operation
+        can be viewed as:
+
+        (v1 dot grad)(v2_i * e_i) = (v1 dot grad)(v2_i)*e_i + v2_i*(v1 dot grad)(e_i)
+
+        To make this easier, we first transform v2 to Cartesian (so that the
+        (v1 dot grad)(e_i) terms are 0) and then transform back.
+
+        Parameters
+        ----------
+        v1 : torch.Tensor
+            The vector field used in dot product with grad.
+            Shape (n_points, dim_geometric)
+        v2 : torch.Tensor
+            The vector field that the operator (v1 dot grad) acts on.
+            Shape (n_points, dim_geometric)
+
+        Returns
+        -------
+        torch.Tensor
+            The vector computed from (v1 dot grad)(v2).
+            Shape (n_points, dim_geometric)
+        """
+        self._check_vector(v1)
+        self._check_vector(v2)
+
+        # Transform v2 to Cartesian
+        v2_cartesian = self.coord_system.transform_geometric_to_cartesian(
+            v2, self.geometric_coords
+        )
+
+        # Apply operation
+        out = torch.stack(
+            [
+                (v1 * self.grad(v2_cartesian[:, i])).sum(dim=1)
+                for i in range(v2_cartesian.shape[1])
+            ],
+            dim=1,
+        )
+
+        # Transform back
+        return self.coord_system.transform_cartesian_to_geometric(
+            out, self.geometric_coords
+        )
+
+    def contravariant_div(
+        self,
+        contra_v: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute the divergence of a vector field in contravariant basis.
+
+        Parameters
+        ----------
+        contra_v : torch.Tensor
+            The vector field, given in contravariant basis.
+            Shape (n_points, dim_geometric)
+
+        Returns
+        -------
+        torch.Tensor
+            The divergence of the vector field v.
+            Shape (n_points,)
+        """
+        self._check_vector(contra_v)
+
+        # Term to take derivatives of
+        inner_term = self.G.sqrt_det_times_vec(contra_v)
+
+        div_terms = [
+            self.d_dcoord(inner_term[:, i], coord_label)
+            for i, coord_label in enumerate(self.geometric_labels)
+        ]
+
+        sum_derivatives = torch.stack(div_terms, dim=1).sum(dim=1)
+
+        return self.G.inv_sqrt_det_times_scalar(sum_derivatives)
+
+    def div(
+        self,
+        v: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute the divergence of a vector field in physical basis.
+
+        Parameters
+        ----------
+        v : torch.Tensor
+            The vector field, given in physical basis.
+            Shape (n_points, dim_geometric)
+
+        Returns
+        -------
+        torch.Tensor
+            The divergence of the vector field v.
+            Shape (n_points,)
+        """
+        self._check_vector(v)
+        return self.contravariant_div(self.G.inv_scale_factors_times_vec(v))
+
+    def laplacian(
+        self,
+        f: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute the laplacian operator of a function in a given coordinate system.
+
+        Parameters
+        ----------
+        f : torch.Tensor
+            Function to take the Laplacian of. Shape: (n_points,)
+
+        Returns
+        -------
+        torch.Tensor
+            Laplacian of the function. Shape (n_points,)
+        """
+        return self.contravariant_div(self.contravariant_grad(f))
+
+    def vector_laplacian(
+        self,
+        v: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        Compute the laplacian of a vector field in a given coordinate system.
+
+        Since v is given to the function in the physical bases, this operation
+        can be viewed as:
+
+        lap(v_i * e_i) = lap(v_i) * e_i + v_i * lap(e_i)
+
+        To make this easier, we first transform v to Cartesian (so that the
+        lap(e_i) terms are 0) and then transform back.
+
+        Parameters
+        ----------
+        v : torch.Tensor
+            The vector field.
+            Shape (n_points, dim_geometric)
+
+        Returns
+        -------
+        torch.Tensor
+            Laplacian of the vector field and same basis as input vector
+            field (n_points, dim_geometric)
+        """
+        self._check_vector(v)
+        if isinstance(self.coord_system, CylindricalCoords) and (
+            "r" in self.coord_system.fixed_axes
+        ):
+            raise NotImplementedError(
+                "vector_laplacian is not implemented for cylindrical coordinates "
+                "with r fixed."
+            )
+
+        # Transform v to Cartesian
+        v_cartesian = self.coord_system.transform_geometric_to_cartesian(
+            v, self.geometric_coords
+        )
+
+        # Apply operation
+        lap = torch.stack(
+            [self.laplacian(v_cartesian[:, i]) for i in range(v_cartesian.shape[1])],
+            dim=1,
+        )
+
+        # Transform back
+        return self.coord_system.transform_cartesian_to_geometric(
+            lap, self.geometric_coords
+        )
+
+    def _check_vector(self, v: torch.Tensor) -> None:
+        expected_shape = (self.coords.n_points, len(self.geometric_labels))
+        if v.shape != expected_shape:
+            raise ValueError(
+                f"Expected a vector field of shape {expected_shape}, "
+                f"got {tuple(v.shape)}"
+            )
+
+    def _attach(self, d: torch.Tensor | None, coord: torch.Tensor) -> torch.Tensor:
+        """The derivative d (zero if None), kept on coord's graph so it can be
+        differentiated again when it doesn't depend on the coords."""
+        if d is None:
+            return 0.0 * coord
+        return d if d.requires_grad else d + 0.0 * coord
+
+    def _check_differentiable(self, f: torch.Tensor) -> None:
+        if not f.requires_grad:
+            raise ValueError(
+                "Can only differentiate tensors computed from the operators' coords."
+            )
+
+    def _check_computed_from_coords(self, f: torch.Tensor) -> None:
+        """Raise if f has no autograd path to any of these coords."""
+        coords = [self.coords.get_coord(label) for label in self.coords.coord_labels]
+        grads = torch.autograd.grad(
+            f.sum(), coords, retain_graph=True, allow_unused=True
+        )
+        if all(grad is None for grad in grads):
+            raise ValueError(
+                "Can only differentiate tensors computed from the operators' coords."
+            )
