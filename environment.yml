@@ -6,32 +6,21 @@ channels:
 dependencies:
   # Core Python
   - python=3.11
-  - pip
 
   # Scientific Python Packages
   - matplotlib
   - numpy
-  - pandas
   - scipy
-  - tqdm
   - h5py
+  - colorcet
 
   # PyTorch and CUDA
   - pytorch
   - pytorch-cuda=12.4
 
-  # Jupyter
-  - ipykernel
-  - jupyterlab
-
-  # Development tools
-  - mypy
-  - pre-commit
-  - pytest
-  - ruff
-
   # YAML support
   - pyyaml
 
-  - pip:
-      - types-PyYAML
+  # Development tools
+  - pre-commit
+  - pytest

@@ -1,3 +1,7 @@
+# torch_SOAP is adapted from https://github.com/nikhilvyas/SOAP
+# Copyright (c) 2024 Nikhil Vyas
+# Licensed under the MIT License; the full licence is in the torch_SOAP docstring.
+
 from __future__ import annotations
 
 from itertools import chain

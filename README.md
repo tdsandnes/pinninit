@@ -1,10 +1,10 @@
 # pinninit
 
 pinninit is a PyTorch framework for physics-informed neural networks (PINNs).
-A PINN is set up in a YAML parameter file, with its equations written as plain
+A PINN is set up in a YAML parameter file, with its equations written as
 Python functions, and trained on data saved to HDF5.
 
-The code is under development.
+Version 0.1, as used in [paper link].
 
 ## Installation
 
