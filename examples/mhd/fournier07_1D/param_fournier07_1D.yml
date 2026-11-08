@@ -129,7 +129,7 @@ LossTerms:
 
 NN:
   type: feedforward
-  hidden_layer_widths: [100, 100, 100, 100, 100, 100]
+  hidden_layer_widths: [80, 80, 80, 80, 80, 80, 80]
   layer_types: siren
   activation_functions: siren
   init_weights: siren

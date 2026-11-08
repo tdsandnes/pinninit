@@ -11,10 +11,27 @@ STYLE_PATH = Path(__file__).resolve().parent / "paper.mplstyle"
 
 # Legend label and colour of each loss term
 TERMS = {
-    "data_b": ("data loss", "#00798c"),
-    "momentum_eqn": ("momentum loss", "#d1495b"),
-    "induction_eqn": ("induction loss", "#edae49"),
+    "data_b": ("data loss", "#5e5e6d"),
+    "momentum_eqn": ("momentum loss", "#2e7d5b"),
+    "induction_eqn": ("induction loss", "#4fb08a"),
 }
+
+# The raw per-epoch losses are drawn faintly, with a rolling geometric mean on top
+RAW_LOSS_ALPHA = 0.25
+RAW_LOSS_LINEWIDTH = 0.4
+SMOOTH_LOSS_LINEWIDTH = 0.9
+# Width of the rolling window, in epochs
+SMOOTH_WINDOW_EPOCHS = 1000
+
+
+def rolling_geometric_mean(values: list[float], window: int) -> np.ndarray:
+    """Geometric mean over a centred window, which shrinks at the ends."""
+    log_values = np.log(np.asarray(values))
+    # A window longer than the run would make np.convolve return extra values
+    kernel = np.ones(min(window, len(log_values)))
+    total = np.convolve(log_values, kernel, mode="same")
+    count = np.convolve(np.ones_like(log_values), kernel, mode="same")
+    return np.exp(total / count)
 
 
 if __name__ == "__main__":
@@ -33,9 +50,27 @@ if __name__ == "__main__":
     # loss is from the epoch's end
     for ax, log, first_epoch in ((ax_train, train_log, 0), (ax_val, val_log, 1)):
         epochs = np.arange(len(log)) + first_epoch
-        for term, (label, color) in TERMS.items():
+        for i, (term, (label, color)) in enumerate(TERMS.items()):
             losses = [entry[term] for entry in log]
-            ax.plot(epochs, losses, color=color, label=label, alpha=0.8)
+            zorder = len(TERMS) - i
+            # Rasterised: tens of thousands of points per line bloat a PDF otherwise
+            ax.plot(
+                epochs,
+                losses,
+                color=color,
+                alpha=RAW_LOSS_ALPHA,
+                linewidth=RAW_LOSS_LINEWIDTH,
+                zorder=zorder,
+                rasterized=True,
+            )
+            ax.plot(
+                epochs,
+                rolling_geometric_mean(losses, SMOOTH_WINDOW_EPOCHS),
+                color=color,
+                label=label,
+                linewidth=SMOOTH_LOSS_LINEWIDTH,
+                zorder=zorder + len(TERMS),
+            )
 
     # The best model is the one with the lowest geometric mean validation loss
     # after warmup, as pinninit doesn't track the best model while warming up
@@ -52,10 +87,13 @@ if __name__ == "__main__":
         label="lowest geometric mean",
     )
 
+    for letter, ax in zip("ab", (ax_train, ax_val), strict=True):
+        ax.text(0.0, 1.02, f"({letter})", transform=ax.transAxes, va="bottom")
+
     ax_train.set_yscale("log")
     ax_train.set_ylabel("Training loss")
     ax_val.set_ylabel("Validation loss")
-    ax_val.set_xlabel("Epoch")
+    ax_val.set_xlabel("Training epoch")
     ax_val.legend(loc="upper right")
 
     Path("plots").mkdir(exist_ok=True)
