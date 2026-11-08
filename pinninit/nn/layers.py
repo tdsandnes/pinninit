@@ -23,8 +23,8 @@ class LayerTypeLabels(str, Enum):
 
 class SirenLinear(nn.Module):
     """
-    Linear layer with omega-scaled weights for SIREN networks y = omega * W *x + b.
-    Slightly modified Pytorch nn.Linear class.
+    Linear layer with omega-scaled weights for SIREN networks y = omega * W x + b.
+    Slightly modified PyTorch nn.Linear class.
     """
 
     def __init__(

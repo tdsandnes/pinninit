@@ -3,13 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    # Import pinninit
-    import sys
-    from pathlib import Path
-
     import torch
 
-    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
     from pinninit import Operators
 
 

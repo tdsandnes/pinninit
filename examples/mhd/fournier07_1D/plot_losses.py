@@ -28,7 +28,9 @@ if __name__ == "__main__":
         2, 1, figsize=(6.5, 4.5), sharex=True, sharey=True, layout="constrained"
     )
 
-    # pinninit logs training losses from epoch 0 and validation from epoch 1
+    # An epoch's training loss is the mean over its steps, each from before
+    # the step's update, so it is plotted at the epoch's start. Its validation
+    # loss is from the epoch's end
     for ax, log, first_epoch in ((ax_train, train_log, 0), (ax_val, val_log, 1)):
         epochs = np.arange(len(log)) + first_epoch
         for term, (label, color) in TERMS.items():
@@ -53,7 +55,7 @@ if __name__ == "__main__":
     ax_train.set_yscale("log")
     ax_train.set_ylabel("Training loss")
     ax_val.set_ylabel("Validation loss")
-    ax_val.set_xlabel("Training Epoch")
+    ax_val.set_xlabel("Epoch")
     ax_val.legend(loc="upper right")
 
     Path("plots").mkdir(exist_ok=True)

@@ -22,8 +22,8 @@ if TYPE_CHECKING:
 
 class AdaptiveWeightsW23(TrainerModule):
     """
-    Adaptive loss weights that balance the gradient norms across loss terms.
-    See Wang et al. 2023
+    Adaptive loss term weights that balance the gradient norms of the loss terms,
+    following Wang et al. (2023).
 
     Each weight group is one loss term of the paper: its gradient is the
     gradient of the summed loss of its loss terms, and they share one update.
