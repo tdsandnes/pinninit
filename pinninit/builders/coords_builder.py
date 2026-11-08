@@ -13,27 +13,7 @@ def build_coords_class(
     coord_system: CoordSystem,
     device: torch.device,
 ) -> type[Coords]:
-    """
-    Build the Coords *class* (not an instance) for a given CoordSystemConfig.
-
-    The class encodes the coordinate labels, coord system, and device. An
-    instance is created later once the actual coordinate tensors are available
-    (e.g. loaded from HDF5 or sampled).
-
-    Parameters
-    ----------
-    coord_system_config:
-        The matching CoordSystemConfig.
-    coord_system:
-        The already-built CoordSystem runtime object.
-    device:
-        PyTorch device.
-
-    Returns
-    -------
-    type[Coords]
-        A dynamically-created Coords dataclass.
-    """
+    """The Coords class of a coord system's axes."""
     return make_coords_dataclass(
         coord_labels=set(coord_system_config.all_axis_labels),
         coord_system=coord_system,
@@ -45,20 +25,7 @@ def build_domain(
     coords_config: CoordinatesConfig,
     coord_system: CoordSystem,
 ) -> Domain:
-    """
-    Build a Domain object from the domain section of a CoordinatesConfig.
-
-    Parameters
-    ----------
-    coords_config:
-        Config containing the DomainConfig to build from.
-    coord_system:
-        The already-built CoordSystem this domain belongs to.
-
-    Returns
-    -------
-    Domain
-    """
+    """The Domain of a set of coordinates."""
     domain_config = coords_config.domain
     geometric_bounds = dict(domain_config.bounds)
     periodic_coords = (
@@ -77,9 +44,7 @@ def build_coords_classes(
     coord_systems: dict[str, CoordSystem],
     device: torch.device,
 ) -> dict[str, tuple[type[Coords], Domain]]:
-    """
-    Build a label-keyed dict of Coords *classes* and domains for all CoordinatesConfigs.
-    """
+    """The Coords class and Domain of each set of coordinates, by label."""
     coord_system_configs_by_label = {cfg.label: cfg for cfg in coord_system_configs}
     result: dict[str, tuple[type[Coords], Domain]] = {}
     for coords_config in coords_configs:

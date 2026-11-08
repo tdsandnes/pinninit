@@ -28,30 +28,8 @@ def build_nn(
     dim_geometric: int,
     device: torch.device,
 ) -> NeuralNetwork:
-    """
-    Build a NeuralNetwork from an NNConfig.
-
-    Parameters
-    ----------
-    nn_config:
-        Network architecture config.
-    fields_config:
-        Fields config needed for output fields determine the network output width.
-    domains:
-        list of domains for getting upper and lower bounds for coord scaling
-    internal_labels:
-        Ordered internal coordinate labels of the network input.
-    periodic_coords:
-        Mapping of periodic coordinate label to period. Empty if no periodicity.
-    dim_geometric:
-        Geometric dimension, used to compute the number of components per field.
-    device:
-        PyTorch device.
-
-    Returns
-    -------
-    NeuralNetwork
-    """
+    """The network of nn_config, with the internal coords as inputs and the
+    components of the output fields as outputs."""
     # Get upper and lower bounds
     lb, ub = _collect_domain_bounds(domains, internal_labels)
 
@@ -104,7 +82,7 @@ def _build_input_transformation(
     ub: torch.Tensor,
     periodic_coords: dict[str, float],
 ) -> InputTransformation | None:
-    """Build the input transformation from config and domain periodicity."""
+    """The network's input transformation, or None."""
     has_scaling = (
         nn_config.input_transformation == InputTransformationLabels.SCALE_LINEAR
     )
@@ -143,7 +121,7 @@ def _collect_domain_bounds(
     domains: list[Domain],
     internal_labels: tuple[str, ...],
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Get internal bounds from list of domains."""
+    """The bounds of each internal coord across the domains."""
     for domain in domains:
         if missing := [
             label for label in internal_labels if label not in domain.internal_lb
@@ -170,7 +148,7 @@ def _collect_domain_bounds(
 def get_internal_labels(
     loss_containers: dict[str, LossTermContainer],
 ) -> tuple[str, ...]:
-    """Get labels of internal coords from loss term containers."""
+    """The internal coord labels shared by the loss terms' coords."""
     if not loss_containers:
         raise ValueError("No loss term containers available to initialise network.")
 
@@ -188,7 +166,7 @@ def get_internal_labels(
 
 
 def collect_periodic_coords(domains: list[Domain]) -> dict[str, float]:
-    """Collect periodic coordinate labels and periods across domains."""
+    """The period of each periodic coord across the domains."""
     periodic_coords: dict[str, float] = {}
     for domain in domains:
         for label, period in domain.periodic_coords.items():

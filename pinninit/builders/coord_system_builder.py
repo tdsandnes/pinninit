@@ -13,21 +13,7 @@ def build_coord_system(
     config: CoordSystemConfig,
     device: torch.device,
 ) -> CoordSystem:
-    """
-    Build a CoordSystem object from a CoordSystemConfig.
-
-    Parameters
-    ----------
-    config:
-        Config describing the coordinate system label, axes, and fixed axes.
-    device:
-        PyTorch device to use.
-
-    Returns
-    -------
-    CoordSystem
-        An initialised CoordSystem object.
-    """
+    """The CoordSystem of a config."""
     coord_system_cls = COORD_SYSTEM_REGISTRY[config.coord_system]
 
     return coord_system_cls(
@@ -41,7 +27,5 @@ def build_coord_systems(
     configs: list[CoordSystemConfig],
     device: torch.device,
 ) -> dict[str, CoordSystem]:
-    """
-    Build a label-keyed dict of CoordSystem objects from a list of configs.
-    """
+    """The CoordSystem of each config, by label."""
     return {config.label: build_coord_system(config, device) for config in configs}

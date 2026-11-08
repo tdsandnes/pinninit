@@ -13,6 +13,7 @@ def build_input_data_container(
     fields_config: FieldsConfig,
     const_configs: list[ConstConfig],
 ) -> DataContainer:
+    """The DataContainer of the data at coords."""
     return DataContainer(
         coords=coords,
         primary_field_label_to_rank=fields_config.input_field_label_to_rank,
@@ -28,6 +29,8 @@ def build_output_data_container(
     const_configs: list[ConstConfig],
     equations: list[Equation],
 ) -> DataContainer:
+    """The DataContainer of the model's predictions, and the fields
+    derived from them, at coords."""
     return DataContainer(
         coords=coords,
         primary_field_label_to_rank=fields_config.output_field_label_to_rank,
@@ -41,16 +44,8 @@ def populate_consts(
     data_container: DataContainer,
     const_configs: list[ConstConfig],
 ) -> None:
-    """
-    Set constant values on a DataContainer from ConstConfig.
-
-    Parameters
-    ----------
-    data_container:
-        Container whose consts will be populated.
-    const_configs:
-        Configs with label and value for each constant.
-    """
+    """Set the values of the constants in data_container that aren't
+    learnable."""
 
     for cfg in const_configs:
         if not cfg.learnable:
