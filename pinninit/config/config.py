@@ -313,7 +313,7 @@ class NNConfig:
 # Trainer Config
 @dataclass(frozen=True, slots=True)
 class OptimizerConfig:
-    """Optimiser configuration."""
+    """Optimizer configuration."""
 
     optimizer: OptimizerLabels
     learning_rate: float

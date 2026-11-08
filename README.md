@@ -1,10 +1,11 @@
 # pinninit
 
 pinninit is a PyTorch framework for physics-informed neural networks (PINNs).
-A PINN is set up in a YAML parameter file, with its equations written as plain
+A PINN is set up in a YAML parameter file, with its equations written as
 Python functions, and trained on data saved to HDF5.
 
-The code is under development.
+pinninit is in early development, so its API and parameter file format may
+change.
 
 ## Installation
 
@@ -28,4 +29,6 @@ pinn.train()
 pinn.save("model.pth")
 ```
 
-See `examples/` for usage in practice.
+See `examples/` for usage in practice. Each example runs with `./run.sh` from
+its directory. The MHD examples also need [Dedalus](https://dedalus-project.org)
+to run their simulations.

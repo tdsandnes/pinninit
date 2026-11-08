@@ -37,7 +37,7 @@ def load_coords_from_hdf5(
     Returns
     -------
     Coords
-        A fully-initialised Coords instance with requires_grad=True on each tensor.
+        The coords, with requires_grad=True on each coordinate tensor.
     """
     dataset_label = dataset_config.label
     file_path = dataset_config.file_path

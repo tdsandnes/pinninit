@@ -44,42 +44,7 @@ def build_evaluation_contexts(
     n_batches: int = 1,
     shuffle: bool = True,
 ) -> tuple[EvaluationContext, EvaluationContext]:
-    """
-    Build train and validation EvaluationContexts for a single LossTermConfig.
-
-    This function:
-      1. Loads train and val coordinates and input fields from HDF5
-      2. Builds input and output DataContainers for each role
-      3. Splits the coords into batches
-
-    Parameters
-    ----------
-    loss_term_config:
-        Config for this loss term (field_label, loss_function, etc.).
-    dataset_config:
-        Config for the HDF5 dataset to load.
-    coords_class:
-        The Coords class for this set of coordinates.
-    fields_config:
-        Fields config — determines which fields are input/output/derivable.
-    const_configs:
-        Constant configs — values are populated into the output DataContainer.
-    equations:
-        Already-built Equation objects for derived field computation.
-    point_weight_equation:
-        Optional Equation evaluated on the training coords to produce a
-        per-point multiplier on the point weights. Applied to the training
-        context only.
-    n_batches:
-        Number of batches, used to sync all loss terms.
-    shuffle:
-        Whether to reshuffle the batches on each pass.
-
-    Returns
-    -------
-    tuple[EvaluationContext, EvaluationContext]
-        (train_eval_context, val_eval_context)
-    """
+    """The training and validation EvaluationContexts of a loss term."""
     # A data loss loads the field it compares to (only input fields are in the
     # HDF5), so a dataset doesn't need to hold the other input fields
     input_field_label_to_rank = {
@@ -170,7 +135,7 @@ def _build_one_eval_context(
     n_batches: int = 1,
     shuffle: bool = True,
 ) -> EvaluationContext:
-    """Build a single EvaluationContext for one data role."""
+    """The EvaluationContext of one set of coords."""
     # Get loss function
     loss_fn = LOSS_FUNCTION_REGISTRY[loss_fn_label]
 
@@ -223,6 +188,7 @@ def _build_point_weight_modifier(
     output_dc: DataContainer,
     coords: Coords,
 ) -> Field:
+    """The fixed point-weight multiplier that equation gives at coords."""
     if len(equation.output_labels) != 1:
         raise ValueError(
             f"Point-weight equation '{equation.label}' must have exactly one "

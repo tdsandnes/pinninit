@@ -88,9 +88,7 @@ if __name__ == "__main__":
             interpolation="nearest",
         )
         for t_at_x0, slope in ALFVEN_SPEED_LINES:
-            ax.plot(
-                [0, 1], [t_at_x0, t_at_x0 + slope], color="black", ls="--", alpha=0.6
-            )
+            ax.plot([0, 1], [t_at_x0, t_at_x0 + slope], color="black", ls="--")
         ax.set(xlim=extent[:2], ylim=extent[2:], xlabel=r"$x$")
         ax.set_title(f"({letter})", loc="left")
         ax.set_title(rf"${field}$", loc="right")

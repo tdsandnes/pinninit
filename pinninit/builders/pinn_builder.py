@@ -28,27 +28,8 @@ def build_pinn(
     device: torch.device,
     base_dir: Path | None = None,
 ) -> PINN:
-    """
-    Build a complete PINN from a PINNConfig.
-
-    Builds, in order: coordinate systems and domains, equations, evaluation
-    contexts and loss term containers, learnable constants, the neural
-    network, the optimizer, and the trainer.
-
-    Parameters
-    ----------
-    config:
-        Full PINN configuration, e.g. loaded via PINNConfig.from_yaml().
-    device:
-        PyTorch device.
-    base_dir:
-        Optional base directory for resolving relative file paths (datasets,
-        equations, the checkpoint).
-
-    Returns
-    -------
-    PINN
-    """
+    """Build a PINN from config. Relative paths in it are resolved against
+    base_dir."""
     # Geometry
     coord_systems = build_coord_systems(config.coord_systems, device)
     coords_classes = build_coords_classes(
@@ -189,8 +170,7 @@ def _build_param_groups(
     weight_decay_groups: dict[str, float],
     no_decay: list[nn.Parameter],
 ) -> list[dict[str, object]]:
-    """Map a {group_name: weight_decay} onto the model's named parameter groups,
-    with the no_decay parameters in a group without weight decay."""
+    """The optimizer's parameter groups, with the weight decay of each."""
     named = model.named_parameter_groups()
     unknown = set(weight_decay_groups) - set(named)
     if unknown:

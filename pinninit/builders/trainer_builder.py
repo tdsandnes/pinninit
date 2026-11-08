@@ -18,19 +18,7 @@ if TYPE_CHECKING:
 
 
 def build_trainer_module(config: TrainerModuleConfig) -> TrainerModule:
-    """
-    Build a TrainerModule from a TrainerModuleConfig.
-
-    Parameters
-    ----------
-    config:
-        Config with the module's method_name, plus hyperparameters passed as
-        keyword arguments to its constructor.
-
-    Returns
-    -------
-    TrainerModule
-    """
+    """The TrainerModule of config."""
     method_name = config.method_name.lower()
     valid = [member.value for member in TrainerModuleLabels]
     if method_name not in valid:
@@ -50,28 +38,8 @@ def build_trainer(
     loss_containers: dict[str, LossTermContainer],
     base_dir: Path | None = None,
 ) -> Trainer:
-    """
-    Build a Trainer from a TrainerConfig and already-built components.
-
-    Parameters
-    ----------
-    config:
-        Trainer config with loop parameters and trainer module configs.
-    parameters:
-        The parameter file's contents, saved in checkpoints.
-    model:
-        The neural network to train.
-    optimizer:
-        The already-built optimizer.
-    loss_containers:
-        Label-keyed loss term containers.
-    base_dir:
-        Optional base directory for resolving the checkpoint path.
-
-    Returns
-    -------
-    Trainer
-    """
+    """The Trainer of config, for the given model, optimizer and loss term
+    containers. Relative paths are resolved against base_dir."""
     trainer_modules = [
         build_trainer_module(module) for module in config.trainer_modules
     ]

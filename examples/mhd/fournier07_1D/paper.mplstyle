@@ -35,6 +35,7 @@ legend.frameon:     True
 legend.edgecolor:   0.8
 legend.framealpha:  1.0
 legend.fancybox:    False
+legend.borderaxespad: 1.0  # in legend font sizes, so the frame clears the ticks
 
 # --- Figure and saving ---
 savefig.dpi:        300

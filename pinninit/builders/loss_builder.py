@@ -12,18 +12,7 @@ if TYPE_CHECKING:
 
 
 def build_loss_term(config: LossTermConfig) -> LossTerm:
-    """
-    Build a LossTerm (DataLoss or PhysicsLoss) from a LossTermConfig.
-
-    Parameters
-    ----------
-    config:
-        Config for this loss term.
-
-    Returns
-    -------
-    LossTerm
-    """
+    """The LossTerm of a config."""
     loss_term_cls = LOSS_TERM_REGISTRY[config.loss_type]
     return loss_term_cls(field_label=config.field_label)
 
@@ -34,26 +23,7 @@ def build_loss_term_container(
     val_eval_context: EvaluationContext,
     domain: Domain,
 ) -> LossTermContainer:
-    """
-    Build a LossTermContainer from a single LossTermConfig, combining
-    training and validation data sets
-
-    Parameters
-    ----------
-    loss_term_config:
-        Config for the loss term in this container, including weighting and
-        staggering parameters.
-    train_eval_context:
-        Pre-built EvaluationContext for training.
-    val_eval_context:
-        Pre-built EvaluationContext for validation.
-    domain:
-        Domain object for this coordinate set.
-
-    Returns
-    -------
-    LossTermContainer
-    """
+    """The LossTermContainer of a loss term."""
     loss_term = build_loss_term(loss_term_config)
     return LossTermContainer(
         label=loss_term_config.label,

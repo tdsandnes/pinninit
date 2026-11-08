@@ -91,9 +91,9 @@ class FeedforwardNN(NeuralNetwork):
 class ModifiedMLP(NeuralNetwork):
     """Modified MLP (Wang et al. 2021), as used in Anagnostopoulos et al. (2024).
 
-    Two encoders U and V embed the input into the hidden width, and every
-    hidden state is mixed as alpha <- (1 - alpha) * U + alpha * V. Requires
-    all hidden layers to share a single width."""
+    Two encoders U and V embed the input into the hidden width, and the
+    output Z of each hidden layer is mixed as H = (1 - Z) * U + Z * V.
+    Requires all hidden layers to share a single width."""
 
     def __init__(
         self,

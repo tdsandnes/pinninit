@@ -56,7 +56,7 @@ if __name__ == "__main__":
     fig, axes = plt.subplots(
         2,
         len(TIMES),
-        figsize=(6.5, 2.6),
+        figsize=(6.5, 2.8),
         sharex=True,
         sharey="row",
         layout="constrained",

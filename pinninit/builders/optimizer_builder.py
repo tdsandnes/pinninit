@@ -15,19 +15,6 @@ def build_optimizer(
     config: OptimizerConfig,
     params: list[nn.Parameter] | list[dict[str, object]],
 ) -> Optimizer:
-    """
-    Build an Optimizer from an OptimizerConfig.
-
-    Parameters
-    ----------
-    config:
-        Optimizer config with label, learning rate, and extra hyperparameters.
-    params:
-        Parameters to optimise (model parameters plus any learnable constants).
-
-    Returns
-    -------
-    Optimizer
-    """
+    """The Optimizer of config, over params."""
     optimizer_cls = OPTIMIZER_REGISTRY[config.optimizer]
     return optimizer_cls(params, lr=config.learning_rate, **config.hyperparameters)
