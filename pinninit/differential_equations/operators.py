@@ -53,24 +53,38 @@ class Operators:
         coord = self.coords.get_coord(coord_label)
 
         flat = f.reshape(f.shape[0], -1)
+        n_components = flat.shape[1]
 
-        derivatives = [
-            torch.autograd.grad(
-                flat[:, i],
-                coord,
-                grad_outputs=torch.ones_like(flat[:, i]),
-                create_graph=True,
-                allow_unused=True,
-            )[0]
-            for i in range(flat.shape[1])
-        ]
+        # Compute derivatives using a weighted sum of the components.
+        # With one component, unit weights give the desired derivative directly.
+        weights = torch.ones_like(flat)
+        if n_components > 1:
+            weights.requires_grad_()
 
-        # Deal with case where f is indep of coord
-        if any(d is None for d in derivatives):
+        # Compute the derivative of the weighted sum:
+        # d_weighted_sum = sum_ij weights_ij * df_i/dcoord_j.
+        # Differentiating this with respect to the weights recovers
+        # the derivative of each individual component.
+        (d_weighted_sum,) = torch.autograd.grad(
+            flat, coord, grad_outputs=weights, create_graph=True, allow_unused=True
+        )
+
+        if d_weighted_sum is None:  # f doesn't depend on the coord
             self._check_computed_from_coords(f)
-        derivatives = [self._attach(d, coord) for d in derivatives]
+            derivatives = torch.zeros_like(flat)
+        elif n_components == 1:
+            derivatives = d_weighted_sum.unsqueeze(1)
+        else:
+            # Extract the individual component derivatives by differentiating
+            # the weighted sum with respect to its weights.
+            (derivatives,) = torch.autograd.grad(
+                d_weighted_sum,
+                weights,
+                grad_outputs=torch.ones_like(d_weighted_sum),
+                create_graph=True,
+            )
 
-        return torch.stack(derivatives, dim=1).reshape_as(f)
+        return self._attach(derivatives, coord.unsqueeze(1)).reshape_as(f)
 
     def contravariant_grad(self, f: torch.Tensor) -> torch.Tensor:
         """

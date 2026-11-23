@@ -44,6 +44,16 @@ class TestCartesian:
         )
         assert torch.allclose(operators.d_dcoord(tensor, "x"), expected)
 
+    def test_second_derivative_of_many_components(self, coords_2d: Coords) -> None:
+        operators = Operators(coords_2d)
+        x = coords_2d.get_coord("x")
+        powers = torch.stack([x**k for k in range(2, 7)], dim=1)
+
+        second = operators.d_dcoord(operators.d_dcoord(powers, "x"), "x")
+
+        expected = torch.stack([k * (k - 1) * x ** (k - 2) for k in range(2, 7)], dim=1)
+        assert torch.allclose(second, expected)
+
     def test_grad(self, coords_2d: Coords) -> None:
         operators = Operators(coords_2d)
         x, y = coords_2d.get_coord("x"), coords_2d.get_coord("y")
