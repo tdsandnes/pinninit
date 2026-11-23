@@ -1,0 +1,125 @@
+model_name: travelling_wave_fourier_1D
+random_seed: 12345
+
+CoordSystems:
+  - label: time
+    coord_system: cartesian
+    non_geometric_axis_labels:
+      - t
+
+Coordinates:
+  - label: data_coords
+    coord_system_label: time
+    domain:
+      bounds:
+        t:
+          min: 0.0
+          max: 12.57
+  - label: full_coords
+    coord_system_label: time
+    domain:
+      bounds:
+        t:
+          min: 0.0
+          max: 37.70
+
+DataSets:
+  - label: data_loss
+    source: file
+    file_path: ./data/travelling_wave_fourier_1D_train_val.hdf5
+  - label: phys_loss
+    source: file
+    file_path: ./data/travelling_wave_fourier_1D_train_val.hdf5
+
+Fields:
+  input_fields:
+    - label: f
+      rank: 0
+    - label: x
+      rank: 0
+      known: true
+  output_fields:
+    - label: c
+      rank: 0
+      size: 6
+  derivable_fields:
+    - label: f
+      rank: 0
+    - label: pde_residual
+      rank: 0
+      size: 6
+
+Constants:
+  - label: omega
+    value: 1.0
+
+Equations:
+  - label: f_eqn
+    function_name: f_eqn
+    file_path: ./travelling_wave_fourier_1D_equations.py
+    input_labels: [c, x]
+    output_labels: [f]
+    output_ranks: [0]
+  - label: pde_residual
+    function_name: pde_residual
+    file_path: ./travelling_wave_fourier_1D_equations.py
+    input_labels: [c, omega]
+    output_labels: [pde_residual]
+    output_ranks: [0]
+    output_sizes: [6]
+
+LossTerms:
+  - label: f
+    field_label: f
+    coordinates_label: data_coords
+    dataset_label: data_loss
+    loss_type: data
+    loss_function: weighted_mse
+    adaptive_point_weights: true
+    weight_value: 1.0
+    weight_method_label: adaptive_w23
+    weight_group_label: data
+  - label: pde_residual
+    field_label: pde_residual
+    coordinates_label: full_coords
+    dataset_label: phys_loss
+    loss_type: physics
+    loss_function: weighted_mse
+    adaptive_point_weights: true
+    weight_value: 1.0
+    weight_method_label: adaptive_w23
+    weight_group_label: physics
+
+NN:
+  type: feedforward
+  hidden_layer_widths: [60, 60, 60]
+  layer_types: siren
+  activation_functions: siren
+  init_weights: siren
+  init_biases: all_zeros
+  input_transformation: scale_linear
+
+Trainer:
+  Optimizer:
+    optimizer: soap
+    learning_rate: 0.001
+    betas: [0.99, 0.99]
+    weight_decay: 0.0
+    precondition_frequency: 1
+  warmup_epochs: 100
+  print_freq: 100
+  n_batches: 1
+  TrainerModules:
+    - label: w23
+      method_name: adaptive_weights_w23
+      alpha: 0.9
+      update_iter_frequency: 100
+      loss_function: weighted_mse
+    - label: rba
+      method_name: residual_based_attention_a24
+      gamma: 0.999
+      eta: 0.01
+    - label: early_stopping
+      method_name: early_stopping
+      patience: 500
+      frac_tol: 0.01
