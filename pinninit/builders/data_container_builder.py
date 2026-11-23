@@ -30,15 +30,20 @@ def build_output_data_container(
     const_configs: list[ConstConfig],
     equations: list[Equation],
 ) -> DataContainer:
-    """The DataContainer of the model's predictions, and the fields
-    derived from them, at coords."""
+    """The DataContainer of the model's predictions, the known fields and the
+    fields derived from them, at coords."""
+    known_field_label_to_rank = {
+        field.label: field.rank for field in fields_config.known_fields
+    }
     return DataContainer(
         coords=coords,
-        primary_field_label_to_rank=fields_config.output_field_label_to_rank,
+        primary_field_label_to_rank=fields_config.output_field_label_to_rank
+        | known_field_label_to_rank,
         derived_field_label_to_rank=fields_config.derivable_field_label_to_rank,
         const_labels={cfg.label for cfg in const_configs} if const_configs else None,
         equations=equations if equations else None,
         field_label_to_size=fields_config.predicted_field_label_to_size,
+        known_field_labels=set(known_field_label_to_rank),
     )
 
 

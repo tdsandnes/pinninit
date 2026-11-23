@@ -339,13 +339,14 @@ def _parse_field_list(raw: list[dict[str, Any]], where: str) -> list[FieldConfig
             field,
             f"a {where} entry",
             required=("label", "rank"),
-            optional=("size",),
+            optional=("size", "known"),
         )
     return [
         FieldConfig(
             label=field["label"],
             rank=_as_int(field["rank"], "rank"),
             size=None if field.get("size") is None else _as_int(field["size"], "size"),
+            known=_as_bool(field.get("known", False), "known"),
         )
         for field in raw
     ]

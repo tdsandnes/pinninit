@@ -96,6 +96,7 @@ class FieldConfig:
     label: str
     rank: int
     size: int | None = None
+    known: bool = False
 
     def __post_init__(self) -> None:
         if self.rank < 0:
@@ -138,6 +139,25 @@ class FieldsConfig:
                 f"Labels {overlap} appear in both output_fields and derivable_fields."
             )
 
+        # Only input fields can be known, and they are data, not predictions
+        for field_config in self.output_fields + self.derivable_fields:
+            if field_config.known:
+                raise ValueError(
+                    f"Field '{field_config.label}' is set known, but only input fields "
+                    "can be known."
+                )
+        predicted_labels = output_labels | derivable_labels
+        known_and_predicted = sorted(
+            field.label
+            for field in self.input_fields
+            if field.known and field.label in predicted_labels
+        )
+        if known_and_predicted:
+            raise ValueError(
+                f"Known fields {known_and_predicted} cannot also be output or "
+                "derivable fields."
+            )
+
         # A field with data (input_fields) and a prediction (output_fields or
         # derivable_fields) needs the same rank and size in both
         predicted = {
@@ -171,14 +191,19 @@ class FieldsConfig:
         return {field.label: field.rank for field in self.derivable_fields}
 
     @property
+    def known_fields(self) -> list[FieldConfig]:
+        """The input fields that equations can use."""
+        return [field for field in self.input_fields if field.known]
+
+    @property
     def input_field_label_to_size(self) -> dict[str, int]:
         return _sizes(self.input_fields)
 
     @property
     def predicted_field_label_to_size(self) -> dict[str, int]:
-        """The sizes of the array fields among the output and derivable fields,
-        which are the fields equations work with."""
-        return _sizes(self.output_fields + self.derivable_fields)
+        """The sizes of the array fields among the output, derivable and known
+        fields, which are the fields equations work with."""
+        return _sizes(self.output_fields + self.derivable_fields + self.known_fields)
 
     @property
     def field_label_to_size(self) -> dict[str, int]:

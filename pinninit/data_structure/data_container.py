@@ -31,6 +31,7 @@ class DataContainer:
         const_labels: set[str] | None = None,
         equations: list[Equation] | None = None,
         field_label_to_size: dict[str, int] | None = None,
+        known_field_labels: set[str] | None = None,
     ) -> None:
         derived_field_label_to_rank = derived_field_label_to_rank or {}
         field_label_to_size = field_label_to_size or {}
@@ -48,6 +49,10 @@ class DataContainer:
         self.coord_labels = coords.coord_labels
         self.device = coords.device
         self.derived_field_labels = set(derived_field_label_to_rank)
+        self.known_field_labels = known_field_labels or set()
+        not_primary = sorted(self.known_field_labels - set(primary_field_label_to_rank))
+        if not_primary:
+            raise ValueError(f"Known fields {not_primary} must be primary fields.")
 
         # The Field class of each field, and the field once it has been set.
         # Fields with a size are arrays
@@ -146,9 +151,13 @@ class DataContainer:
         self.consts[label] = value
 
     def clear_fields(self) -> None:
-        """Forget the values of all fields, e.g. to free the autograd graphs
-        they hold."""
-        self.fields.clear()
+        """Forget the values of all fields but the known ones, e.g. to free the
+        autograd graphs they hold."""
+        self.fields = {
+            label: field
+            for label, field in self.fields.items()
+            if label in self.known_field_labels
+        }
 
     def evaluate_derived_fields(
         self, coords: Coords | None = None, labels: list[str] | None = None

@@ -84,6 +84,23 @@ class TestFields:
         assert torch.equal(data.get_field("b")[1].tensor(), b[:, 1])
         assert torch.equal(data.get_field_component_tensor("b"), b.reshape(N_POINTS, 6))
 
+    def test_clearing_fields_keeps_known_fields(
+        self, coords_2d: Coords, device: torch.device
+    ) -> None:
+        # Known fields are set once from data, so they outlive the model's
+        # outputs, which are cleared to free their autograd graphs
+        data = DataContainer(
+            coords=coords_2d,
+            primary_field_label_to_rank={"u": 0, "g": 0},
+            known_field_labels={"g"},
+        )
+        data.set_field_from_tensor("u", torch.zeros(N_POINTS, device=device))
+        data.set_field_from_tensor("g", torch.ones(N_POINTS, device=device))
+
+        data.clear_fields()
+
+        assert set(data.fields) == {"g"}
+
     def test_derived_field_can_only_be_set_with_allow_derived(
         self, data: DataContainer, device: torch.device
     ) -> None:

@@ -11,7 +11,7 @@ from ..config.config import (
     LossTermConfig,
 )
 from ..data_structure.batching import Batches
-from ..data_structure.equation import Equation
+from ..data_structure.equation import Equation, needed_equations, sort_equations
 from ..data_structure.field import make_field_dataclass
 from ..differential_equations.operators import Operators
 from ..io.load_dataset_from_hdf5 import load_coords_from_hdf5, load_fields_from_hdf5
@@ -97,10 +97,42 @@ def build_evaluation_contexts(
         )
     )
 
+    # A loss term, data or physics, loads the known fields that the equations
+    # of its field (or its point-weight equation) use, so only its dataset
+    # needs to hold them
+    equation_inputs = {
+        label
+        for equation in needed_equations(
+            sort_equations(equations), [loss_term_config.field_label]
+        )
+        for label in equation.input_labels
+    }
+    if point_weight_equation is not None:
+        equation_inputs.update(point_weight_equation.input_labels)
+    known_field_label_to_rank = {
+        field.label: field.rank
+        for field in fields_config.known_fields
+        if field.label in equation_inputs
+    }
+    train_known_fields, val_known_fields = (
+        load_fields_from_hdf5(
+            dataset_config=dataset_config,
+            role=role,
+            coords=coords,
+            field_label_to_rank=known_field_label_to_rank,
+            field_label_to_size=fields_config.input_field_label_to_size,
+        )
+        for role, coords in (
+            (dataset_config.train_label, train_coords),
+            (dataset_config.val_label, val_coords),
+        )
+    )
+
     # Build train contexts
     train_eval_context = _build_one_eval_context(
         coords=train_coords,
         loaded_input_fields=train_input_fields,
+        loaded_known_fields=train_known_fields,
         fields_config=fields_config,
         const_configs=const_configs,
         equations=equations,
@@ -114,6 +146,7 @@ def build_evaluation_contexts(
     val_eval_context = _build_one_eval_context(
         coords=val_coords,
         loaded_input_fields=val_input_fields,
+        loaded_known_fields=val_known_fields,
         fields_config=fields_config,
         const_configs=const_configs,
         equations=equations,
@@ -129,6 +162,7 @@ def build_evaluation_contexts(
 def _build_one_eval_context(
     coords: Coords,
     loaded_input_fields: dict[str, dict[str, torch.Tensor]],
+    loaded_known_fields: dict[str, dict[str, torch.Tensor]],
     fields_config: FieldsConfig,
     const_configs: list[ConstConfig],
     equations: list[Equation],
@@ -166,6 +200,8 @@ def _build_one_eval_context(
         equations=equations,
     )
     populate_consts(output_dc, const_configs)
+    for field_label, component_dict in loaded_known_fields.items():
+        output_dc.set_field_from_component_dict(field_label, component_dict, coords)
 
     batches = Batches(coords, n_batches, shuffle)
 
