@@ -138,8 +138,10 @@ class Coords:
         tensor = torch.stack(list(coords_dict.values()), dim=1)
 
         # Stack geometric coords, then slice back so the graph goes through geometric
-        geometric = torch.stack(
-            [coords_dict[label] for label in self.geometric_labels], dim=1
+        geometric = (
+            torch.stack([coords_dict[label] for label in self.geometric_labels], dim=1)
+            if self.geometric_labels
+            else tensor[:, :0]
         )
         geometric_dict = {
             label: geometric[:, i] for i, label in enumerate(self.geometric_labels)

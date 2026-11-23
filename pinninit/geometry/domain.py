@@ -113,6 +113,8 @@ class Domain:
         self.internal_ub = {**internal_ub, **self.non_geometric_ub}
 
     def contains_geometric(self, geometric: torch.Tensor) -> torch.Tensor:
+        if not self.geometric_labels:
+            return torch.ones(geometric.shape[0], dtype=torch.bool, device=self.device)
         lb = torch.stack([self.geometric_lb[label] for label in self.geometric_labels])
         ub = torch.stack([self.geometric_ub[label] for label in self.geometric_labels])
         return ((geometric >= lb) & (geometric <= ub)).all(dim=1)

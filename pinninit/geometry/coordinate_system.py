@@ -166,6 +166,8 @@ class CoordSystem(ABC):
 
     def _dtype(self, geometric_coords: dict[str, torch.Tensor]) -> torch.dtype:
         """The dtype of the given coords, so that results keep their precision."""
+        if not geometric_coords:
+            return torch.get_default_dtype()
         return next(iter(geometric_coords.values())).dtype
 
     def _validate_selected_dimensions(self, dim_geometric: int) -> None:
@@ -255,6 +257,12 @@ class CartesianCoords(CoordSystem):
             frozenset({"y", "z"}): (CoordSystemLabels.CARTESIAN, {"x", "y"}),
         },
     )
+
+    def _validate_selected_dimensions(self, dim_geometric: int) -> None:
+        # Cartesian coords can have no geometric axes, for problems in
+        # non-geometric coords only, e.g. time
+        if dim_geometric > 0:
+            super()._validate_selected_dimensions(dim_geometric)
 
     def metric_tensor(
         self,

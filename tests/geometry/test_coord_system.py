@@ -41,8 +41,10 @@ class TestConstruction:
         assert spherical.axes_labels_selected == ("r", "theta", "phi")
 
     def test_no_axes_raises(self, device: torch.device) -> None:
+        # Only Cartesian coords can have no geometric axes, e.g. for time only
         with pytest.raises(ValueError, match="must not be empty"):
-            CartesianCoords(coord_axes=set(), device=device)
+            CylindricalCoords(coord_axes=set(), device=device)
+        assert CartesianCoords(coord_axes=set(), device=device).dim_geometric == 0
 
     def test_unknown_axis_raises(self, device: torch.device) -> None:
         with pytest.raises(ValueError, match="Invalid axes"):
