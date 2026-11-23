@@ -30,8 +30,10 @@ class DataContainer:
         derived_field_label_to_rank: dict[str, int] | None = None,
         const_labels: set[str] | None = None,
         equations: list[Equation] | None = None,
+        field_label_to_size: dict[str, int] | None = None,
     ) -> None:
         derived_field_label_to_rank = derived_field_label_to_rank or {}
+        field_label_to_size = field_label_to_size or {}
         const_labels = const_labels or set()
         _check_labels_unique(
             [
@@ -47,10 +49,16 @@ class DataContainer:
         self.device = coords.device
         self.derived_field_labels = set(derived_field_label_to_rank)
 
-        # The Field class of each field, and the field once it has been set
+        # The Field class of each field, and the field once it has been set.
+        # Fields with a size are arrays
         field_label_to_rank = primary_field_label_to_rank | derived_field_label_to_rank
+        unknown = sorted(set(field_label_to_size) - set(field_label_to_rank))
+        if unknown:
+            raise ValueError(f"Sizes are given for unknown fields {unknown}.")
         self.field_classes: dict[str, type[Field]] = {
-            label: make_field_dataclass(rank, type(coords))
+            label: make_field_dataclass(
+                rank, type(coords), field_label_to_size.get(label)
+            )
             for label, rank in field_label_to_rank.items()
         }
         self.fields: dict[str, Field] = {}
@@ -173,6 +181,13 @@ class DataContainer:
                 raise ValueError(
                     f"Equation '{equation.label}' outputs '{label}' with rank "
                     f"{rank}, but the field has rank {field_rank}."
+                )
+            size = equation.output_label_to_size.get(label)
+            field_size = self.field_classes[label].size
+            if size != field_size:
+                raise ValueError(
+                    f"Equation '{equation.label}' outputs '{label}' with size "
+                    f"{size}, but the field has size {field_size}."
                 )
 
         known_labels = {*self.coord_labels, *self.field_labels, *self.consts}

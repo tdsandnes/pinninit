@@ -75,6 +75,7 @@ def build_evaluation_contexts(
             role=dataset_config.train_label,
             coords=train_coords,
             field_label_to_rank=input_field_label_to_rank,
+            field_label_to_size=fields_config.input_field_label_to_size,
         )
     )
 
@@ -92,6 +93,7 @@ def build_evaluation_contexts(
             role=dataset_config.val_label,
             coords=val_coords,
             field_label_to_rank=input_field_label_to_rank,
+            field_label_to_size=fields_config.input_field_label_to_size,
         )
     )
 

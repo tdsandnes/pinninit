@@ -24,12 +24,14 @@ class Equation:
 
     The function's argument names are the labels of its inputs, plus an
     'operators' argument for taking derivatives. It returns one tensor per
-    output, in the order of output_label_to_rank.
+    output, in the order of output_label_to_rank. The outputs in
+    output_label_to_size are arrays of that many fields.
     """
 
     label: str
     function: Callable[..., torch.Tensor | tuple[torch.Tensor, ...]]
     output_label_to_rank: dict[str, int]
+    output_label_to_size: dict[str, int] = field(default_factory=dict)
     input_labels: tuple[str, ...] = field(init=False)
 
     def __post_init__(self) -> None:
@@ -47,6 +49,11 @@ class Equation:
         for label, rank in self.output_label_to_rank.items():
             if rank < 0:
                 raise ValueError(f"Output rank for '{label}' must be >= 0.")
+        for label, size in self.output_label_to_size.items():
+            if label not in self.output_label_to_rank:
+                raise ValueError(f"Output size given for unknown output '{label}'.")
+            if size < 1:
+                raise ValueError(f"Output size for '{label}' must be >= 1.")
 
     @property
     def output_labels(self) -> tuple[str, ...]:
@@ -78,11 +85,13 @@ class Equation:
                     f"must be a torch.Tensor."
                 )
 
-            expected_shape = tensor_shape(eval_coords, rank)
+            size = self.output_label_to_size.get(label)
+            expected_shape = tensor_shape(eval_coords, rank, size)
             if output.shape != expected_shape:
                 raise ValueError(
                     f"Output '{label}' from equation '{self.label}' has shape "
-                    f"{output.shape}, expected {expected_shape} for rank {rank}."
+                    f"{output.shape}, expected {expected_shape} for rank {rank} "
+                    f"and size {size}."
                 )
 
         return dict(zip(self.output_labels, outputs, strict=True))

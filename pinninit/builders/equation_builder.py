@@ -36,6 +36,7 @@ def build_equation(config: EquationConfig, base_dir: Path | None = None) -> Equa
         label=config.label,
         function=function,
         output_label_to_rank=config.output_label_to_rank,
+        output_label_to_size=config.output_label_to_size,
     )
 
 

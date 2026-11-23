@@ -335,9 +335,18 @@ def _parse_fields(raw: dict[str, Any]) -> FieldsConfig:
 
 def _parse_field_list(raw: list[dict[str, Any]], where: str) -> list[FieldConfig]:
     for field in raw:
-        _check_keys(field, f"a {where} entry", required=("label", "rank"))
+        _check_keys(
+            field,
+            f"a {where} entry",
+            required=("label", "rank"),
+            optional=("size",),
+        )
     return [
-        FieldConfig(label=field["label"], rank=_as_int(field["rank"], "rank"))
+        FieldConfig(
+            label=field["label"],
+            rank=_as_int(field["rank"], "rank"),
+            size=None if field.get("size") is None else _as_int(field["size"], "size"),
+        )
         for field in raw
     ]
 
@@ -368,11 +377,21 @@ def _parse_equations(raw: list[dict[str, Any]]) -> list[EquationConfig]:
             equation,
             "an Equations entry",
             required=("label", "function_name", "file_path"),
-            optional=("input_labels", "output_labels", "output_ranks"),
+            optional=("input_labels", "output_labels", "output_ranks", "output_sizes"),
         )
         output_labels: list[str] = equation.get("output_labels") or []
         output_ranks: list[int] = equation.get("output_ranks") or [0] * len(
             output_labels
+        )
+        # One entry per output: its size if it is an array, else null
+        raw_sizes = equation.get("output_sizes")
+        output_sizes = (
+            None
+            if raw_sizes is None
+            else [
+                None if size is None else _as_int(size, "output_sizes")
+                for size in raw_sizes
+            ]
         )
 
         equations.append(
@@ -383,6 +402,7 @@ def _parse_equations(raw: list[dict[str, Any]]) -> list[EquationConfig]:
                 input_labels=equation.get("input_labels") or [],
                 output_labels=output_labels,
                 output_ranks=output_ranks,
+                output_sizes=output_sizes,
             )
         )
 

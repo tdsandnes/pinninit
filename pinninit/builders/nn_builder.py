@@ -45,8 +45,8 @@ def build_nn(
         else len(internal_labels)
     )
     n_output_features = sum(
-        dim_geometric**rank
-        for rank in fields_config.output_field_label_to_rank.values()
+        (field.size or 1) * dim_geometric**field.rank
+        for field in fields_config.output_fields
     )
 
     # Set up layers

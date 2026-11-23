@@ -89,6 +89,7 @@ def load_fields_from_hdf5(
     role: str,
     coords: Coords,
     field_label_to_rank: dict[str, int],
+    field_label_to_size: dict[str, int] | None = None,
 ) -> dict[str, dict[str, torch.Tensor]]:
     """
     Load field tensors from an HDF5 file and return a dict of component dicts.
@@ -97,6 +98,7 @@ def load_fields_from_hdf5(
         Rank 0:   file[dataset_label][role]/Fields/<field_label>            shape: (n,)
         Rank >=1: file[dataset_label][role]/Fields/<field_label>/<comp_label>      (n,)
                   where comp_label is e.g. "x", "x_x", "x_y", etc.
+    An array of size N has the same layout, with datasets of shape (n, N).
 
     Parameters
     ----------
@@ -108,12 +110,15 @@ def load_fields_from_hdf5(
         The Coords instance these fields are bound to.
     field_label_to_rank:
         Mapping of field label to tensor rank.
+    field_label_to_size:
+        Mapping of the labels of array fields to their size.
 
     Returns
     -------
     dict[str, dict[str, torch.Tensor]]
         Outer key: field label.
-        Inner key: component label (e.g. "value", "x", "x_x").
+        Inner key: component label (e.g. "value", "x", "x_x", or "value_0",
+        "x_0" for an array).
         Value: tensor of shape (n_points,).
     """
     dataset_label = dataset_config.label
@@ -155,6 +160,10 @@ def load_fields_from_hdf5(
             expected_components = generate_tensor_component_labels(
                 coords.geometric_labels, rank
             )
+            size = (field_label_to_size or {}).get(field_label)
+            expected_shape = (
+                (coords.n_points,) if size is None else (coords.n_points, size)
+            )
 
             if rank == 0:
                 if not isinstance(item, h5py.Dataset):
@@ -162,6 +171,7 @@ def load_fields_from_hdf5(
                         f"Rank-0 field '{field_label}' should be an HDF5 Dataset, "
                         f"got {type(item).__name__}."
                     )
+                _check_dataset_shape(item, expected_shape, field_label)
                 fields[field_label] = {
                     "value": torch.tensor(
                         item[()], dtype=torch.get_default_dtype(), device=coords.device
@@ -182,6 +192,8 @@ def load_fields_from_hdf5(
                         f"in '{dataset_label}/{role}/Fields'."
                     )
 
+                for comp in expected_components:
+                    _check_dataset_shape(item[comp], expected_shape, field_label)
                 fields[field_label] = {
                     comp: torch.tensor(
                         item[comp][()],
@@ -191,4 +203,22 @@ def load_fields_from_hdf5(
                     for comp in expected_components
                 }
 
+            # Split an array's datasets into the components of its elements
+            if size is not None:
+                fields[field_label] = {
+                    f"{comp}_{element}": values[:, element]
+                    for comp, values in fields[field_label].items()
+                    for element in range(size)
+                }
+
     return fields
+
+
+def _check_dataset_shape(
+    item: h5py.Dataset, expected_shape: tuple[int, ...], field_label: str
+) -> None:
+    if item.shape != expected_shape:
+        raise ValueError(
+            f"Field '{field_label}' has an HDF5 dataset of shape {item.shape}, "
+            f"expected {expected_shape}."
+        )

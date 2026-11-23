@@ -20,6 +20,7 @@ def build_input_data_container(
         derived_field_label_to_rank={},
         const_labels={cfg.label for cfg in const_configs} if const_configs else None,
         equations=None,
+        field_label_to_size=fields_config.input_field_label_to_size,
     )
 
 
@@ -37,6 +38,7 @@ def build_output_data_container(
         derived_field_label_to_rank=fields_config.derivable_field_label_to_rank,
         const_labels={cfg.label for cfg in const_configs} if const_configs else None,
         equations=equations if equations else None,
+        field_label_to_size=fields_config.predicted_field_label_to_size,
     )
 
 

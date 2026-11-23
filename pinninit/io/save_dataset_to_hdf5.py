@@ -7,7 +7,10 @@ import h5py
 import torch
 
 from ..data_structure.coords import make_coords_dataclass
-from ..data_structure.field import make_field_dataclass
+from ..data_structure.field import (
+    generate_tensor_component_labels,
+    make_field_dataclass,
+)
 
 if TYPE_CHECKING:
     import numpy as np
@@ -28,6 +31,8 @@ def save_datasets_to_hdf5(
         file[dataset_label][role]/Coords/<coord_label>
         file[dataset_label][role]/Fields/<field_label>             (rank 0)
         file[dataset_label][role]/Fields/<field_label>/<component> (rank >= 1)
+
+    with datasets of shape (n_points, size) for an array.
 
     Parameters
     ----------
@@ -56,22 +61,29 @@ def save_datasets_to_hdf5(
                 for field_label, field in fields.items():
                     if field.rank == 0:
                         fields_grp.create_dataset(
-                            field_label,
-                            data=field.get_component("value", coords)
-                            .detach()
-                            .cpu()
-                            .numpy(),
+                            field_label, data=_component_values(field, "value", coords)
                         )
                     else:
                         field_grp = fields_grp.create_group(field_label)
-                        for comp in field.component_labels:
+                        labels = generate_tensor_component_labels(
+                            coords.geometric_labels, field.rank
+                        )
+                        for comp in labels:
                             field_grp.create_dataset(
-                                comp,
-                                data=field.get_component(comp, coords)
-                                .detach()
-                                .cpu()
-                                .numpy(),
+                                comp, data=_component_values(field, comp, coords)
                             )
+
+
+def _component_values(field: Field, comp: str, coords: Coords) -> np.ndarray:
+    """A component of a field at coords, shape (n_points,), or, for an array,
+    of all its elements, shape (n_points, size)."""
+    if field.size is None:
+        values = field.get_component(comp, coords)
+    else:
+        values = torch.stack(
+            [field[i].get_component(comp, coords) for i in range(len(field))], dim=1
+        )
+    return values.detach().cpu().numpy()
 
 
 class DataSetWriter:
@@ -99,7 +111,8 @@ class DataSetWriter:
         fields: dict[str, np.ndarray] | None = None,
     ) -> None:
         """Add one (dataset label, role) entry from numpy arrays of scalar
-        (rank 0) fields. The arrays are stored in float64, whatever torch's
+        (rank 0) fields, or 2D arrays of shape (n_points, size) for arrays of
+        scalar fields. The arrays are stored in float64, whatever torch's
         default dtype, and converted to the training dtype when loaded."""
         if role in self.datasets.get(label, {}):
             raise ValueError(f"{label}/{role} already exists")
@@ -111,15 +124,15 @@ class DataSetWriter:
             }
         )
 
-        ScalarField = make_field_dataclass(0, type(coords_obj))
-        field_objs = {
-            f_label: ScalarField(
-                label=f_label,
-                coords=coords_obj,
-                value=torch.as_tensor(arr, dtype=torch.float64, device=self.device),
+        field_objs = {}
+        for f_label, arr in (fields or {}).items():
+            values = torch.as_tensor(arr, dtype=torch.float64, device=self.device)
+            size = values.shape[1] if values.ndim == 2 else None
+            field = make_field_dataclass(0, type(coords_obj), size)(
+                label=f_label, coords=coords_obj
             )
-            for f_label, arr in (fields or {}).items()
-        }
+            field.update_from_tensor(values)
+            field_objs[f_label] = field
 
         self.datasets.setdefault(label, {})[role] = (coords_obj, field_objs)
 

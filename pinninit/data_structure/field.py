@@ -17,6 +17,8 @@ class Field:
     one tensor field per component. A Field instance holds values at the points
     of its coords, each component of shape (n_points,).
 
+    A Field with a size is an array of that many fields of its rank.
+
     Methods taking coords accept the field's coords or any batch derived from
     them, and read or write only the rows belonging to those coords.
     """
@@ -26,6 +28,7 @@ class Field:
     # Fixed for each generated class
     coords_class: ClassVar[type[Coords]]
     rank: ClassVar[int]
+    size: ClassVar[int | None]
     component_labels: ClassVar[tuple[str, ...]]
 
     label: str
@@ -87,10 +90,33 @@ class Field:
         Field values arranged in tensor of shape
         (n_points, n_geometric, ..., n_geometric). Useful for e.g. linear algebra.
 
-        Note: scalar fields have shape (n_points,).
+        Note: scalar fields have shape (n_points,), and arrays have an array
+        axis after the points axis, e.g. (n_points, size) for scalar fields.
         """
         coords = self.coords if coords is None else coords
-        return self.component_tensor(coords).reshape(tensor_shape(coords, self.rank))
+        return self.component_tensor(coords).reshape(
+            tensor_shape(coords, self.rank, self.size)
+        )
+
+    def __len__(self) -> int:
+        """The number of elements of an array."""
+        if self.size is None:
+            raise TypeError("Only arrays have a length.")
+        return self.size
+
+    def __getitem__(self, element: int) -> Field:
+        """An element of an array, as a field of the array's rank."""
+        if self.size is None:
+            raise TypeError("Only arrays have elements.")
+        if not -self.size <= element < self.size:
+            raise IndexError(f"Element {element} is out of range for size {self.size}.")
+        element %= self.size
+        element_class = make_field_dataclass(self.rank, self.coords_class)
+        components = {
+            label: getattr(self, f"{label}_{element}")
+            for label in element_class.component_labels
+        }
+        return element_class(label=self.label, coords=self.coords, **components)
 
     def update_from_component_dict(
         self,
@@ -164,11 +190,12 @@ class Field:
         coords: Coords | None = None,
     ) -> None:
         """Update the field from a tensor of shape
-        (n_points, n_geometric, ..., n_geometric)
+        (n_points, n_geometric, ..., n_geometric), with an array axis after the
+        points axis for an array.
         """
         coords = self.coords if coords is None else coords
 
-        expected_shape = tensor_shape(coords, self.rank)
+        expected_shape = tensor_shape(coords, self.rank, self.size)
         if new_tensor.shape != expected_shape:
             raise ValueError(
                 f"Tensor must have shape {expected_shape}, got {new_tensor.shape}"
@@ -213,43 +240,58 @@ class Field:
             )
 
 
-def tensor_shape(coords: Coords, rank: int) -> tuple[int, ...]:
-    """Shape of a rank-n tensor field at coords: (n_points, dim, ..., dim)."""
-    return (coords.n_points,) + (len(coords.geometric_labels),) * rank
+def tensor_shape(coords: Coords, rank: int, size: int | None = None) -> tuple[int, ...]:
+    """Shape of a rank-n tensor field at coords: (n_points, dim, ..., dim), or
+    (n_points, size, dim, ..., dim) for an array."""
+    array_dims = () if size is None else (size,)
+    return (coords.n_points, *array_dims) + (len(coords.geometric_labels),) * rank
 
 
 def generate_tensor_component_labels(
-    geometric_labels: tuple[str, ...], rank: int
+    geometric_labels: tuple[str, ...], rank: int, size: int | None = None
 ) -> tuple[str, ...]:
-    """Generate labels for each component of a rank-n tensor field."""
+    """Generate labels for each component of a rank-n tensor field, or, for an
+    array, of each of its elements in turn, e.g. x_0, y_0, x_1, y_1."""
     if rank < 0:
         raise ValueError(f"rank must be >= 0, got {rank}")
+    if size is not None and size < 1:
+        raise ValueError(f"size must be >= 1, got {size}")
     if rank == 0:
-        return ("value",)
-    return tuple(
-        "_".join(geometric_labels[i] for i in idx)
-        for idx in product(range(len(geometric_labels)), repeat=rank)
-    )
+        labels: tuple[str, ...] = ("value",)
+    else:
+        labels = tuple(
+            "_".join(geometric_labels[i] for i in idx)
+            for idx in product(range(len(geometric_labels)), repeat=rank)
+        )
+    if size is None:
+        return labels
+    return tuple(f"{label}_{element}" for element in range(size) for label in labels)
 
 
-# Generated Field classes, by (rank, Coords class)
-_field_classes: dict[tuple[int, type[Coords]], type[Field]] = {}
+# Generated Field classes, by (rank, size, Coords class)
+_field_classes: dict[tuple[int, int | None, type[Coords]], type[Field]] = {}
 
 
-def make_field_dataclass(rank: int, coords_class: type[Coords]) -> type[Field]:
-    """The Field class for fields of a given rank on coords of coords_class.
+def make_field_dataclass(
+    rank: int, coords_class: type[Coords], size: int | None = None
+) -> type[Field]:
+    """The Field class for fields of a given rank (and size, for arrays) on
+    coords of coords_class.
 
-    Every field of the same rank on the same kind of coords shares one class.
+    Every field of the same rank and size on the same kind of coords shares
+    one class.
     """
-    key = (rank, coords_class)
+    key = (rank, size, coords_class)
     if key not in _field_classes:
-        _field_classes[key] = _build_field_dataclass(rank, coords_class)
+        _field_classes[key] = _build_field_dataclass(rank, coords_class, size)
     return _field_classes[key]
 
 
-def _build_field_dataclass(rank: int, coords_class: type[Coords]) -> type[Field]:
+def _build_field_dataclass(
+    rank: int, coords_class: type[Coords], size: int | None
+) -> type[Field]:
     component_labels = generate_tensor_component_labels(
-        coords_class.geometric_labels, rank
+        coords_class.geometric_labels, rank, size
     )
     check_labels_not_reserved(component_labels, Field)
 
@@ -264,6 +306,7 @@ def _build_field_dataclass(rank: int, coords_class: type[Coords]) -> type[Field]
     class_constants = {
         "coords_class": coords_class,
         "rank": rank,
+        "size": size,
         "component_labels": component_labels,
     }
 

@@ -90,15 +90,21 @@ class DatasetConfig:
 # Fields Config
 @dataclass(frozen=True, slots=True)
 class FieldConfig:
-    """A single field."""
+    """A single field, or, with a size, an array of that many fields of its
+    rank."""
 
     label: str
     rank: int
+    size: int | None = None
 
     def __post_init__(self) -> None:
         if self.rank < 0:
             raise ValueError(
                 f"Rank of field {self.label} must be >= 0, got {self.rank}."
+            )
+        if self.size is not None and self.size < 1:
+            raise ValueError(
+                f"Size of field {self.label} must be >= 1, got {self.size}."
             )
 
 
@@ -133,17 +139,22 @@ class FieldsConfig:
             )
 
         # A field with data (input_fields) and a prediction (output_fields or
-        # derivable_fields) needs the same rank in both
-        predicted_ranks = {
-            field.label: field.rank
-            for field in self.output_fields + self.derivable_fields
+        # derivable_fields) needs the same rank and size in both
+        predicted = {
+            field.label: field for field in self.output_fields + self.derivable_fields
         }
         for input_field in self.input_fields:
-            rank = predicted_ranks.get(input_field.label, input_field.rank)
-            if rank != input_field.rank:
+            prediction = predicted.get(input_field.label, input_field)
+            if prediction.rank != input_field.rank:
                 raise ValueError(
                     f"Field '{input_field.label}' has rank {input_field.rank} in "
-                    f"input_fields but rank {rank} in output_fields or "
+                    f"input_fields but rank {prediction.rank} in output_fields or "
+                    "derivable_fields."
+                )
+            if prediction.size != input_field.size:
+                raise ValueError(
+                    f"Field '{input_field.label}' has size {input_field.size} in "
+                    f"input_fields but size {prediction.size} in output_fields or "
                     "derivable_fields."
                 )
 
@@ -158,6 +169,26 @@ class FieldsConfig:
     @property
     def derivable_field_label_to_rank(self) -> dict[str, int]:
         return {field.label: field.rank for field in self.derivable_fields}
+
+    @property
+    def input_field_label_to_size(self) -> dict[str, int]:
+        return _sizes(self.input_fields)
+
+    @property
+    def predicted_field_label_to_size(self) -> dict[str, int]:
+        """The sizes of the array fields among the output and derivable fields,
+        which are the fields equations work with."""
+        return _sizes(self.output_fields + self.derivable_fields)
+
+    @property
+    def field_label_to_size(self) -> dict[str, int]:
+        """The sizes of all array fields."""
+        return _sizes(self.input_fields + self.output_fields + self.derivable_fields)
+
+
+def _sizes(fields: list[FieldConfig]) -> dict[str, int]:
+    """The sizes of the array fields among fields."""
+    return {field.label: field.size for field in fields if field.size is not None}
 
 
 # Constant Config
@@ -181,12 +212,21 @@ class EquationConfig:
     input_labels: list[str]
     output_labels: list[str]
     output_ranks: list[int]
+    # One per output: its size if it is an array, else None
+    output_sizes: list[int | None] | None = None
 
     def __post_init__(self) -> None:
         if len(self.output_labels) != len(self.output_ranks):
             raise ValueError(
                 f"output_labels and output_ranks must have the same length, got "
                 f"{len(self.output_labels)} and {len(self.output_ranks)}."
+            )
+        if self.output_sizes is not None and len(self.output_sizes) != len(
+            self.output_labels
+        ):
+            raise ValueError(
+                f"output_labels and output_sizes must have the same length, got "
+                f"{len(self.output_labels)} and {len(self.output_sizes)}."
             )
         for label, rank in zip(self.output_labels, self.output_ranks, strict=True):
             if rank < 0:
@@ -195,6 +235,16 @@ class EquationConfig:
     @property
     def output_label_to_rank(self) -> dict[str, int]:
         return dict(zip(self.output_labels, self.output_ranks, strict=True))
+
+    @property
+    def output_label_to_size(self) -> dict[str, int]:
+        """The sizes of the outputs that are arrays."""
+        sizes = self.output_sizes or [None] * len(self.output_labels)
+        return {
+            label: size
+            for label, size in zip(self.output_labels, sizes, strict=True)
+            if size is not None
+        }
 
 
 # Point-weight modifier config
